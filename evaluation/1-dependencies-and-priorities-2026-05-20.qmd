@@ -112,11 +112,11 @@ Although most of the code belongs to one network of interdependent code, there a
 ```{r}
 
 # Clusters of functions:
-cl <- components(g)
+cl <- components(g, mode = "weak")
 table(table(cl$membership))
 
 lapply(seq_len(cl$no)[-which.max(cl$csize)], function(i) {
-  as.matrix(all[cl$membership == i])
+  as.matrix(attr(cl$membership, "names")[cl$membership == i])
 })
 
 ```

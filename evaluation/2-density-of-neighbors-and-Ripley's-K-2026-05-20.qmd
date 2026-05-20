@@ -1,0 +1,128 @@
+---
+title: "Evaluation of a set of functions related to Ripley's K analysis"
+author: "Gabriel Arellano"
+date: today
+format:
+  pdf:
+    code-overflow: wrap
+editor: visual
+---
+
+## Goal
+
+Evaluate, understand, and decide over a set of related functions that count individuals in circular areas and compare those counts with a null expectation, implementing Ripley's K test. At the moment, this is an isolated set of functions; see "1-dependencies-and-priorities-2026-05-20.pdf" report.
+
+This set contains the following functions:
+
+-   "CalcRingArea" in spatial \> RipUvK.r
+
+-   "partialcirclearea" in spatial \> RipUvK.r
+
+-   "circlearea" in spatial \> RipUvK.r
+
+-   "Annuli" in spatial \> RipUvK.r
+
+-   "NDcount" in spatial \> NeighborDensityFun.r
+
+-   "NeighborDensities" in spatial \> NeighborDensityFun.r
+
+-   "RipUvK" in spatial \> RipUvK.r
+
+## Overall criteria
+
+These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in RipUvK.r and NeighborDensityFun.r original scripts.
+
+This type of calculation is widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses. But, in general, counting points in certain areas around target individuals (or locations) is valuable. Perhaps most of these functions can be incorporated into a more general function that counts (or summarizes) data belonging to different classes, within areas that have a minimum and a maximum radius.
+
+Modelling or comparison with null expectations is less valuable for the fgeo2 package. The Ripley's K function is surely maintained by other packages. Although it's not a high-maintenance test, it is a clear candidate to remove, and substitute by a more general tutorial on how to apply point pattern analysis to forest data.
+
+## Preliminaries for code evaluation
+
+First, we declare the path to fgeo2 folder and all the functionality needed, including CTFS / fgeo functions, external packages, and auxiliary code:
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Source useful functionality:
+source(paste0(path, "evaluation/0-code-to-source.r"))
+
+# Other functionality:
+library(igraph)
+library(fgeo)
+
+# This chunk of code will source all the scripts:
+f1 <- list.files(paste0(path, "01_utilities/R/new/"), full.names = TRUE)
+f2 <- list.files(paste0(path, "02_biomass/R/new/"), full.names = TRUE)
+f3 <- list.files(paste0(path, "03_spatial/R/new/"), full.names = TRUE)
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"), full.names = TRUE)
+f5 <- list.files(paste0(path, "05_demography_growth/R/new/"), full.names = TRUE)
+f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"), full.names = TRUE)
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"), full.names = TRUE)
+ff <- c(f1, f2, f3, f4, f5, f6, f7)
+for(f in ff) source(f)
+
+```
+
+## Current source code
+
+```{r, quiet = TRUE}
+
+# Use this to see the source code, manually.
+
+CalcRingArea
+partialcirclearea
+circlearea
+Annuli
+NDcount
+NeighborDensities
+RipUvK
+
+```
+
+## Overview
+
+Some functions work on areas, other functions work on counts.
+
+The function circlearea is trivial; while the partialcirclearea makes edge corrections considering the dimensions of the plot. That will be important in forest applications.
+
+CalcRingArea seems to be just the accumulated sum of (possibly truncated) circles, one for each point in a dataset. Note:
+
+-   it calculates areas of circles, not rings, despite its name
+-   it does not correct for overlap, so it counts many times the same areas
+
+The area of rings ("annuli") is calculated by the Annuli function, which repeadly calls CalcRingArea and substracts small circles from larger circles successively.
+
+NDcount and NeighborDensities try to do similar things. NDcount (author Tania Brenes) wraps splancs::khat function to count neighbors with edge correction. NeighborDensities (author Rick Condit) incorporates filters, the possibility of counting neighbors from a different dataset (e.g. adult trees neighboring seedlings), and "counting" as accumulated basal area instead of individual counts. It depends on specific column names like "status". There are risky unit conversions inside, so it does make strong assumptions about the units of the input: clearly a vulnerable point.
+
+RipUvK is the highest-level function in this group of functions. It runs over each species calculating a series of spatial statistics for con-specifics at different distances. It seems easy to use, it is not very long. It is not very flexible, and calls external functions of undefined packages, probably splancs package: khat, spoints.
+
+Because the code has obvious points of vulnerability, I decide to rewrite. I do not run formal tests.
+
+## Design principles for alternative code
+
+Ideally, replacement code should incorporate the flexibility to count neighbors of any class to any class, for example:
+
+-   adult tree neighboring seedlings
+-   individuals of species A neighboring species A (conspecifics)
+-   individuals of species A neighboring species B (some heterospecifics)
+-   etc.
+
+The conspecific vs. heterospecific counting, which is the most frequent, is just a special case.
+
+Calculating distances to focal points could be relatively easy, but memory and computation is important for large datasets. Counting and calculating areas has to go hand in hand, because of edge effects. In other words: the output should be expressed as densities, on a per area basis, as originally.
+
+It should be general and count everything inputed. If the user wants to focus on trees that are alive, for example, it should subset the dataset first. It does not seem robust to filter from within the function and make assumptions about column names, etc. Filter outside gives all the flexibility to the user, even if they keep lianas and trees together, or whatever they want. This is aligned with the goal of reducing dependency from "orthodox CTFS format".
+
+It should be unit agnostic: return everything on the same units as the input.
+
+Ideally, the code should be fast. Solutions without loops would be preferred.
+
+Edge effects are important. Ideally, we should be able to define edges of any arbitrary shape. For example, so Ngel Nyaki plot can truncate circles to the border of the forested part of the plot, not just the rectangular borders.
+
+The Ripley's K function is an statistic that measures the deviation of a given count in a given area relative to the null expectation of random placement (Poisson point process or PPP). If the counting code is fast, it could be entirely replaced by a numerical null model, which would have some advantages:
+
+-   Importantly: it would not be limited to individual counts as now, but could incorporate observations vs. expectations for other metrics, such as accumulated basal area, total biomass, etc.
+-   The user could model, potentially, other null expectations.
