@@ -85,7 +85,7 @@ plot(g, layout = layout.fruchterman.reingold,
 dev.off()
 ```
 
-## Fom high-level to low-level
+## From high-level to low-level
 
 It would be easier to review the code from high to low-level functions:
 
