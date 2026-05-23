@@ -33,10 +33,10 @@ The code here substitutes these original CTFS functions:
 The new functions are:
 
 -   fast_distances_up_to_r: the workhorse to calculate distances from one set of focal points (query) to their neighbors (taken from a reference dataset), within a given threshold. This takes advantage of the very fast dbscan::frNN function, and will be called often from within other functions here.
--   boundary_around_xy: an auxiliary function to estimate a (complex) boundary around a given set of points, to use as default in case the user does not provide a proper boundary.
+-   boundary_around_xy: an auxiliary function to estimate a (complex) boundary around a given set of points. This may or may not help much, but it is needed as a default in case the user does not provide a proper boundary.
 -   core_vs_edge: an auxiliary function that classifies a set of points into "out" (outside the provided boundary of arbitrary shape), "edge" (inside the boundary, but closer than a given distance to it), and "core" (inside the boundary and far from the edge). The main goal of this auxiliary function is to save computation by avoiding a numerical calculation for the area of full circles around "core" points. Also, it uses the "core" points to estimate the error associated with numerical area estimates derived from a grid.
 -   make_grid_inside_boundary: creates a regular grid within the provided boundary. The grid will be then used to count number of points within shapes, so it is a very general way of estimating areas of truncated circles near the (possibly complex) boundary.
--    guess_sufficient_grid_resolution: the grid approach is flexible but, as it is a numerical estimate, it also carries some error. The guess_sufficient_grid_resolution estimates the resolution of the grid required to keep error constrained below a given tolerance (1% by default).
+-   guess_sufficient_grid_resolution: the grid approach is flexible but, as it is a numerical estimate, it also carries some error. The guess_sufficient_grid_resolution estimates the resolution of the grid required to keep error constrained below a given tolerance (1% by default).
 -   ...
 
 Filters, abundance metrics, null expectations, and classes to compare, are all outside these functions.
@@ -87,8 +87,8 @@ fast_distances_up_to_r <- function(query, reference = NULL, radius, approx = 0) 
 # Check behaviour
 # It is incredibly fast but fills memory: it returns 1-10M rows per second.
 
-n = 100000 # 100-300 k points
-radius = 50 # something realistic, rarely > 100
+n = 50000 # 100-300 k points for hard cases, big ForestGEO plots
+radius = 20 # something realistic, rarely > 100
 p_focal = 0.05 # proportion of the forest in the focal class
 
 xy <- cbind(x = runif(n, 0, 500), y = runif(n, 0, 500))
@@ -457,10 +457,8 @@ guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01
   ppc = floor(pi*(radius^2)/(suggested_step^2)) # points per circle
   
   # There are other rules of thumb and analytical results for other cases:
-  # To constrain the maximum possible error:
-  conservative_step = tol * radius / (2 * sqrt(2))
-  # Less conservative: to constrain average error
-  less_conservative_step = radius * (2 * tol)^(2/3) 
+  conservative_step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
+  less_conservative_step = radius * (2 * tol)^(2/3) # to constrain average error
   
   # The output with everything of value:
   c(suggested_step = suggested_step,
@@ -471,7 +469,7 @@ guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01
 
 ```
 
-To put things together, we have to combine (1) the standard formula for the circle area for the core focal points, and (2) the grid-derived estimates near the edge. For this second point, we cross: (a) the subset of focal points closer than R to the boundary, and (b) the subset of grid points closer than 2R to the boundary, being R the radius of the scale being evaluated.
+To calculate the corrected area of the neighborhoods, while saving computation time, we have to combine (1) the standard formula for the circle area for the core focal points, and (2) the grid-derived estimates near the edge. For this second point, we cross: (a) the subset of focal points closer than R to the boundary, and (b) the subset of grid points closer than 2R to the boundary, being R the radius of the scale being evaluated.
 
 ```{r}
 
@@ -480,7 +478,8 @@ get_area_of_neighborhoods <- function(query = NULL,
                                       window = NULL,
                                       radius = NULL,
                                       step = NA,
-                                      tol = 0.01)
+                                      tol = 0.01,
+                                      grid_for_edge = NULL)
 
 {
   # *** describe parameters
@@ -502,15 +501,17 @@ get_area_of_neighborhoods <- function(query = NULL,
   grid <- make_grid_inside_boundary(boundary, step = step)
 
   # Split the both the query and the grid as core vs. edge
-  # *** To reduce computations, the grid_for_edge should be directly provided
   ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
-  ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius) # out of loops!
-  #table(ceo_query)
-  #table(ceo_grid)
-  
   query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
-  grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
-
+  
+  if(is.null(grid_for_edge))
+  {
+    # In most practical applications, we probably want this to be calculated
+    # outside, so we avoid repetitions during loops and so on.
+    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
+    grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
+  }
+  
   # Now take advantage of the neighbor-identifying workhorse:
   d <- fast_distances_up_to_r(query = query_xy_edge,
                               reference = grid_for_edge,
@@ -524,26 +525,25 @@ get_area_of_neighborhoods <- function(query = NULL,
 }
   
 
-plot(grid_for_edge, cex = 0.1, asp = 1)
+#plot(grid_for_edge, cex = 0.1, asp = 1)
 
 #
 #
 #
 # *** generalize and make examples with different abundance metrics
 
-
-
-# Count the number of neighbors and express that as trees / area:
-d <- fast_distances_up_to_r(focal_xy, reference_xy, radius, approx = 0)
-number_of_neighbors <- tabulate(d$query_i, nbins = nrow(focal_xy)) 
-barplot(table(number_of_neighbors)) # if random locations: Poisson ~ normal distribution
-
-# Express as densities, edges corrected:
-length(number_of_neighbors) == length(A)
-neighbors_per_area <- number_of_neighbors / A
-hist(neighbors_per_area)
-
-
+if(FALSE)
+{
+  # Count the number of neighbors and express that as trees / area:
+  d <- fast_distances_up_to_r(focal_xy, reference_xy, radius, approx = 0)
+  number_of_neighbors <- tabulate(d$query_i, nbins = nrow(focal_xy)) 
+  barplot(table(number_of_neighbors)) # if random locations: Poisson ~ normal distribution
+  
+  # Express as densities, edges corrected:
+  length(number_of_neighbors) == length(A)
+  neighbors_per_area <- number_of_neighbors / A
+  hist(neighbors_per_area)
+}
 
 ```
 
@@ -559,17 +559,46 @@ I present examples on how to compare a given point pattern with the expectations
 
 First, I present the Ripley's K and Besag's L case, using standard R implementation. These are based on counts and Poisson point pattern as the null expectation (that is, independent and uniformly random distribution of points). This functionality was in the original CTFS package but is not implemented directly here as part of the functions in fgeo2.
 
-Second, I present a template of a more general approach based on numerical null models, which should have advantages:
-
--   The simplest null model is uniform random distribution (PPP), and this will end being very similar to Ripley's K.
--   The PPP null model can be very naïve for some ecological analyses, so the user could incorporate different null models, like the torus translation or constrained torus translation.
--   The metric of interest in a null model approach could be any, not just counts of neighbors as implicit in Ripley's K. It could be biomass, sum of basal area, etc.
--   The null models already incorporate the expectation of fewer neighbors for focal points near the edges, so they can be a direct way of correcting for edge effects for boundaries or arbitrary shape.
-
-In general, null models have nice properties for generalization and flexibility. Their main practical limitations are: (1) the tremendous responsibility on the definition of a reasonable / useful expectation, and (2) computation and storage.
+Second, I present a template of a more general approach based on numerical null models
 
 ### Example of Ripley's K
 
+fgeo2 does not contain Ripley's K and there is no need for it, as this is a standard spatial analytical tool that is well-maintained in other packages. Instead, I include an example on how you would implement this analysis using {x, y} coordinates.
+
+```{r}
+
+# Example for the living trees of one species
+# At what scales is Faramea occidentalis in BCI spatially aggregated?
+
+sp = "faraoc"
+
+
+
+
+
+```
+
 ### Example of numerical null model
 
-## 
+Numerical null models are very flexible, and could be used for the same purposes as Ripley's K, with aded advantages:
+
+-   Ripley's K uses the simplest null model (uniform random distribution = Poisson point pattern), but in a customizable numerical null model the user could incorporate different null models, like the torus translation or constrained torus translation.
+-   The metric of interest in a null model approach could be any, not just counts of neighbors as implicit in Ripley's K. It could be biomass, sum of basal area, etc.
+-   Null models already incorporate the expectation of fewer neighbors for focal points near the edges, so they can be a direct way of correcting for edge effects for boundaries or arbitrary shape.
+
+In general, null models have nice properties for generalization and flexibility. Their main practical limitations are: (1) the tremendous responsibility on the definition of a reasonable / useful expectation, and (2) computation and storage. If you are afraid of responsibility, do not use null models.
+
+```{r}
+
+# Null models compare observations (one instance) with expectations (many instances).
+# If reality does not deviate much from the expectations by the null model, then
+# the researcher cannot reject the null hypothesis modelled by the null model.
+# If reality deviates  from the expectations, then we can reject the null hypothesis.
+
+
+
+
+
+
+
+```
