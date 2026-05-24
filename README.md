@@ -28,11 +28,12 @@ The code in this repository may include:
 The main priorities are:
 
 - transparent code;
-- minimal unnecessary dependencies;
+- limited dependencies, specially between different modules;
 - explicit inputs and outputs;
-- reproducible examples where available;
+- reproducible examples;
 - easier debugging and maintenance;
-- compatibility with ForestGEO/CTFS-style data structures.
+- compatibility with ForestGEO/CTFS-style data structures, but avoiding strict requirements;
+- expand uses and applications.
 
 ## Repository status
 
