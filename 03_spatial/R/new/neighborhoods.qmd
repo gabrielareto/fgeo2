@@ -34,9 +34,9 @@ The new functions are:
 
 -   fast_distances_up_to_r: the workhorse to calculate distances from one set of focal points (query) to their neighbors (taken from a reference dataset), within a given threshold. This takes advantage of the very fast dbscan::frNN function, and will be called often from within other functions here.
 -   boundary_around_xy: an auxiliary function to estimate a (complex) boundary around a given set of points. This may or may not help much, but it is needed as a default in case the user does not provide a proper boundary.
--   core_vs_edge: an auxiliary function that classifies a set of points into "out" (outside the provided boundary of arbitrary shape), "edge" (inside the boundary, but closer than a given distance to it), and "core" (inside the boundary and far from the edge). The main goal of this auxiliary function is to save computation by avoiding a numerical calculation for the area of full circles around "core" points. Also, it uses the "core" points to estimate the error associated with numerical area estimates derived from a grid.
--   make_grid_inside_boundary: creates a regular grid within the provided boundary. The grid will be then used to count number of points within shapes, so it is a very general way of estimating areas of truncated circles near the (possibly complex) boundary.
--   guess_sufficient_grid_resolution: the grid approach is flexible but, as it is a numerical estimate, it also carries some error. The guess_sufficient_grid_resolution estimates the resolution of the grid required to keep error constrained below a given tolerance (1% by default).
+-   core_vs_edge: an auxiliary function that classifies a set of points into "out" (outside the provided boundary of arbitrary shape), "edge" (inside the boundary, but closer than a given distance to it), and "core" (inside the boundary and far from it). The main goal of this auxiliary function is to save computational costs by avoiding numerical calculations for the area of full circles around "core" points.
+-   make_grid_inside_boundary: creates a regular grid within the provided boundary. The grid will be then used to count number of points within shapes, so it is a very general way of estimating areas of truncated circles near the (possibly complex) boundary. It might have independent use in some applications.
+-   guess_sufficient_grid_resolution: the grid approach is flexible but, as it is a numerical estimate, it also carries some error. The guess_sufficient_grid_resolution estimates the resolution of the grid required to keep error in circle area estimates lower than a given tolerance (1% by default).
 -   ...
 
 Filters, abundance metrics, null expectations, and classes to compare, are all outside these functions.
@@ -87,7 +87,7 @@ fast_distances_up_to_r <- function(query, reference = NULL, radius, approx = 0) 
 # Check behaviour
 # It is incredibly fast but fills memory: it returns 1-10M rows per second.
 
-n = 50000 # 100-300 k points for hard cases, big ForestGEO plots
+n = 5000 # 100-300 k points for hard cases, big ForestGEO plots
 radius = 20 # something realistic, rarely > 100
 p_focal = 0.05 # proportion of the forest in the focal class
 
@@ -314,10 +314,10 @@ make_grid_inside_boundary <- function(boundary = NULL, window = NULL, xy = NULL,
 {
   # Parameters:
   # boundary: a sfc polygon or multipolygon object, for boundaries of any shape.
-  # window: alternative to "boundary" for rectangular boundaries, as c(xmin, ymin, xmax, ymax)
+  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
   # xy: only if boundaries are not provided, they will be estimated from a reference dataset.
   #     Must be a 2-columns table with x and y in 1st and 2nd column respectively.
-  # step: the parameter that controles the resolution of the grid.
+  # step: the parameter that controls the resolution of the grid.
 
   # Confirm or guess boundary
   if(is.null(boundary) & !is.null(window)) # from window to proper sf object
@@ -385,7 +385,7 @@ guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01
   #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
   # radius: defines the scale of the circular neighborhoods.
   # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
-  # window: alternative to "boundary" for rectangular boundaries, as c(xmin, ymin, xmax, ymax)
+  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
   # tol: the accepted error in area, 1% by default.
   
    # Confirm or guess boundary
@@ -454,7 +454,7 @@ guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01
   # derived from Steiner / parallel-body argument:
   K = 1 + 4 / pi
   suggested_step = step / K
-  ppc = floor(pi*(radius^2)/(suggested_step^2)) # points per circle
+  # floor(pi*(radius^2)/(suggested_step^2)) # points per circle
   
   # There are other rules of thumb and analytical results for other cases:
   conservative_step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
@@ -464,7 +464,7 @@ guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01
   c(suggested_step = suggested_step,
     conservative_step = conservative_step,
     less_conservative_step = less_conservative_step,
-    radius = radius, tol = tol, error = error, points_per_circle = ppc)
+    radius = radius, tol = tol, error = error)
 }
 
 ```
@@ -477,18 +477,56 @@ get_area_of_neighborhoods <- function(query = NULL,
                                       boundary = NULL,
                                       window = NULL,
                                       radius = NULL,
-                                      step = NA,
                                       tol = 0.01,
                                       grid_for_edge = NULL)
 
 {
-  # *** describe parameters
-  # *** solve window and boundary properly
+  # Parameters
+  # query: The set of focal or query points, around which we will want to estimate
+  #     available neighborhood areas.
+  #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
+  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
+  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
+  # radius: defines the scale of the circular neighborhoods.
+  # tol: the accepted error in area, 1% by default --> will define grid resolution,
+  #      if and only if the grid_for_edge is not provided.
   
-  # Make the grid.
-  # The step parameter defines the grid resolution.
-  # If not provided, will be derived from the tolerance.
-  if(is.na(step))
+  # Confirm or guess boundary
+  if(is.null(boundary) & !is.null(window)) # from window to proper sf object
+  {
+    xmin = window[1]
+    ymin = window[2]
+    xmax = window[3]
+    ymax = window[4]
+
+    boundary <- sf::st_sfc(
+      sf::st_polygon(list(rbind(
+        c(xmin, ymin),
+        c(xmax, ymin),
+        c(xmax, ymax),
+        c(xmin, ymax),
+        c(xmin, ymin)
+      )))
+    )
+  }
+  
+  if(is.null(boundary) & is.null(window)) # guess the boundary
+  {
+    xy <- as.matrix(xy)
+    stopifnot(ncol(xy) == 2L)
+    storage.mode(xy) <- "double"
+    boundary <- boundary_around_xy(xy) # inherits default "q" parameter
+  }
+  
+  boundary <- sf::st_geometry(boundary)
+  boundary <- sf::st_make_valid(boundary)
+  boundary <- sf::st_union(boundary)
+  
+  # If a grid is not provided, make it here.
+  # In most practical applications, we probably want this to be calculated
+  # outside, so we avoid repetitions during loops and so on.
+  step = NA
+  if(is.null(grid_for_edge))
   {
     errors.etc <- guess_sufficient_grid_resolution(xy = query,
                                                boundary = boundary,
@@ -496,23 +534,28 @@ get_area_of_neighborhoods <- function(query = NULL,
                                                tol = tol)
 
     step = errors.etc["suggested_step"]
-  }
-  
-  grid <- make_grid_inside_boundary(boundary, step = step)
-
-  # Split the both the query and the grid as core vs. edge
-  ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
-  query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
-  
-  if(is.null(grid_for_edge))
-  {
-    # In most practical applications, we probably want this to be calculated
-    # outside, so we avoid repetitions during loops and so on.
+    attr(step, "error") <- errors.etc["error"]
+    grid <- make_grid_inside_boundary(boundary, step = step)
     ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
     grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
   }
   
-  # Now take advantage of the neighbor-identifying workhorse:
+  # Get the "step" from the grid, which is the pixel area unit
+  if(is.na(step))
+  {
+    sorted.x <- sort(unique(grid_for_edge[,1]))
+    sorted.y <- sort(unique(grid_for_edge[,2]))
+    steps.x <- sorted.x[2:length(sorted.x)] - sorted.x[1:(length(sorted.x) - 1)]
+    steps.y <- sorted.y[2:length(sorted.y)] - sorted.y[1:(length(sorted.y) - 1)]
+    step = min(c(steps.x, steps.y), na.rm = TRUE)
+  }
+  
+  # Split the query into core vs. edge
+  ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
+  query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
+  
+  # Use the neighbor-identifying workhorse to identify points in the grid that
+  # are inside the neighborhoods. Their number is a proxy for neighborhood area.
   d <- fast_distances_up_to_r(query = query_xy_edge,
                               reference = grid_for_edge,
                               radius = radius)
@@ -521,6 +564,7 @@ get_area_of_neighborhoods <- function(query = NULL,
   # then overwrite with the areas calculated for the edge cases:
   A <- rep(pi*radius^2, nrow(query))
   A[ceo_query == "edge"] <- tabulate(d$query_i, nbins = nrow(query_xy_edge)) * step^2
+  attr(A, "step") <- step
   A
 }
   
