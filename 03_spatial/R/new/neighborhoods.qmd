@@ -21,7 +21,7 @@ This is updated code to calculate abundances of neighbors at different scales, i
 
 Spatial neighborhood analyses are used to quantify how organisms, stems, species, functional groups, or other ecological units are arranged around focal individuals or locations. In forest ecology, these analyses are commonly used to evaluate local crowding, conspecific and heterospecific aggregation, spatial segregation, density dependence, habitat association, biomass accumulation around focal trees, and departures from spatial null expectations. Classical summaries include neighbor counts or densities within circles or rings, Ripley’s K, and transformations such as Besag’s L.\
 \
-This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. The workflow separates several operations that were previously bundled together: identifying neighbors within a distance threshold, defining focal and reference classes, handling circles and annuli, estimating available neighborhood area near valid boundaries (of arbitrary shape, but typically the rectangular plot limits), summarizing abundance as counts of points or other metrics, and comparing observations with null expectations. This separation is intentional. \
+This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. The workflow separates several operations that were previously bundled together: identifying neighbors within a distance threshold, defining focal and reference classes, handling circles and annuli, estimating available neighborhood area near valid boundaries (of arbitrary shape, but typically the rectangular plot limits), summarizing abundance as counts of points or other metrics, and comparing observations with null expectations. This separation is intentional.\
 \
 Relative to the previous CTFS functions, the updated code is designed to be less tied to specific assumptions about rectangular plots, point classes, or abundance metrics. An important design criterion is to leave outside the functions everything that may require high flexibility by the potential users:
 
@@ -52,15 +52,13 @@ The code here substitutes these original CTFS functions:
 The new functions are:
 
 -   fast_distances_up_to_r: the workhorse to calculate distances from one set of focal points (query) to their neighbors (taken from a reference dataset), within a given threshold. This takes advantage of the very fast dbscan::frNN function, and will be called often from within other functions here.
--   boundary_around_xy: an auxiliary function to estimate a (complex) boundary around a given set of points. This may or may not help much, but it is needed as a default in case the user does not provide a proper boundary.
 -   core_vs_edge: an auxiliary function that classifies a set of points into "out" (outside the provided boundary of arbitrary shape), "edge" (inside the boundary, but closer than a given distance to it), and "core" (inside the boundary and far from it). The main goal of this auxiliary function is to save computational costs by avoiding numerical calculations for the area of full circles around "core" points.
--   make_grid_inside_boundary: creates a regular grid within the provided boundary. The grid will be then used to count number of points within shapes, so it is a very general way of estimating areas of truncated circles near the (possibly complex) boundary. It might have independent use in some applications.
--   guess_sufficient_grid_resolution: the grid approach is flexible but, as it is a numerical estimate, it also carries some error. The guess_sufficient_grid_resolution estimates the resolution of the grid required to keep error in circle area estimates lower than a given tolerance (1% by default).
+-   ...
 -   ...
 
 Filters, abundance metrics, null expectations, and classes to compare, are all outside these functions.
 
-## Code
+## Functions
 
 The main function here is a function to calculate, fast, distances up to certain threshold. This is useful for the distances themselves and to identify neighbors.
 
@@ -302,6 +300,7 @@ get_area_of_neighborhoods <- function(query = NULL,
                                       window = NULL,
                                       radii = NULL,
                                       rmax = NA,
+                                      m = 512,
                                       case = c("circles", "rings"),
                                       tol = 0.01)
 {
@@ -330,7 +329,9 @@ get_area_of_neighborhoods <- function(query = NULL,
   # Define radii, if the user has not provided them yet:
   if(is.null(radii))
     radii <- get_radii(query = query, rmax = rmax, m = m, case = case)
-    
+  m = length(radii)
+  rmax = max(radii)
+  
   # The areas of neighborhoods at different scales will 
   # repeat similar calculations, and will use different
   # grids for each scale. The alternative is to commit
@@ -351,6 +352,7 @@ get_area_of_neighborhoods <- function(query = NULL,
     
     # Core vs. edge points in the query:
     ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
+    #table(ceo_query)
 
     # Initialize coarse grid, then refine until error < tolerance.
     # This uses the core points in the query.
@@ -361,6 +363,7 @@ get_area_of_neighborhoods <- function(query = NULL,
       step = step / 2 # smaller step
       grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
                           y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
+      
       pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
       inside <- lengths(sf::st_intersects(pts, boundary)) > 0
       grid <- grid[inside,, drop = FALSE]
@@ -383,134 +386,80 @@ get_area_of_neighborhoods <- function(query = NULL,
     # derived from Steiner / parallel-body argument:
     K = 1 + 4 / pi
     step = step / K
+    
+    steps[i] <- step
+    errors[i] <- error
   
     # For reference, other rules of thumb or analytical results.
     #step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
     #step = radius * (2 * tol)^(2/3) # to constrain average error
     
-    # With the updated step, we address the calculation of areas.
-    # This focuses on the edge points in the query.
-    # Note the 2r distance needed to cover the entire neighborhood of query 
-    # points that are at r distance from the edge.
-    
-    grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
-                          y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
-    
-    pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
-    inside <- lengths(sf::st_intersects(pts, boundary)) > 0
-    grid <- grid[inside,, drop = FALSE]
-    
-    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
-    grid_edge <- grid[ceo_grid == "edge",,drop = FALSE]
-    
-    # Use the neighbor-identifying workhorse to identify points in the grid that
-    # are inside the neighborhoods. Their number is a proxy for neighborhood area.
-    query_edge <- query[ceo_query == "edge",,drop = FALSE]
-    d <- fast_distances_up_to_r(query = query_edge,
-                                reference = grid_edge,
-                                radius = radius)
-    
     # Put all the areas together: initialize with full circles,
     # then overwrite with the areas calculated for the edge cases:
     A <- rep(A0, nrow(query))
-    A[ceo_query == "edge"] <- pmin(A0,
-                                   tabulate(d$query_i, nbins = nrow(query_edge)) * step^2)
+    query_edge <- query[ceo_query == "edge",,drop = FALSE]
+    
+    if(nrow(query_edge) > 0)
+    {
+      # Note the 2r distance needed for the grid to cover the
+      # entire neighborhood of querypoints that are at r distance from the edge.
+      grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
+                          y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
+    
+      ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
+      grid_edge <- grid[ceo_grid == "edge",,drop = FALSE]
+      
+      # Use the neighbor-identifying workhorse to identify points in the grid that
+      # are inside the neighborhoods. Their number is a proxy for neighborhood area.
+      d <- fast_distances_up_to_r(query = query_edge,
+                                reference = grid_edge,
+                                radius = radius)
+    
+      A[ceo_query == "edge"] <- pmin(A0,
+                                     tabulate(d$query_i, nbins = nrow(query_edge)) * step^2)
+    }
+    
     areas[,i] <- A
     print(paste0(i, "/", m))
   }
   
+  # The ring case is solved from the circles case,
+  # just by sequential substraction:
+  if(case == "rings")
+  {
+    large <- areas[, 2:m, drop = FALSE]
+    small <- areas[, 1:(m-1), drop = FALSE]
+    areas <- cbind(areas[,1], large - small) # the inner ring is a circle, zero substraction
+  }
+  
+  # Output:
+  if(case == "circles")
+    scales <- data.frame(radius = radii,
+                         grid_step = steps,
+                         error = errors)
+  
+  if(case == "rings")
+    scales <- data.frame(inner_radius = c(0, radii[-m]),
+                         outer_radius = radii,
+                         grid_step = steps,
+                         error = errors)
+  
+  list(case = case, scales = scales, areas = areas)
 }
 
 ```
 
-```{r}
+## Examples
 
+This section uses real data to show how to perform some spatial analyses. It includes:
 
- 
-  
-  
-  
+-   Example 1: Ripley's K and Besag's L, using code from outside
+-   Example 2: Aggregation within one species, using number of individuals or accumulated basal area
+-   Example 3: Quantity of conspecifics and heterospecifics
+-   Example 4: Associations between pairs of species
+-   Example 5: Diversity in the neighborhood of different species
 
-
-```
-
-```{r}
-
-get_area_of_neighborhoods <- function(query = NULL,
-                                      boundary = NULL,
-                                      window = NULL,
-                                      radius = NULL,
-                                      tol = 0.01,
-                                      grid_for_edge = NULL)
-
-{
-  # Parameters
-  # query: The set of focal or query points, around which we will want to estimate
-  #     available neighborhood areas.
-  #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
-  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
-  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
-  # radius: defines the scale of the circular neighborhoods.
-  # tol: the accepted error in area, 1% by default --> will define grid resolution,
-  #      if and only if the grid_for_edge is not provided.
-  
-  
-  
-  # If a grid is not provided, make it here.
-  # In most practical applications, we probably want this to be calculated
-  # outside, so we avoid repetitions during loops and so on.
-  step = NA
-  if(is.null(grid_for_edge))
-  {
-    errors.etc <- guess_sufficient_grid_resolution(xy = query,
-                                               boundary = boundary,
-                                               radius = radius,
-                                               tol = tol)
-
-    step = errors.etc["step"]
-    attr(step, "error") <- errors.etc["error"]
-    grid <- make_grid_inside_boundary(boundary, step = step)
-    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
-    grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
-  }
-  
-  # Get the "step" from the grid, which is the pixel area unit
-  if(is.na(step))
-  {
-    sorted.x <- sort(unique(grid_for_edge[,1]))
-    sorted.y <- sort(unique(grid_for_edge[,2]))
-    steps.x <- sorted.x[2:length(sorted.x)] - sorted.x[1:(length(sorted.x) - 1)]
-    steps.y <- sorted.y[2:length(sorted.y)] - sorted.y[1:(length(sorted.y) - 1)]
-    step = min(c(steps.x, steps.y), na.rm = TRUE)
-  }
-  
-  # Split the query into core vs. edge
-  ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
-  query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
-  
-  # Use the neighbor-identifying workhorse to identify points in the grid that
-  # are inside the neighborhoods. Their number is a proxy for neighborhood area.
-  d <- fast_distances_up_to_r(query = query_xy_edge,
-                              reference = grid_for_edge,
-                              radius = radius)
-  
-  # Put all the areas together: initialize with full circles,
-  # then overwrite with the areas calculated for the edge cases:
-  A0 = pi*radius^2
-  A <- rep(A0, nrow(query))
-  A[ceo_query == "edge"] <- pmin(A0,
-                                 tabulate(d$query_i, nbins = nrow(query_xy_edge)) * step^2)
-
-  attr(A, "step") <- step
-  A
-}
-  
-
-```
-
-## Example of code behaviour
-
-This uses real data to show how the code works, the times involved, the size of the outputs, etc. In most practical applications, much of this would be wrapped.
+Note that, except for the first example, the filtering, categorizations, summary metrics, and null expectations, are all outside the functions themselves. It is the responsibility of the user to define these things.
 
 ```{r}
 
@@ -526,6 +475,166 @@ head(data)
 colnames(data)
 summary(data)
 
+```
+
+### Example 1: Ripley's K and Besag's L
+
+Ripley’s K function measures how many neighboring points occur within distance *r*, relative to what is expected under complete spatial randomness. Values above expectation indicate clustering; values below expectation indicate regularity or inhibition. Besag’s L is a variance-stabilized transformation of K, often plotted as L(r) − r, making deviations from randomness easier to interpret.
+
+```{r}
+
+# We use one species as a example
+sp = "PREMON" # Prestoea, the most common palm
+
+# The gold standard is in spatstat packages:
+library(spatstat.geom)
+library(spatstat.explore)
+
+# This is the rectangular observation window:
+
+W <- owin(
+  xrange = round(range(data$gx, na.rm = TRUE)),
+  yrange = round(range(data$gy, na.rm = TRUE))
+)
+
+# Point pattern spatial object for both species;
+# we focus only on the living trees.
+x <- data$gx[data$sp == sp & data$status == "A"]
+y <- data$gy[data$sp == sp & data$status == "A"]
+PPP <- ppp(x = x, y = y, window = W)
+
+# Aggregation at different scales:
+radii <- seq(from = 0, to = 50, by = 0.5)
+K <- Kest(PPP, r = radii, correction = "translate")
+L <- Lest(PPP, r = radii, correction = "translate")
+
+# Results:
+plot(K, . - theo ~ r, main = "Ripley's K: K(r) - Kpois(r)")
+plot(L, . - theo ~ r, main = "Besag's L: L(r) - r")
+
+# With simulation envelopes, only for Besag's L,
+# which is easier to interpret visually:
+L.env <- envelope(PPP, fun = Lest, r = radii, nsim = 199)
+plot(L.env, . - theo ~ r, main = "Global CSR envelope: L(r) - r")
+
+
+```
+
+The analysis above shows some "repulsion" at short distances for the individuals of *Prestoea*. That is: fewer individuals at distances 0-3 m or so than expected by chance. This is not very common... In general tree species tend to be aggregated at most scales. This makes me wonder: What are the species that show "avoidance" (fewer individuals than expected) and at what scales? This is an example on how to get that:
+
+```{r}
+
+# What species, and at what scales, have fewer neighbors than expected?
+# We exclude species with too few individuals:
+min.n = 100
+a <- sort(table(data$sp[data$status == "A"]), decreasing = TRUE)
+spp <- names(which(a >= min.n))
+
+# This is the rectangular observation window:
+W <- owin(
+  xrange = round(range(data$gx, na.rm = TRUE)),
+  yrange = round(range(data$gy, na.rm = TRUE))
+)
+
+# Scales of observation, centered over short distances:
+radii <- seq(from = 0, to = 20, by = 0.2)
+
+# Run loop through species:
+segregations <- NULL
+for(sp in spp)
+{
+  x.sp <- data$gx[data$sp == sp & data$status == "A"]
+  y.sp <- data$gy[data$sp == sp & data$status == "A"]
+  PPP.sp <- ppp(x = x.sp, y = y.sp, window = W)
+  L.sp.env <- envelope(PPP.sp, fun = Lest, r = radii, nsim = 49)
+
+  w <- which(L.sp.env$obs < L.sp.env$lo)
+  if(length(w) > 0)
+  {
+    add <- data.frame(sp = sp, r = L.sp.env$r[w])
+    segregations <- rbind(segregations, add)
+  }
+  print(paste0(which(spp == sp), "/", length(spp)))
+}
+
+# How frequent is it?
+nrow(segregations) # number of scales with significant segregations
+length(radii) * length(spp) # number of scales evaluated
+segregations
+
+# What are the species and scales involved?
+hist(segregations$r)
+table(segregations$sp)
+
+# Etc.
+
+```
+
+### Example 2: Aggregation within species
+
+This example uses the new code to do something similar, but highlighting the flexibility in the definition of boundary (complex) and the abundance/summary metric (outside the functions themselves). It also showcases the default behaviour of some of the functions.
+
+```{r}
+
+library(sf)
+
+# Study aggregation of living Prestoea montana:
+sp = "PREMON"
+query <- na.omit(as.matrix(data[data$sp == sp & data$status == "A", c("gx", "gy")]))
+nrow(query)
+
+# Restrict the analysis to the low-disturbance part of the plot,
+# using a boundary of arbitrary shape:
+low_disturbance_xy <- rbind(
+  c(0,   0),
+  c(320, 0),
+  c(320, 100),
+  c(300, 100),
+  c(300, 120),
+  c(160, 120),
+  c(160, 140),
+  c(140, 140),
+  c(140, 160),
+  c(120, 160),
+  c(120, 180),
+  c(100, 180),
+  c(100, 200),
+  c(80,  200),
+  c(80,  220),
+  c(60,  220),
+  c(60,  240),
+  c(40,  240),
+  c(40,  260),
+  c(0,   260),
+  c(0,   0)
+)
+
+boundary  <- sf::st_sfc(st_polygon(list(low_disturbance_xy)))
+
+plot(query, asp = 1, cex = 0.1)
+plot(boundary, asp = 1, border = "red", lwd = 3, add = TRUE)
+
+# Scales to study? 
+radii <- get_radii(query = query, m = 50, rmax = 70, case = "circles")
+
+# Calculate the areas of the neighborhoods:
+A <- get_area_of_neighborhoods(query = query,
+                          boundary = boundary,
+                          radii = radii,
+                          case = "circles",
+                          tol = 0.01)
+
+str(A)
+
+plot(A$scales[,c("radius", "grid_step")])
+
+mod = lm(grid_step ~ ., data = as.data.frame(A$scales))
+summary(mod)
+
+
+```
+
+```{r}
 
 if(FALSE)
 {
@@ -622,6 +731,37 @@ if(FALSE)
 }
 
 }
+
+```
+
+```{r}
+
+# Simulations to explore error of grids within circles
+# It assumes circle of radius = 1, centered at {0, 0}
+
+steps <- seq(from = 0.001, to = 1/2, length.out = 50)
+nsim = 99
+
+errors <- sapply(steps, function(step) {
+  replicate(nsim, {
+    s <- seq(from = -(1 + 2*step), to = +(1 + 2*step), by = step)
+    grid <- expand.grid(x = s, y = s)
+    grid[,1] <- grid[,1] + runif(n = 1, min = -step, max = +step)
+    grid[,2] <- grid[,2] + runif(n = 1, min = -step, max = +step)
+    dx <- abs(grid[,1])
+    dy <- abs(grid[,2])
+    d <- sqrt(dx^2 + dy^2)
+    n = sum(d <= 1)
+    error = abs((n * step^2) - 1)
+    error
+  })
+})
+
+avg.errors <- apply(errors, 2, mean)
+plot(steps, avg.errors)
+abline(h = 0.01)
+
+
 ```
 
 ## Example of a practical application
