@@ -5,18 +5,37 @@ date: today
 format:
   pdf:
     code-overflow: wrap
+    toc: true
+    toc-depth: 2
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
 editor: visual
 ---
 
 ## Introduction
 
+This is updated code to calculate abundances of neighbors at different scales, in circles and rings. It also contains instructions to compare observations with expectations, including Ripley's K and Besag's L.
+
 Spatial neighborhood analyses are used to quantify how organisms, stems, species, functional groups, or other ecological units are arranged around focal individuals or locations. In forest ecology, these analyses are commonly used to evaluate local crowding, conspecific and heterospecific aggregation, spatial segregation, density dependence, habitat association, biomass accumulation around focal trees, and departures from spatial null expectations. Classical summaries include neighbor counts or densities within circles or rings, Ripley’s K, and transformations such as Besag’s L.\
 \
-This tutorial introduces updated code for calculating neighborhood summaries at multiple spatial scales. The workflow separates several operations that were previously bundled together: identifying neighbors within a distance threshold, defining focal and reference classes, handling circles and annuli, estimating available neighborhood area near valid boundaries (of arbitrary shape, but typically the plot limits), summarizing abundance as counts of points or other metrics, and comparing observations with null expectations. This separation is intentional. It makes the calculations easier to inspect, modify, test, and extend.\
+This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. The workflow separates several operations that were previously bundled together: identifying neighbors within a distance threshold, defining focal and reference classes, handling circles and annuli, estimating available neighborhood area near valid boundaries (of arbitrary shape, but typically the rectangular plot limits), summarizing abundance as counts of points or other metrics, and comparing observations with null expectations. This separation is intentional. \
 \
-Relative to the previous CTFS functions, the updated code is designed to be more modular and less tied to specific assumptions about rectangular plots, point classes, or abundance metrics. Focal points, neighbor points, filters, spatial boundaries, abundance metrics, and null models are supplied independently and explicitly by the user. Edge correction is handled for boundaries of arbitrary shape, using numerical area estimates. The same neighbor-identification step can support standard count-based analyses, biomass or basal-area summaries, ring-based calculations, Ripley-type summaries, and simulation-based null models. The practical trade-off is that the workflow gives the user more flexibility, but also more responsibility to define biologically meaningful focal classes, reference sets, spatial windows, metrics, and null expectations. The approach taken is very fast but demands a lot of memory, so this can be a practical limitation for large datasets too.
+Relative to the previous CTFS functions, the updated code is designed to be less tied to specific assumptions about rectangular plots, point classes, or abundance metrics. An important design criterion is to leave outside the functions everything that may require high flexibility by the potential users:
 
-This is updated code to calculate abundances of neighbors at different scales, in circles and rings. It also contains instructions to compare observations with expectations, including Ripley's K and Besag's L.
+-   filters / subseting routines
+-   aggregating or summarizing functions
+-   null expectations
+
+Below, there are examples on how to implement these things in a script.
+
+Edge effects can be important. Handling boundaries and calculating areas is *way* more difficult than it seems. Much of the code below was developed to handle irregular boundaries, thus make the code as general as possible. It does not require rectangular boundaries and it does not use analytical corrections for edge effects. It directly uses a dense grid that count "points inside" to estimate the areas of irregular shapes (neighborhoods near possibly irregular boundaries). The density of the grid is adaptive, depending on the error tolerance. The functions include useful defaults, so you should be fine if you have a regular plot and just pass {x, y} coordinates of all the trees.
+
+The code takes responsibility for the boundary- and area-related difficult calculations and for the *very fast* identification of pairs of neighbors. Filtering and summarizing (e.g. counting neighbors, calculating crowding indexes, etc.) will be responsibility of the user. Below there are useful templates or instructions.
+
+The approach taken is very fast but demands a lot of memory, so this can be a practical limitation for large datasets. For the moment, I will wait for users' feedback.
 
 ## List of old and new functions
 
@@ -83,23 +102,6 @@ fast_distances_up_to_r <- function(query, reference = NULL, radius, approx = 0) 
   )[dist <= radius]
 }
 
-
-# Check behaviour
-# It is incredibly fast but fills memory: it returns 1-10M rows per second.
-
-n = 5000 # 100-300 k points for hard cases, big ForestGEO plots
-radius = 20 # something realistic, rarely > 100
-p_focal = 0.05 # proportion of the forest in the focal class
-
-xy <- cbind(x = runif(n, 0, 500), y = runif(n, 0, 500))
-focal_xy <- xy[1:round(p_focal*n),]
-reference_xy <- xy
-
-system.time(d <- fast_distances_up_to_r(focal_xy, reference_xy, radius = radius, approx = 0))
-dim(d)
-head(d)
-
-
 ```
 
 Before other functions, let's talk about boundaries. Edge effects are important: the available area for neighborhoods is smaller near the boundary than far from it. Here we try to make the code as general as possible, and a major improvement would be to allow boundaries of arbitrary shape. The most common case, however, would be the rectangular boundary. In the updated functions, the user can define boundaries as:
@@ -107,90 +109,27 @@ Before other functions, let's talk about boundaries. Edge effects are important:
 -   sfc polygon or multipolygon object, for boundaries of any shape. Typical parameter name: "boundary"
 -   as rectangular windows, expressed as a vector of (xmin, ymin, xmax, ymax) plot limits. Typical parameter name: "window"
 
-If the user is not explicit, the functions will guess the boundary by creating a complex boundary around the set of {x, y} points. For that, they will use the following auxiliary function. It can be handy if one has trees classified into habitats and want to restrict the analyses to within particular habitats, for example. It is a proper default but it will take time to compute, so in general it will always be better to know and define the boundary beforehand, before entering long costly loops, etc.
+If the user is not explicit, the functions will guess the boundary by creating a complex boundary around the set of {x, y} points. It can be handy if one has trees classified into habitats and want to restrict the analyses to within particular habitats, for example. This is a proper default but it will take time to compute, so in general it will always be better to know and define the boundary beforehand, before entering costly loops, etc.
 
 ```{r}
 
-# Auxiliary function to estimate a (complex) boundary around a given set of poitns:
-boundary_around_xy <- function(xy, q = 5) {
-  xy <- as.matrix(xy)
-  stopifnot(ncol(xy) == 2L, nrow(xy) >= 2L)
-  storage.mode(xy) <- "double"
+get_boundary <- function(boundary = NULL, window = NULL, xy = NULL, q = 5)
+{
+  # Minimal for spatial objects
+  if (!is.null(boundary)) {
+    if (inherits(boundary, "sfg")) {
+      boundary <- sf::st_sfc(boundary)
+    } else {
+      boundary <- sf::st_geometry(boundary)
+    }
+  }
 
-  # Define the buffer as a factor "q" of median distance to nearest neighbor.
-  # Higher: more connected boundaries, few holes
-  # Lower: more disconnedted clusters and polygons
-  # Very low: boundaries around each point, basically: costly and useless
-  knn <- FNN::get.knn(xy, k = 1)
-  buffer = q * median(knn$nn.dist[, 1], na.rm = TRUE)
-
-  # Before entering costly polygon operations,
-  # thin the input cloud of points:
-  delta = buffer / 10 # used to thin the points and simplify the boundary later
-  cell_x <- floor(xy[, 1] / delta)
-  cell_y <- floor(xy[, 2] / delta)
-  cell_id <- paste(cell_x, cell_y, sep = "_")
-  xy <- xy[!duplicated(cell_id), , drop = FALSE]
-  
-  # Do the polygon operations
-  pts <- sf::st_as_sf(
-    as.data.frame(xy),
-    coords = 1:2)
-  
-  boundary <- sf::st_buffer(pts, dist = buffer + delta)
-  boundary <- sf::st_union(boundary)
-  boundary <- sf::st_simplify(boundary, dTolerance = delta, preserveTopology = TRUE)
-  boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_collection_extract(boundary, "POLYGON")
-  boundary
-}
-
-
-# Check:
-system.time(b <- boundary_around_xy(xy)) # this will take some time for high N
-str(b)
-
-plot(b, col = NA, border = "black", xlim = c(0, 500), ylim = c(0, 500))
-plot(b, col = NA, border = "black", xlim = c(-15, 50), ylim = c(-15, 50))
-
-```
-
-Now, another auxiliary function to split a given set of points into "out", "edge" and "core", given a boundary and a distance threshold. This has a couple of useful applications in this workflow. It takes advantage of the fast calculation of distances (function above).
-
-```{r}
-
-# Clasify points based on a given boundary.
-# The boundary can be provided as a sfc_POLYGON of arbitrary shape
-# or a rectangular window (xmin, ymin, xmax, ymax). If it is not
-# provided it will be assumed rectangular around the points provided.
-
-core_vs_edge <- function(xy,
-                         boundary = NULL,
-                         window = NULL,
-                         radius,
-                         assume_inside = FALSE,
-                         approx = 0) {
-  
-  # Parameters:
-  # xy: a matrix or data.frame with x and y coordinates in 1st and 2nd column respectively
-  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
-  # window: alternative to "boundary" for rectangular boundaries, as c(xmin, ymin, xmax, ymax)
-  # radius: the distance to the boundary that separates core from edge points
-  # assume_inside: will accelerate if we know all xy points are inside the boundary
-  # approx: precission parameter to be passed to dbscan::frNN
-
-  # Confirm 2-columns matrix for the point coordinates
-  xy <- as.matrix(xy)
-  stopifnot(ncol(xy) == 2L)
-  storage.mode(xy) <- "double"
-  
-  # Confirm or guess boundary
-  if(is.null(boundary) & !is.null(window)) # from window to proper sf object
-  {
-    xmin = window[1]
-    ymin = window[2]
-    xmax = window[3]
-    ymax = window[4]
+  # From "window" to proper sf object
+  if (is.null(boundary) && !is.null(window)) {
+    xmin <- window[1]
+    ymin <- window[2]
+    xmax <- window[3]
+    ymax <- window[4]
 
     boundary <- sf::st_sfc(
       sf::st_polygon(list(rbind(
@@ -202,28 +141,93 @@ core_vs_edge <- function(xy,
       )))
     )
   }
-  
-  if(is.null(boundary) & is.null(window)) # guess the boundary
-  {
-    boundary <- boundary_around_xy(xy) # inherits default "q" parameter
+
+  # If just the points are provided, guess the boundary
+  if (is.null(boundary) && is.null(window)) {
+    
+    xy <- as.matrix(xy)
+    stopifnot(ncol(xy) == 2L, nrow(xy) >= 2L)
+    storage.mode(xy) <- "double"
+
+    knn <- FNN::get.knn(xy, k = 1)
+    buffer <- q * median(knn$nn.dist[, 1], na.rm = TRUE)
+    delta <- buffer / 10
+
+    cell_x <- floor(xy[, 1] / delta)
+    cell_y <- floor(xy[, 2] / delta)
+    cell_id <- paste(cell_x, cell_y, sep = "_")
+    xy <- xy[!duplicated(cell_id), , drop = FALSE]
+
+    pts <- sf::st_as_sf(
+      as.data.frame(xy),
+      coords = 1:2
+    )
+
+    boundary <- sf::st_buffer(pts, dist = buffer + delta)
+    boundary <- sf::st_union(boundary)
+    boundary <- sf::st_simplify(boundary, dTolerance = delta, preserveTopology = TRUE)
   }
-  
+
+  if (is.null(boundary)) {
+    stop("Provide one of: boundary, window, or xy.")
+  }
+
+  # Final polygon cleanup
   boundary <- sf::st_geometry(boundary)
   boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_union(boundary)
+  boundary <- sf::st_collection_extract(boundary, "POLYGON")
 
-  # Optional but safer unless you already know all points are inside.
-  if (assume_inside) {
-    inside <- rep(TRUE, nrow(xy))
-  } else {
-    pts <- sf::st_as_sf(
+  if (length(boundary) == 0 || all(sf::st_is_empty(boundary))) {
+    stop("Boundary does not contain polygon geometry.")
+  }
+
+  boundary <- sf::st_union(boundary)
+  boundary <- sf::st_make_valid(boundary)
+  boundary
+}
+
+```
+
+Now, a useful auxiliary function to split a given set of points into "out", "edge" and "core", given a boundary and a distance threshold. It takes advantage of the fast calculation of distances (function above). This function has, at least, these two applications in the workflow:
+
+-   for the numerical estimates of areas of irregular shapes, it focuses on the points and grid that are near the boundary, using the formula for the circle area for points far from the boundary.
+-   for the *error estimate* in those numerical estimates of area, it focuses on the core points instead: it makes the same calculation twice, and compares the known area of circles with the area derived from the grid.
+
+```{r}
+
+# Clasify points based on a given boundary.
+# The boundary can be provided as a sfc_POLYGON of arbitrary shape
+# or a rectangular window (xmin, ymin, xmax, ymax). If it is not
+# provided it will be assumed rectangular around the points provided.
+
+core_vs_edge <- function(xy,
+                         boundary = NULL,
+                         window = NULL,
+                         radius) {
+  
+  # Parameters:
+  # xy: a matrix or data.frame with x and y coordinates in 1st and 2nd column respectively
+  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
+  # window: alternative to "boundary" for rectangular boundaries, as c(xmin, ymin, xmax, ymax)
+  # radius: the distance to the boundary that separates core from edge points
+  # assume_inside: will accelerate if we know all xy points are inside the boundary
+
+  # Confirm 2-columns matrix for the point coordinates
+  xy <- as.matrix(xy)
+  stopifnot(ncol(xy) == 2L)
+  storage.mode(xy) <- "double"
+  
+  # Confirm or guess boundary:
+  boundary <- get_boundary(boundary = boundary, window = window, xy = xy)
+
+  # Determine which points are inside:
+  pts <- sf::st_as_sf(
       as.data.frame(xy),
       coords = 1:2,
       crs = sf::st_crs(boundary),
       remove = FALSE
     )
-    inside <- lengths(sf::st_intersects(pts, boundary)) > 0
-  }
+  inside <- lengths(sf::st_intersects(pts, boundary)) > 0
 
   # Densify boundary once, then use fast_distances_up_to_r()
   boundary <- sf::st_boundary(boundary)
@@ -240,10 +244,9 @@ core_vs_edge <- function(xy,
     d <- fast_distances_up_to_r(
       query = xy[ii, , drop = FALSE],
       reference = boundary_xy,
-      radius = 1.05 * radius, # small safety margin
-      approx = approx
+      radius = 1.05 * radius # small safety margin
     )
-
+    
     near[ii[unique(d$query_i)]] <- TRUE
   }
 
@@ -254,6 +257,302 @@ core_vs_edge <- function(xy,
   location[inside & !near] <- "core"
   location
 }
+
+
+```
+
+The neighborhood analyses are scale-explicit, looking at circles or rings of increasing sizes. The user may not have a predefined set of scales at which to measure the metrics of interest. This function implements useful defaults, given a set of query points:
+
+```{r}
+get_radii <- function(query, rmax = NA, m = 512, case = c("circles", "rings"))
+{
+  # Default case: circles
+  if(length(case) != 1) case = "circles"
+    
+  # Implements same defaults as Ripley's K function in spatstat
+  if(is.na(rmax))
+  {
+    a = diff(range(query[,1], na.rm = TRUE))
+    b = diff(range(query[,2], na.rm = TRUE))
+    lambda = nrow(query) / (a * b)
+    rmax = min(c(a/4, b/4, sqrt(1000 / (pi * lambda))))
+  }
+    
+  # Default for circles: simple equal increments in radii
+  radii.c <- seq(from = rmax/m, to = rmax, by = rmax/m)
+    
+  # Default for rings: rings of equal area
+  # (It returns the outer radii: the inner radii is 0 and the same sequence but shifted)
+  radii.r <- rmax*sqrt((1:m)/m)
+  
+  # Output
+  if(case == "circles") radii <- radii.c
+  if(case == "rings")   radii <- radii.r
+  radii
+}
+
+
+```
+
+The fundamental piece of information to control for edge effects are the areas of the neighborhoods at different scales, both for the "core" points (easy) and the "edge" points (difficult). The code can handle irregular shapes, estimating areas numerically within a tolerance to error, defined by the user. To do so, it creates dense grids (but not excessively dense) within the valid boundary, and then counts points in the grid within the provided radii. The function below integrates useful defaults and rules of thumb.
+
+```{r}
+get_area_of_neighborhoods <- function(query = NULL,
+                                      boundary = NULL,
+                                      window = NULL,
+                                      radii = NULL,
+                                      rmax = NA,
+                                      case = c("circles", "rings"),
+                                      tol = 0.01)
+{
+  
+  # query: The set of focal or query points.
+  #        2-columns table with x and y coordinates in 1st and 2nd column, respectively.
+  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
+  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
+  # radii: defines the scales of the circular neighborhoods.
+  # rmax: maximum radius for neighborhoods, if radii not provided
+  # m: number of scales to evaluate, if radii not provided
+  # case: circular vs. ring-shaped neighborhoods: will affect area and default radii
+  # tol: the accepted error in area, 1% by default.
+  
+  # Default case: circles
+  if(length(case) != 1) case = "circles"
+  
+  # Confirm or guess boundary
+  boundary <- get_boundary(boundary = boundary, window = window, xy = query)
+  bb <- sf::st_bbox(boundary)
+  xmin = bb["xmin"]
+  xmax = bb["xmax"]
+  ymin = bb["ymin"]
+  ymax = bb["ymax"]
+  
+  # Define radii, if the user has not provided them yet:
+  if(is.null(radii))
+    radii <- get_radii(query = query, rmax = rmax, m = m, case = case)
+    
+  # The areas of neighborhoods at different scales will 
+  # repeat similar calculations, and will use different
+  # grids for each scale. The alternative is to commit
+  # to a very dense grid with low error in the worst case
+  # scenario, but costly calculations when it is not really
+  # needed to achieve a given tolerance. 
+  
+  # This runs a loop across scales. Before the loop,
+  # it creates empty objects to store results.
+  areas <- matrix(NA, nrow = nrow(query), ncol = m) # point x scale matrix
+  steps <- rep(NA, m)
+  errors <- rep(NA, m)
+  for(i in 1:m)
+  {
+    # The target scale
+    radius = radii[i]
+    A0 = pi*radius^2
+    
+    # Core vs. edge points in the query:
+    ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
+
+    # Initialize coarse grid, then refine until error < tolerance.
+    # This uses the core points in the query.
+    step = min(c((xmax - xmin)/3, (ymax - ymin)/3))
+    error = 999
+    while(error > tol)
+    {
+      step = step / 2 # smaller step
+      grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
+                          y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
+      pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
+      inside <- lengths(sf::st_intersects(pts, boundary)) > 0
+      grid <- grid[inside,, drop = FALSE]
+      
+      # Do the estimate using the core points only:
+      d.test <- fast_distances_up_to_r(query = query[ceo_query == "core",], 
+                                       reference = grid, 
+                                       radius = radius)
+      
+      A.estimated <- pmin(A0,
+                          tabulate(d.test$query_i, nbins = sum(ceo_query == "core")) * step^2)
+      
+      error = mean(abs(as.numeric(A.estimated) - A0) / A0)
+    }
+    
+    # The error just calculated applies to the core area, but,
+    # as a general rule, error will be larger near the boundary.
+    # So, to reach the same error near the boundary, we need
+    # a greater grid resolution. This is a conservative heuristic
+    # derived from Steiner / parallel-body argument:
+    K = 1 + 4 / pi
+    step = step / K
+  
+    # For reference, other rules of thumb or analytical results.
+    #step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
+    #step = radius * (2 * tol)^(2/3) # to constrain average error
+    
+    # With the updated step, we address the calculation of areas.
+    # This focuses on the edge points in the query.
+    # Note the 2r distance needed to cover the entire neighborhood of query 
+    # points that are at r distance from the edge.
+    
+    grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
+                          y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
+    
+    pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
+    inside <- lengths(sf::st_intersects(pts, boundary)) > 0
+    grid <- grid[inside,, drop = FALSE]
+    
+    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
+    grid_edge <- grid[ceo_grid == "edge",,drop = FALSE]
+    
+    # Use the neighbor-identifying workhorse to identify points in the grid that
+    # are inside the neighborhoods. Their number is a proxy for neighborhood area.
+    query_edge <- query[ceo_query == "edge",,drop = FALSE]
+    d <- fast_distances_up_to_r(query = query_edge,
+                                reference = grid_edge,
+                                radius = radius)
+    
+    # Put all the areas together: initialize with full circles,
+    # then overwrite with the areas calculated for the edge cases:
+    A <- rep(A0, nrow(query))
+    A[ceo_query == "edge"] <- pmin(A0,
+                                   tabulate(d$query_i, nbins = nrow(query_edge)) * step^2)
+    areas[,i] <- A
+    print(paste0(i, "/", m))
+  }
+  
+}
+
+```
+
+```{r}
+
+
+ 
+  
+  
+  
+
+
+```
+
+```{r}
+
+get_area_of_neighborhoods <- function(query = NULL,
+                                      boundary = NULL,
+                                      window = NULL,
+                                      radius = NULL,
+                                      tol = 0.01,
+                                      grid_for_edge = NULL)
+
+{
+  # Parameters
+  # query: The set of focal or query points, around which we will want to estimate
+  #     available neighborhood areas.
+  #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
+  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
+  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
+  # radius: defines the scale of the circular neighborhoods.
+  # tol: the accepted error in area, 1% by default --> will define grid resolution,
+  #      if and only if the grid_for_edge is not provided.
+  
+  
+  
+  # If a grid is not provided, make it here.
+  # In most practical applications, we probably want this to be calculated
+  # outside, so we avoid repetitions during loops and so on.
+  step = NA
+  if(is.null(grid_for_edge))
+  {
+    errors.etc <- guess_sufficient_grid_resolution(xy = query,
+                                               boundary = boundary,
+                                               radius = radius,
+                                               tol = tol)
+
+    step = errors.etc["step"]
+    attr(step, "error") <- errors.etc["error"]
+    grid <- make_grid_inside_boundary(boundary, step = step)
+    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
+    grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
+  }
+  
+  # Get the "step" from the grid, which is the pixel area unit
+  if(is.na(step))
+  {
+    sorted.x <- sort(unique(grid_for_edge[,1]))
+    sorted.y <- sort(unique(grid_for_edge[,2]))
+    steps.x <- sorted.x[2:length(sorted.x)] - sorted.x[1:(length(sorted.x) - 1)]
+    steps.y <- sorted.y[2:length(sorted.y)] - sorted.y[1:(length(sorted.y) - 1)]
+    step = min(c(steps.x, steps.y), na.rm = TRUE)
+  }
+  
+  # Split the query into core vs. edge
+  ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
+  query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
+  
+  # Use the neighbor-identifying workhorse to identify points in the grid that
+  # are inside the neighborhoods. Their number is a proxy for neighborhood area.
+  d <- fast_distances_up_to_r(query = query_xy_edge,
+                              reference = grid_for_edge,
+                              radius = radius)
+  
+  # Put all the areas together: initialize with full circles,
+  # then overwrite with the areas calculated for the edge cases:
+  A0 = pi*radius^2
+  A <- rep(A0, nrow(query))
+  A[ceo_query == "edge"] <- pmin(A0,
+                                 tabulate(d$query_i, nbins = nrow(query_xy_edge)) * step^2)
+
+  attr(A, "step") <- step
+  A
+}
+  
+
+```
+
+## Example of code behaviour
+
+This uses real data to show how the code works, the times involved, the size of the outputs, etc. In most practical applications, much of this would be wrapped.
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Load data from the Luquillo forest plot, public domain, as an example
+load(paste0(path, "data_examples/luquillo.full2.rdata"))
+data <- luquillo.full2
+dim(data)
+head(data)
+colnames(data)
+summary(data)
+
+
+if(FALSE)
+{
+
+
+
+# Check behaviour
+# It is incredibly fast but fills memory: it returns 1-10M rows per second.
+
+n = 5000 # 100-300 k points for hard cases, big ForestGEO plots
+radius = 20 # something realistic, rarely > 100
+p_focal = 0.05 # proportion of the forest in the focal class
+
+xy <- cbind(x = runif(n, 0, 500), y = runif(n, 0, 500))
+focal_xy <- xy[1:round(p_focal*n),]
+reference_xy <- xy
+
+system.time(d <- fast_distances_up_to_r(focal_xy, reference_xy, radius = radius, approx = 0))
+dim(d)
+head(d)
+
+# Check:
+system.time(b <- boundary_around_xy(xy)) # this will take some time for high N
+str(b)
+
+plot(b, col = NA, border = "black", xlim = c(0, 500), ylim = c(0, 500))
+plot(b, col = NA, border = "black", xlim = c(-15, 50), ylim = c(-15, 50))
 
 
 # Example with a complex boundary:
@@ -301,273 +600,6 @@ COL[loc == "core"] <- "black"
 plot(xy$x, xy$y, cex = 0.1, col = COL, asp = 1)
 
 
-```
-
-Now we look for smart ways of creating dense (but not excessively dense) grids that can be good descriptions of the shapes at the edges: intersections of circles and (possibly complex) boundaries. It is better to separate this, because in practice the user will be running loops inside loops, and we want to keep these calculations outside the costly loops.
-
-```{r}
-
-# Function to make a regular grid, of a given step (~resolution), within
-# a given boundary. If the boundary is not provided, it will be guessed
-# from a reference "xy" dataset.
-make_grid_inside_boundary <- function(boundary = NULL, window = NULL, xy = NULL, step = 999)
-{
-  # Parameters:
-  # boundary: a sfc polygon or multipolygon object, for boundaries of any shape.
-  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
-  # xy: only if boundaries are not provided, they will be estimated from a reference dataset.
-  #     Must be a 2-columns table with x and y in 1st and 2nd column respectively.
-  # step: the parameter that controls the resolution of the grid.
-
-  # Confirm or guess boundary
-  if(is.null(boundary) & !is.null(window)) # from window to proper sf object
-  {
-    xmin = window[1]
-    ymin = window[2]
-    xmax = window[3]
-    ymax = window[4]
-
-    boundary <- sf::st_sfc(
-      sf::st_polygon(list(rbind(
-        c(xmin, ymin),
-        c(xmax, ymin),
-        c(xmax, ymax),
-        c(xmin, ymax),
-        c(xmin, ymin)
-      )))
-    )
-  }
-  
-  if(is.null(boundary) & is.null(window)) # guess the boundary
-  {
-    xy <- as.matrix(xy)
-    stopifnot(ncol(xy) == 2L)
-    storage.mode(xy) <- "double"
-    boundary <- boundary_around_xy(xy) # inherits default "q" parameter
-  }
-  
-  boundary <- sf::st_geometry(boundary)
-  boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_union(boundary)
-  
-  # The grid cannot go beyond the boundaries, so the
-  # bounding box of the boundary is the starting point.
-  bb <- sf::st_bbox(boundary)
-
-  grid <- expand.grid(x = seq(from = bb["xmin"] - step, to = bb["xmax"] + step, by = step),
-                    y = seq(from = bb["ymin"] - step, to = bb["ymax"] + step, by = step))
-
-  boundary <- sf::st_geometry(boundary)
-  boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_union(boundary)
-  pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
-  inside <- lengths(sf::st_intersects(pts, boundary)) > 0
-  grid <- grid[inside,, drop = FALSE]
-  grid
-}
-
-
-# The valid resolution of the grid is not solvable with a given formula,
-# as it is a form of circle + grid intersection, difficult geometrical problem.
-# But it can be approached numerically, in a relatively easy way, using
-# the empirical data. The idea is: calculate areas of circles for "core"
-# points (that is, not affected by edge effects), and compare that with
-# the known area of circles of a given radius. Once that is known,
-# use a heuristic for a smaller step: that should be a conservative estimate
-# that will constrain error in the corners in pseudo-worst-case scenarios.
-# The user defines a tolerance: the step size derives from that,
-# the radius of the circles, and the distribution of the empirical points.
-
-guess_sufficient_grid_resolution <- function(query, boundary, radius, tol = 0.01)
-{
-  # query: The set of focal or query points, around which we will want to estimate
-  #     available neighborhood areas.
-  #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
-  # radius: defines the scale of the circular neighborhoods.
-  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
-  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
-  # tol: the accepted error in area, 1% by default.
-  
-   # Confirm or guess boundary
-  if(is.null(boundary) & !is.null(window)) # from window to proper sf object
-  {
-    xmin = window[1]
-    ymin = window[2]
-    xmax = window[3]
-    ymax = window[4]
-
-    boundary <- sf::st_sfc(
-      sf::st_polygon(list(rbind(
-        c(xmin, ymin),
-        c(xmax, ymin),
-        c(xmax, ymax),
-        c(xmin, ymax),
-        c(xmin, ymin)
-      )))
-    )
-  }
-  
-  if(is.null(boundary) & is.null(window)) # guess the boundary
-  {
-    query <- as.matrix(query)
-    stopifnot(ncol(query) == 2L)
-    storage.mode(query) <- "double"
-    boundary <- boundary_around_xy(query) # inherits default "q" parameter
-  }
-  
-  boundary <- sf::st_geometry(boundary)
-  boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_union(boundary)
-  
-  
-  # To measure error empirically, test with the subset of
-  # the query that is not affected by edge effects:
-  
-  # Use a coarse step to initialize
-  bb <- sf::st_bbox(boundary)
-  step = min(c((bb["ymax"] - bb["ymin"]) / 3,
-        (bb["xmax"] - bb["xmin"]) / 3))
-  
-  # Iterate until we reach the desired tolerance:
-  error = 999
-  while(error > tol)
-  {
-    step = step / 2 # smaller step
-    grid <- make_grid_inside_boundary(boundary = boundary, step = step)
-    
-    # Do the estimate using the core points only:
-    core <- which(core_vs_edge(xy = query, boundary = boundary, radius = radius) == "core")
-    d.test <- fast_distances_up_to_r(query = query[core,], 
-                                     reference = grid, 
-                                     radius = radius)
-    A.estimated <- tabulate(d.test$query_i, nbins = length(core)) * step^2 
-    A.true = pi*radius^2
-    error = mean(abs(as.numeric(A.estimated) - A.true) / A.true)
-    #print(error)
-  }
-  
-  # As a general rule, error will be larger near the boundary,
-  # and greater if the boundary is very complicated. 
-  # So, to apply this, we need greater resolution (smaller steps).
-  # How smaller? Well... there is not a neat answer for that.
-  # But ChatGPT says that this is a useful conservative heuristic,
-  # derived from Steiner / parallel-body argument:
-  K = 1 + 4 / pi
-  suggested_step = step / K
-  # floor(pi*(radius^2)/(suggested_step^2)) # points per circle
-  
-  # There are other rules of thumb and analytical results for other cases:
-  conservative_step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
-  less_conservative_step = radius * (2 * tol)^(2/3) # to constrain average error
-  
-  # The output with everything of value:
-  c(suggested_step = suggested_step,
-    conservative_step = conservative_step,
-    less_conservative_step = less_conservative_step,
-    radius = radius, tol = tol, error = error)
-}
-
-```
-
-To calculate the corrected area of the neighborhoods, while saving computation time, we have to combine (1) the standard formula for the circle area for the core focal points, and (2) the grid-derived estimates near the edge. For this second point, we cross: (a) the subset of focal points closer than R to the boundary, and (b) the subset of grid points closer than 2R to the boundary, being R the radius of the scale being evaluated.
-
-```{r}
-
-get_area_of_neighborhoods <- function(query = NULL,
-                                      boundary = NULL,
-                                      window = NULL,
-                                      radius = NULL,
-                                      tol = 0.01,
-                                      grid_for_edge = NULL)
-
-{
-  # Parameters
-  # query: The set of focal or query points, around which we will want to estimate
-  #     available neighborhood areas.
-  #     2-columns table with x and y coordinates in 1st and 2nd column, respectively.
-  # boundary: boundary defined as a sfc_POLYGON object, for boundaries of any shape
-  # window: rectangular, alternative to "boundary", as c(xmin, ymin, xmax, ymax)
-  # radius: defines the scale of the circular neighborhoods.
-  # tol: the accepted error in area, 1% by default --> will define grid resolution,
-  #      if and only if the grid_for_edge is not provided.
-  
-  # Confirm or guess boundary
-  if(is.null(boundary) & !is.null(window)) # from window to proper sf object
-  {
-    xmin = window[1]
-    ymin = window[2]
-    xmax = window[3]
-    ymax = window[4]
-
-    boundary <- sf::st_sfc(
-      sf::st_polygon(list(rbind(
-        c(xmin, ymin),
-        c(xmax, ymin),
-        c(xmax, ymax),
-        c(xmin, ymax),
-        c(xmin, ymin)
-      )))
-    )
-  }
-  
-  if(is.null(boundary) & is.null(window)) # guess the boundary
-  {
-    xy <- as.matrix(xy)
-    stopifnot(ncol(xy) == 2L)
-    storage.mode(xy) <- "double"
-    boundary <- boundary_around_xy(xy) # inherits default "q" parameter
-  }
-  
-  boundary <- sf::st_geometry(boundary)
-  boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_union(boundary)
-  
-  # If a grid is not provided, make it here.
-  # In most practical applications, we probably want this to be calculated
-  # outside, so we avoid repetitions during loops and so on.
-  step = NA
-  if(is.null(grid_for_edge))
-  {
-    errors.etc <- guess_sufficient_grid_resolution(xy = query,
-                                               boundary = boundary,
-                                               radius = radius,
-                                               tol = tol)
-
-    step = errors.etc["suggested_step"]
-    attr(step, "error") <- errors.etc["error"]
-    grid <- make_grid_inside_boundary(boundary, step = step)
-    ceo_grid  <- core_vs_edge(xy = grid, boundary = boundary, radius = 2*radius)
-    grid_for_edge <- grid[ceo_grid == "edge",,drop = FALSE]
-  }
-  
-  # Get the "step" from the grid, which is the pixel area unit
-  if(is.na(step))
-  {
-    sorted.x <- sort(unique(grid_for_edge[,1]))
-    sorted.y <- sort(unique(grid_for_edge[,2]))
-    steps.x <- sorted.x[2:length(sorted.x)] - sorted.x[1:(length(sorted.x) - 1)]
-    steps.y <- sorted.y[2:length(sorted.y)] - sorted.y[1:(length(sorted.y) - 1)]
-    step = min(c(steps.x, steps.y), na.rm = TRUE)
-  }
-  
-  # Split the query into core vs. edge
-  ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
-  query_xy_edge <- query_xy[ceo_query == "edge",,drop = FALSE]
-  
-  # Use the neighbor-identifying workhorse to identify points in the grid that
-  # are inside the neighborhoods. Their number is a proxy for neighborhood area.
-  d <- fast_distances_up_to_r(query = query_xy_edge,
-                              reference = grid_for_edge,
-                              radius = radius)
-  
-  # Put all the areas together: initialize with full circles,
-  # then overwrite with the areas calculated for the edge cases:
-  A <- rep(pi*radius^2, nrow(query))
-  A[ceo_query == "edge"] <- tabulate(d$query_i, nbins = nrow(query_xy_edge)) * step^2
-  attr(A, "step") <- step
-  A
-}
-  
 
 #plot(grid_for_edge, cex = 0.1, asp = 1)
 
@@ -589,9 +621,34 @@ if(FALSE)
   hist(neighbors_per_area)
 }
 
+}
 ```
 
-## Worked example
+## Example of a practical application
+
+This is an example on how to put things together. As you can see, these are things that need to be defined outside the functions:
+
+-   filters or classes: pay attention to the order of nested loops, removing "dead" or "prior" trees, unknown coordinates, unknown species, etc.
+-   summarizing metrics: pay attention to units, possible weighting by distance, express in a per-area basis, etc.
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Load data from the Luquillo forest plot, public domain, as an example
+load(paste0(path, "data_examples/luquillo.full2.rdata"))
+data <- luquillo.full2
+dim(data)
+head(data)
+colnames(data)
+summary(data)
+
+# 
+
+
+```
 
 ## The ring case
 

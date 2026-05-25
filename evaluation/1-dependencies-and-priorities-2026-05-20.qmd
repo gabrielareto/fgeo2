@@ -5,6 +5,13 @@ date: today
 format:
   pdf:
     code-overflow: wrap
+    toc: true
+    toc-depth: 2
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
 editor: visual
 ---
 
@@ -38,13 +45,22 @@ This chunk of code will source all the scripts, something similar to the old "st
 
 ```{r}
 
-f1 <- list.files(paste0(path, "01_utilities/R/new/"), full.names = TRUE)
-f2 <- list.files(paste0(path, "02_biomass/R/new/"), full.names = TRUE)
-f3 <- list.files(paste0(path, "03_spatial/R/new/"), full.names = TRUE)
-f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"), full.names = TRUE)
-f5 <- list.files(paste0(path, "05_demography_growth/R/new/"), full.names = TRUE)
-f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"), full.names = TRUE)
-f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"), full.names = TRUE)
+# Source the R scripts
+f1 <- list.files(paste0(path, "01_utilities/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f2 <- list.files(paste0(path, "02_biomass/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f3 <- list.files(paste0(path, "03_spatial/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f5 <- list.files(paste0(path, "05_demography_growth/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+
 ff <- c(f1, f2, f3, f4, f5, f6, f7)
 for(f in ff) source(f)
 ```

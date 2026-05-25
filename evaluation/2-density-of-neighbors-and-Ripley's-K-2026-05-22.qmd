@@ -5,6 +5,13 @@ date: today
 format:
   pdf:
     code-overflow: wrap
+    toc: true
+    toc-depth: 2
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
 editor: visual
 ---
 
@@ -28,7 +35,7 @@ These functions are located in two different scripts but all are related to the 
 
 This type of calculation is widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses. But, in general, counting points in certain areas around target individuals (or locations) is valuable. Perhaps most of these functions can be incorporated into a more general function that counts (or summarizes) data belonging to different classes, within areas that have a minimum and a maximum radius.
 
-Modelling or comparison with null expectations is less valuable for the fgeo2 package. The Ripley's K function is surely maintained by other packages: spatstat::Kest and spatstat::Lest may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the RipUvK function is a clear candidate to remove, and substitute by a more general tutorial on how to apply point pattern analysis to forest data.
+Modelling or comparison with null expectations is less valuable for the fgeo2 package. The Ripley's K function is surely maintained by other packages: spatstat::Kest and spatstat::Lest may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the RipUvK function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
 
 ## Preliminaries for code evaluation
 
@@ -47,14 +54,22 @@ source(paste0(path, "evaluation/0-code-to-source.r"))
 library(igraph)
 library(fgeo)
 
-# This chunk of code will source all the scripts:
-f1 <- list.files(paste0(path, "01_utilities/R/new/"), full.names = TRUE)
-f2 <- list.files(paste0(path, "02_biomass/R/new/"), full.names = TRUE)
-f3 <- list.files(paste0(path, "03_spatial/R/new/"), full.names = TRUE)
-f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"), full.names = TRUE)
-f5 <- list.files(paste0(path, "05_demography_growth/R/new/"), full.names = TRUE)
-f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"), full.names = TRUE)
-f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"), full.names = TRUE)
+# This chunk of code will source all the R scripts:
+f1 <- list.files(paste0(path, "01_utilities/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f2 <- list.files(paste0(path, "02_biomass/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f3 <- list.files(paste0(path, "03_spatial/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f5 <- list.files(paste0(path, "05_demography_growth/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+
 ff <- c(f1, f2, f3, f4, f5, f6, f7)
 for(f in ff) source(f)
 
@@ -62,18 +77,19 @@ for(f in ff) source(f)
 
 ## Review of original code
 
-```{r}}
+```{r}
 
-# Use this to see the source code, manually.
-
-CalcRingArea
-partialcirclearea
-circlearea
-Annuli
-NDcount
-NeighborDensities
-RipUvK
-
+# Use this to see the source code, manually
+if(FALSE)
+{
+  CalcRingArea
+  partialcirclearea
+  circlearea
+  Annuli
+  NDcount
+  NeighborDensities
+  RipUvK
+}
 ```
 
 Some functions work on areas, other functions work on counts.
