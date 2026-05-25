@@ -186,10 +186,7 @@ get_boundary <- function(boundary = NULL, window = NULL, xy = NULL, q = 5)
 
 ```
 
-Now, a useful auxiliary function to split a given set of points into "out", "edge" and "core", given a boundary and a distance threshold. It takes advantage of the fast calculation of distances (function above). This function has, at least, these two applications in the workflow:
-
--   for the numerical estimates of areas of irregular shapes, it focuses on the points and grid that are near the boundary, using the formula for the circle area for points far from the boundary.
--   for the *error estimate* in those numerical estimates of area, it focuses on the core points instead: it makes the same calculation twice, and compares the known area of circles with the area derived from the grid.
+Now, a useful auxiliary function to split a given set of points into "out", "edge" and "core", given a boundary and a distance threshold. It takes advantage of the fast calculation of distances (function above). This function is used to concentrate efforts of numerical estimates for the points near the boundaries, using the well-known formula for the circle area for points far from the boundary.
 
 ```{r}
 
@@ -343,66 +340,40 @@ get_area_of_neighborhoods <- function(query = NULL,
   # it creates empty objects to store results.
   areas <- matrix(NA, nrow = nrow(query), ncol = m) # point x scale matrix
   steps <- rep(NA, m)
-  errors <- rep(NA, m)
   for(i in 1:m)
   {
     # The target scale
     radius = radii[i]
-    A0 = pi*radius^2
     
-    # Core vs. edge points in the query:
-    ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
-    #table(ceo_query)
-
-    # Initialize coarse grid, then refine until error < tolerance.
-    # This uses the core points in the query.
-    step = min(c((xmax - xmin)/3, (ymax - ymin)/3))
-    error = 999
-    while(error > tol)
-    {
-      step = step / 2 # smaller step
-      grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
-                          y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
-      
-      pts <- sf::st_as_sf(grid, coords = c("x", "y"), remove = FALSE)
-      inside <- lengths(sf::st_intersects(pts, boundary)) > 0
-      grid <- grid[inside,, drop = FALSE]
-      
-      # Do the estimate using the core points only:
-      d.test <- fast_distances_up_to_r(query = query[ceo_query == "core",], 
-                                       reference = grid, 
-                                       radius = radius)
-      
-      A.estimated <- pmin(A0,
-                          tabulate(d.test$query_i, nbins = sum(ceo_query == "core")) * step^2)
-      
-      error = mean(abs(as.numeric(A.estimated) - A0) / A0)
-    }
+    # Define the resolution of the grid.
+    # Our approach is the Gauss circle problem,
+    # and the associated error is not perfectly
+    # known, but relatively easy to estimate numerically.
+    # There are useful rules of thumb, empirical results, etc.
     
-    # The error just calculated applies to the core area, but,
-    # as a general rule, error will be larger near the boundary.
-    # So, to reach the same error near the boundary, we need
-    # a greater grid resolution. This is a conservative heuristic
-    # derived from Steiner / parallel-body argument:
+    # This is a useful heuristic for the step associated
+    # with a given error in a regular grid:
+    step = radius * (1.772 * tol)^(2/3)
+    
+    # Because the regular grid is the "easy" case,
+    # we need to improve the resolution so it
+    # returns the same error around the (possibly complex) boundary.
+    # This is a conservative heuristic derived from Steiner / parallel-body argument:
     K = 1 + 4 / pi
     step = step / K
-    
     steps[i] <- step
-    errors[i] <- error
-  
-    # For reference, other rules of thumb or analytical results.
-    #step = tol * radius / (2 * sqrt(2)) # to constrain maximum error
-    #step = radius * (2 * tol)^(2/3) # to constrain average error
-    
+
     # Put all the areas together: initialize with full circles,
     # then overwrite with the areas calculated for the edge cases:
+    A0 = pi*radius^2
     A <- rep(A0, nrow(query))
+    ceo_query <- core_vs_edge(xy = query, boundary = boundary, radius = radius)
     query_edge <- query[ceo_query == "edge",,drop = FALSE]
     
     if(nrow(query_edge) > 0)
     {
-      # Note the 2r distance needed for the grid to cover the
-      # entire neighborhood of querypoints that are at r distance from the edge.
+      # Note the 2r distance needed for the grid to cover the entire
+      # neighborhood of querypoints that are at r distance from the edge.
       grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
                           y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
     
@@ -436,13 +407,16 @@ get_area_of_neighborhoods <- function(query = NULL,
   if(case == "circles")
     scales <- data.frame(radius = radii,
                          grid_step = steps,
-                         error = errors)
+                         grid_points_per_circle = pi * radii^2 / steps^2)
   
   if(case == "rings")
-    scales <- data.frame(inner_radius = c(0, radii[-m]),
+  {
+    inner_radii <- c(0, radii[-m])
+    scales <- data.frame(inner_radius = inner_radii,
                          outer_radius = radii,
                          grid_step = steps,
-                         error = errors)
+                         grid_points_per_ring = pi * (radii^2 - inner_radii^2) / steps^2)
+  }
   
   list(case = case, scales = scales, areas = areas)
 }
@@ -615,7 +589,7 @@ plot(query, asp = 1, cex = 0.1)
 plot(boundary, asp = 1, border = "red", lwd = 3, add = TRUE)
 
 # Scales to study? 
-radii <- get_radii(query = query, m = 50, rmax = 70, case = "circles")
+radii <- get_radii(query = query, m = 50, rmax = 100, case = "circles")
 
 # Calculate the areas of the neighborhoods:
 A <- get_area_of_neighborhoods(query = query,
