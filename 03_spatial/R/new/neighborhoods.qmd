@@ -173,11 +173,13 @@ get_boundary <- function(boundary = NULL, window = NULL, xy = NULL, q = 5)
   # Final polygon cleanup
   boundary <- sf::st_geometry(boundary)
   boundary <- sf::st_make_valid(boundary)
-  boundary <- sf::st_collection_extract(boundary, "POLYGON")
+  
+  gtype <- sf::st_geometry_type(boundary)
+  if (any(gtype == "GEOMETRYCOLLECTION")) 
+    boundary <- sf::st_collection_extract(boundary, "POLYGON")
 
-  if (length(boundary) == 0 || all(sf::st_is_empty(boundary))) {
+  if (length(boundary) == 0 || all(sf::st_is_empty(boundary))) 
     stop("Boundary does not contain polygon geometry.")
-  }
 
   boundary <- sf::st_union(boundary)
   boundary <- sf::st_make_valid(boundary)
@@ -299,7 +301,7 @@ get_area_of_neighborhoods <- function(query = NULL,
                                       rmax = NA,
                                       m = 512,
                                       case = c("circles", "rings"),
-                                      tol = 0.01)
+                                      tol = 0.05)
 {
   
   # query: The set of focal or query points.
@@ -310,7 +312,7 @@ get_area_of_neighborhoods <- function(query = NULL,
   # rmax: maximum radius for neighborhoods, if radii not provided
   # m: number of scales to evaluate, if radii not provided
   # case: circular vs. ring-shaped neighborhoods: will affect area and default radii
-  # tol: the accepted error in area, 1% by default.
+  # tol: the accepted error in area, 5% by default.
   
   # Default case: circles
   if(length(case) != 1) case = "circles"
@@ -352,9 +354,28 @@ get_area_of_neighborhoods <- function(query = NULL,
     # There are useful rules of thumb, empirical results, etc.
     
     # This is a useful heuristic for the step associated
-    # with a given error in a regular grid:
-    step = radius * (1.772 * tol)^(2/3)
+    # with a given error in the case "points within circles",
+    # when the points come from a regular grid:
+    if(case == "circles")
+      step = radius * (1.772 * tol)^(2/3)
     
+    # The "points within rings" follows a similar
+    # logic, but adds more penalization, because
+    # of the greater amount of perimeter.
+    # Note that outer rings, if of equal area,
+    # are thinner and thinner, and perimeter:area
+    # ratio grows fast, thus demanding denser and
+    # denser grids to contrain error within tolerance.
+    if(case == "rings")
+    {
+      if(i == 1) r0 = 0
+      if(i >= 2) r0 = radii[i-1]
+      r1 = radius
+      r_area = sqrt(r1^2 - r0^2)          # area-equivalent circle radius
+      B_ring = (r1 + r0) / r_area         # boundary inflation vs. equal-area circle
+      step = r_area * (1.772 * tol)^(2/3) / B_ring^(1/3)
+    }
+
     # Because the regular grid is the "easy" case,
     # we need to improve the resolution so it
     # returns the same error around the (possibly complex) boundary.
@@ -373,7 +394,7 @@ get_area_of_neighborhoods <- function(query = NULL,
     if(nrow(query_edge) > 0)
     {
       # Note the 2r distance needed for the grid to cover the entire
-      # neighborhood of querypoints that are at r distance from the edge.
+      # neighborhood of query points that are at r distance from the edge.
       grid <- expand.grid(x = seq(from = xmin - step/2, to = xmax + step/2, by = step),
                           y = seq(from = ymin - step/2, to = ymax + step/2, by = step))
     
@@ -449,6 +470,20 @@ head(data)
 colnames(data)
 summary(data)
 
+# Spatial analyses almost invariably refer to individuals, not stems,
+# so we should go from stem-level information to individual-level information.
+
+# In real applications, you should pay attention and do proper data aggregation
+# from the stem level to the individual level. That is more difficult than
+# it seems. I do not want to over-complicate the example here, so I simply
+# subset the dataset for the main stems of each individual, taking
+# advantage of the codes. This is something that was important in the old
+# workflows but NOT a general recommendation.
+
+main <- grep("MAIN", data$codes)
+data <- data[main,]
+dim(data)
+
 ```
 
 ### Example 1: Ripley's K and Besag's L
@@ -488,7 +523,7 @@ plot(L, . - theo ~ r, main = "Besag's L: L(r) - r")
 
 # With simulation envelopes, only for Besag's L,
 # which is easier to interpret visually:
-L.env <- envelope(PPP, fun = Lest, r = radii, nsim = 199)
+L.env <- envelope(PPP, fun = Lest, r = radii, nsim = 199, verbose = FALSE)
 plot(L.env, . - theo ~ r, main = "Global CSR envelope: L(r) - r")
 
 
@@ -520,7 +555,7 @@ for(sp in spp)
   x.sp <- data$gx[data$sp == sp & data$status == "A"]
   y.sp <- data$gy[data$sp == sp & data$status == "A"]
   PPP.sp <- ppp(x = x.sp, y = y.sp, window = W)
-  L.sp.env <- envelope(PPP.sp, fun = Lest, r = radii, nsim = 49)
+  L.sp.env <- envelope(PPP.sp, fun = Lest, r = radii, nsim = 49, verbose = FALSE)
 
   w <- which(L.sp.env$obs < L.sp.env$lo)
   if(length(w) > 0)
@@ -552,13 +587,9 @@ This example uses the new code to do something similar, but highlighting the fle
 
 library(sf)
 
-# Study aggregation of living Prestoea montana:
-sp = "PREMON"
-query <- na.omit(as.matrix(data[data$sp == sp & data$status == "A", c("gx", "gy")]))
-nrow(query)
+# Study aggregation of one species, but only within a low-disturbance
+# portion of Luquillo plot, using a boundary of complex shape:
 
-# Restrict the analysis to the low-disturbance part of the plot,
-# using a boundary of arbitrary shape:
 low_disturbance_xy <- rbind(
   c(0,   0),
   c(320, 0),
@@ -585,223 +616,115 @@ low_disturbance_xy <- rbind(
 
 boundary  <- sf::st_sfc(st_polygon(list(low_disturbance_xy)))
 
+# In general it will be useful to get subsets of the dataset with all the variables,
+# so it is easier to align from a given point to a given value in the table.
+sp = "PREMON"
+keep1 <- data$sp == sp
+keep2 <- data$status == "A"
+keep3 <- !is.na(data$gx)
+keep4 <- !is.na(data$gy)
+keep  <- keep1 & keep2 & keep3 & keep4
+query_data <- data[keep,]
+
+pts <- sf::st_as_sf(query_data[,c("gx", "gy")], coords = 1:2)
+inside <- lengths(sf::st_intersects(pts, boundary)) > 0
+
+query_data <- query_data[inside,]
+query <- query_data[,c("gx", "gy")] # do not break alignment down the road!
+
+# (In general, we would do the same for a reference subset, but here we are
+# exploring conspecific aggregation, so query = reference).
+
 plot(query, asp = 1, cex = 0.1)
-plot(boundary, asp = 1, border = "red", lwd = 3, add = TRUE)
+plot(boundary, asp = 1, border = "blue", lwd = 3, add = TRUE)
 
 # Scales to study? 
-radii <- get_radii(query = query, m = 50, rmax = 100, case = "circles")
+radii <- get_radii(query = query, m = 50, case = "circles")
+max(radii)
 
 # Calculate the areas of the neighborhoods:
 A <- get_area_of_neighborhoods(query = query,
                           boundary = boundary,
                           radii = radii,
                           case = "circles",
-                          tol = 0.01)
+                          tol = 0.05)
 
-str(A)
+# Identify the neighbors:
+# No need to loop through scales now, unless there are memory limitations.
+# We do it once, for the maximum radius. We subset and process later.
+# Because we want aggregation of one species with itself, then reference = query.
+neighbors <- fast_distances_up_to_r(query = query, reference = query, radius = max(radii))
+dim(neighbors)
+head(neighbors)
 
-plot(A$scales[,c("radius", "grid_step")])
+# Note: because reference = query in this application, every individual
+# appears as a neighbor of itself. We can remove them:
+keep <- which(neighbors$query_i != neighbors$reference_j)
+neighbors <- neighbors[keep,]
 
-mod = lm(grid_step ~ ., data = as.data.frame(A$scales))
-summary(mod)
+# Then, we can summarize those neighborhoods any way we want.
+# The data.table synthax is faster and, if you can, do it that way.
+# There are different tools for data aggregation in R, and
+# you may have to explore them, depending on your goals, size of dataset, etc.
+# Here I use simple base code as a template, going scale by scale.
 
+# First, I externalize the calculation of basal area
+# (this would be done on "reference" in general, but
+# for conspecifics reference = query)
+query_data$BA <- pi*(query_data$dbh/2)^2
+neighbors$BA_j <- query_data$BA[neighbors$reference_j]
+head(neighbors)
 
-```
+# Then, I create empty objects to store results:
+N.total.in.neighborhoods <- matrix(NA, nrow = nrow(query), ncol = length(radii))
+BA.total.in.neighborhoods <- matrix(NA, nrow = nrow(query), ncol = length(radii))
 
-```{r}
-
-if(FALSE)
+# Then, I look through scales:
+# (I use "k" to avoid confusion with {i,j} pairs of neighbors)
+for(k in 1:length(radii))
 {
-
-
-
-# Check behaviour
-# It is incredibly fast but fills memory: it returns 1-10M rows per second.
-
-n = 5000 # 100-300 k points for hard cases, big ForestGEO plots
-radius = 20 # something realistic, rarely > 100
-p_focal = 0.05 # proportion of the forest in the focal class
-
-xy <- cbind(x = runif(n, 0, 500), y = runif(n, 0, 500))
-focal_xy <- xy[1:round(p_focal*n),]
-reference_xy <- xy
-
-system.time(d <- fast_distances_up_to_r(focal_xy, reference_xy, radius = radius, approx = 0))
-dim(d)
-head(d)
-
-# Check:
-system.time(b <- boundary_around_xy(xy)) # this will take some time for high N
-str(b)
-
-plot(b, col = NA, border = "black", xlim = c(0, 500), ylim = c(0, 500))
-plot(b, col = NA, border = "black", xlim = c(-15, 50), ylim = c(-15, 50))
-
-
-# Example with a complex boundary:
-library(sf)
-
-boundary <- sf::st_sfc(
-  sf::st_polygon(list(rbind(
-    c(100, 100),
-    c(100, 400),
-    c(250, 400),
-    c(250, 250),
-    c(400, 250),
-    c(400, 100),
-    c(100, 100)
-  )))
-)
-
-xy <- data.frame(xy)
-
-loc <- core_vs_edge(
-  xy = xy,
-  boundary = boundary,
-  radius = 20
-)
-
-table(loc)
-
-COL <- rep("gray", ncol(xy))
-COL[loc == "out"] <- "gray"
-COL[loc == "edge"] <- "red"
-COL[loc == "core"] <- "black"
-
-plot(boundary, col = NA, border = "black", xlim = c(0, 500), ylim = c(0, 500))
-points(xy$x, xy$y, cex = 0.1, col = COL)
-
-
-# It can also work by default, surrounding the provided points to guess the boundary:
-loc <- core_vs_edge(xy = xy, radius = 20)
-table(loc) # probably none out, because of the buffers
-
-COL <- rep("gray", ncol(xy))
-COL[loc == "out"] <- "gray"
-COL[loc == "edge"] <- "red"
-COL[loc == "core"] <- "black"
-plot(xy$x, xy$y, cex = 0.1, col = COL, asp = 1)
-
-
-
-#plot(grid_for_edge, cex = 0.1, asp = 1)
-
-#
-#
-#
-# *** generalize and make examples with different abundance metrics
-
-if(FALSE)
-{
-  # Count the number of neighbors and express that as trees / area:
-  d <- fast_distances_up_to_r(focal_xy, reference_xy, radius, approx = 0)
-  number_of_neighbors <- tabulate(d$query_i, nbins = nrow(focal_xy)) 
-  barplot(table(number_of_neighbors)) # if random locations: Poisson ~ normal distribution
+  radius = radii[k]
+  sub <- neighbors[neighbors$dist <= radius,]
   
-  # Express as densities, edges corrected:
-  length(number_of_neighbors) == length(A)
-  neighbors_per_area <- number_of_neighbors / A
-  hist(neighbors_per_area)
+  # Counting: how many times "i" appears = number of j neighbors
+  counts <- tabulate(sub$query_i, nbins = nrow(query))
+  N.total.in.neighborhoods[,k] <- counts
+  
+  # Sum basal areas:
+  agg.ba <- aggregate(x = sub$BA_j, by = list(sub$query_i), FUN = "sum", na.rm = TRUE)
+  BA.total.in.neighborhoods[agg.ba[,1], k] <- agg.ba[,2]
+  
+  # Track progress:
+  print(paste0(k, "/", length(radii)))
 }
 
-}
+N.total.in.neighborhoods[1:10, 1:10]
+BA.total.in.neighborhoods[1:10, 1:10]
 
-```
 
-```{r}
+# Express in a per-area basis removes edge effects,
+# and the effect of larger outer circles too:
+N.per.area.in.neighborhoods <- N.total.in.neighborhoods / A$areas
+BA.per.area.in.neighborhoods <- BA.total.in.neighborhoods / A$areas
 
-# Simulations to explore error of grids within circles
-# It assumes circle of radius = 1, centered at {0, 0}
+y <- colMeans(N.per.area.in.neighborhoods, na.rm = TRUE)
+plot(radii, y, las = 1, ylab = "# ind. per unit area")
+ref = nrow(query) / sf::st_area(boundary)
+abline(h = ref) # the overall density of individuals
 
-steps <- seq(from = 0.001, to = 1/2, length.out = 50)
-nsim = 99
-
-errors <- sapply(steps, function(step) {
-  replicate(nsim, {
-    s <- seq(from = -(1 + 2*step), to = +(1 + 2*step), by = step)
-    grid <- expand.grid(x = s, y = s)
-    grid[,1] <- grid[,1] + runif(n = 1, min = -step, max = +step)
-    grid[,2] <- grid[,2] + runif(n = 1, min = -step, max = +step)
-    dx <- abs(grid[,1])
-    dy <- abs(grid[,2])
-    d <- sqrt(dx^2 + dy^2)
-    n = sum(d <= 1)
-    error = abs((n * step^2) - 1)
-    error
-  })
-})
-
-avg.errors <- apply(errors, 2, mean)
-plot(steps, avg.errors)
-abline(h = 0.01)
+y <- colMeans(BA.per.area.in.neighborhoods, na.rm = TRUE)
+plot(radii, y, las = 1, ylab = "basal area per unit area", log = "y")
+ref = sum(query_data$BA, na.rm = TRUE) / sf::st_area(boundary)
+abline(h = ref) # the overall density of basal area
 
 
 ```
 
-## Example of a practical application
+Having the available area for each neighborhood, and then expressing metrics on a per area basis, can be one explicit way of accounting for edge effects. This was the approach taken in old CTFS code.
 
-This is an example on how to put things together. As you can see, these are things that need to be defined outside the functions:
+Alternatively, one can control for edge effects using numerical null models, and avoiding the calculation of areas entirely. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects.
 
--   filters or classes: pay attention to the order of nested loops, removing "dead" or "prior" trees, unknown coordinates, unknown species, etc.
--   summarizing metrics: pay attention to units, possible weighting by distance, express in a per-area basis, etc.
-
-```{r}
-
-# This is my local path. You may have to adapt this.
-g <- regexpr("fgeo2", getwd())
-path <- substr(getwd(), 1, g + attr(g, "match.length"))
-
-# Load data from the Luquillo forest plot, public domain, as an example
-load(paste0(path, "data_examples/luquillo.full2.rdata"))
-data <- luquillo.full2
-dim(data)
-head(data)
-colnames(data)
-summary(data)
-
-# 
-
-
-```
-
-## The ring case
-
-Neighborhoods can be defined as circles (everything from the focal point to a given distance) or rings (things further away than "r" but closer than "R" to the focal point). Rings are conceptually more explicit about the scale at which those measurements apply. If you are doing this type of analysis you should know which option (circular vs ring-shaped neighborhoods) you prefer.
-
-## Comparing observations with expectations
-
-I present examples on how to compare a given point pattern with the expectations.
-
-First, I present the Ripley's K and Besag's L case, using standard R implementation. These are based on counts and Poisson point pattern as the null expectation (that is, independent and uniformly random distribution of points). This functionality was in the original CTFS package but is not implemented directly here as part of the functions in fgeo2.
-
-Second, I present a template of a more general approach based on numerical null models
-
-### Example of Ripley's K
-
-fgeo2 does not contain Ripley's K and there is no need for it, as this is a standard spatial analytical tool that is well-maintained in other packages. Instead, I include an example on how you would implement this analysis using {x, y} coordinates.
-
-```{r}
-
-# Example for the living trees of one species
-# At what scales is Faramea occidentalis in BCI spatially aggregated?
-
-sp = "faraoc"
-
-
-
-
-
-```
-
-### Example of numerical null model
-
-Numerical null models are very flexible, and could be used for the same purposes as Ripley's K, with aded advantages:
-
--   Ripley's K uses the simplest null model (uniform random distribution = Poisson point pattern), but in a customizable numerical null model the user could incorporate different null models, like the torus translation or constrained torus translation.
--   The metric of interest in a null model approach could be any, not just counts of neighbors as implicit in Ripley's K. It could be biomass, sum of basal area, etc.
--   Null models already incorporate the expectation of fewer neighbors for focal points near the edges, so they can be a direct way of correcting for edge effects for boundaries or arbitrary shape.
-
-In general, null models have nice properties for generalization and flexibility. Their main practical limitations are: (1) the tremendous responsibility on the definition of a reasonable / useful expectation, and (2) computation and storage. If you are afraid of responsibility, do not use null models.
+I present a template on how to do that, for the simple case of number of neighbors. However, this would be most useful for metrics that do *not* grow linearly with area, like species diversity, and that cannot be directly corrected by expressing in a per-area basis.
 
 ```{r}
 
@@ -810,9 +733,55 @@ In general, null models have nice properties for generalization and flexibility.
 # the researcher cannot reject the null hypothesis modelled by the null model.
 # If reality deviates  from the expectations, then we can reject the null hypothesis.
 
+# Let's say we are interested in the mean number of conspecific
+# neighbors at different scales, and whether that is more or 
+# less than the expected by chance.
+obs <- colMeans(N.total.in.neighborhoods) # observations
+barplot(obs)
 
+# The expectations will be stores in a matrix, with one row per simulation:
+nsim = 99 # 999 or so for real applications -- small numbers for examples and rendering
+null <- matrix(NA, ncol = length(radii), nrow = nsim)
 
+# Get the null expectations
+for(sim in 1:nsim)
+{
+  # The simplest of the expectations is uniform random distribution of points, 
+  # within the valid boundaries. Easy to get from sf::st_sample.
+  null_xy <- sf::st_sample(x = get_boundary(boundary),
+                           size = nrow(query),
+                           type = "random",
+                           exact = TRUE)
+  null_xy <- sf::st_coordinates(null_xy)
 
+  # Expected conspecific neighbors, if the species was randomly distributed:
+  null_neighbors <- fast_distances_up_to_r(query = null_xy,
+                                           reference = null_xy,
+                                           radius = max(radii))
+  
+  keep <- which(null_neighbors$query_i != null_neighbors$reference_j)
+  null_neighbors <- null_neighbors[keep,]
+
+  # Then same loop through scales as before:
+  for(k in length(radii):1)
+  {
+    radius = radii[k]
+    null_sub <- null_neighbors[null_neighbors$dist <= radius,]
+    null_counts <- tabulate(null_sub$query_i, nbins = nrow(null_xy))
+    null[sim,k] <- mean(null_counts) # store in the right place
+  }
+  print(sim)
+}
+
+# There are different ways of comparing observations with expectations.
+# A common one in ecology is the Standardized Effect Size calculated
+# as SES = (observations - mean(expectations)) / sd(expectations).
+mean.null <- apply(null, 2, mean, na.rm = TRUE)
+sd.null <- apply(null, 2, sd, na.rm = TRUE)
+SES <- (obs - mean.null) / sd.null
+
+plot(radii, SES, ylim = range(c(-2, +2, SES)), las = 1)
+abline(h = c(-2, +2), lty = 2) # rough guidelines for "strong" effect
 
 
 
