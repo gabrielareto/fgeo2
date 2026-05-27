@@ -568,13 +568,13 @@ The approach taken is very fast but demands a lot of memory, so this can be a pr
 
 The code substitutes these original CTFS functions:
 
--   "CalcRingArea" in spatial \> RipUvK.r
--   "partialcirclearea" in spatial \> RipUvK.r
--   "circlearea" in spatial \> RipUvK.r
--   "Annuli" in spatial \> RipUvK.r
--   "NDcount" in spatial \> NeighborDensityFun.r
--   "NeighborDensities" in spatial \> NeighborDensityFun.r
--   "RipUvK" in spatial \> RipUvK.r
+-   `CalcRingArea` in spatial \> RipUvK.r
+-   `partialcirclearea` in spatial \> RipUvK.r
+-   `circlearea` in spatial \> RipUvK.r
+-   `Annuli` in spatial \> RipUvK.r
+-   `NDcount` in spatial \> NeighborDensityFun.r
+-   `NeighborDensities` in spatial \> NeighborDensityFun.r
+-   `RipUvK` in spatial \> RipUvK.r
 
 The old functions were closer to "plug data in and forget" than the current functions. The cost is very limited flexibility. Now, filters, abundance metrics, null expectations, and classes to compare, are all outside the functions. This puts more power = responsibility on the hands of the users.
 

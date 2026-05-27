@@ -21,25 +21,27 @@ Evaluate, understand, and decide over a set of related functions that count indi
 
 This set contains the following functions:
 
--   "CalcRingArea" in spatial \> RipUvK.r
--   "partialcirclearea" in spatial \> RipUvK.r
--   "circlearea" in spatial \> RipUvK.r
--   "Annuli" in spatial \> RipUvK.r
--   "NDcount" in spatial \> NeighborDensityFun.r
--   "NeighborDensities" in spatial \> NeighborDensityFun.r
--   "RipUvK" in spatial \> RipUvK.r
+-   `CalcRingArea` in spatial \> RipUvK.r
+-   `partialcirclearea` in spatial \> RipUvK.r
+-   `circlearea` in spatial \> RipUvK.r
+-   `Annuli` in spatial \> RipUvK.r
+-   `NDcount` in spatial \> NeighborDensityFun.r
+-   `NeighborDensities` in spatial \> NeighborDensityFun.r
+-   `RipUvK` in spatial \> RipUvK.r
 
 ## Overall criteria
 
-These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in RipUvK.r and NeighborDensityFun.r original scripts.
+These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in `RipUvK.r` and `NeighborDensityFun.r` original scripts.
 
 This type of calculation is widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses. But, in general, counting points in certain areas around target individuals (or locations) is valuable. Perhaps most of these functions can be incorporated into a more general function that counts (or summarizes) data belonging to different classes, within areas that have a minimum and a maximum radius.
 
-Modelling or comparison with null expectations is less valuable for the fgeo2 package. The Ripley's K function is surely maintained by other packages: spatstat::Kest and spatstat::Lest may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the RipUvK function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
+Modelling or comparison with null expectations is less valuable for the `fgeo2` package. The Ripley's K function is surely maintained by other packages: `spatstat::Kest` and `spatstat::Lest` may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the `RipUvK` function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
+
+The study of neighborhoods can be done in many different ways, so it would be important to maximize flexibility in things like selecting the focal trees, picking neighborhood-level metrics, etc. If such flexibility is not feasible to incorporate within fgeo2 code, then it should be left out the functions, and substitute by examples or guidelines that the user can apply to their case and goals.
 
 ## Preliminaries for code evaluation
 
-First, we declare the path to fgeo2 folder and all the functionality needed, including CTFS / fgeo functions, external packages, and auxiliary code:
+First, we declare the path to fgeo2 folder and all the functionality needed:
 
 ```{r}
 
@@ -54,20 +56,20 @@ source(paste0(path, "evaluation/0-code-to-source.r"))
 library(igraph)
 library(fgeo)
 
-# This chunk of code will source all the R scripts:
-f1 <- list.files(paste0(path, "01_utilities/R/new/"),
+# This chunk of code will source all the old R scripts:
+f1 <- list.files(paste0(path, "01_utilities/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f2 <- list.files(paste0(path, "02_biomass/R/new/"),
+f2 <- list.files(paste0(path, "02_biomass/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f3 <- list.files(paste0(path, "03_spatial/R/new/"),
+f3 <- list.files(paste0(path, "03_spatial/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"),
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f5 <- list.files(paste0(path, "05_demography_growth/R/new/"),
+f5 <- list.files(paste0(path, "05_demography_growth/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"),
+f6 <- list.files(paste0(path, "06_topography_habitat/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"),
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
 
 ff <- c(f1, f2, f3, f4, f5, f6, f7)
@@ -94,22 +96,22 @@ if(FALSE)
 
 Some functions work on areas, other functions work on counts.
 
-The function circlearea is trivial.
+The function `circlearea` is trivial.
 
-The partialcirclearea makes edge corrections considering the dimensions of the plot. That will be important in forest applications. It seems the most interesting piece of functionality. Apparently Condit implemented Goreaud & Pélissier (1999, Journal of Vegetation Science 10: 433-438), which are analytical solutions for circular and rectangular study areas.
+The `partialcirclearea` makes edge corrections considering the dimensions of the plot. That will be important in forest applications. It seems the most interesting piece of functionality. Apparently Condit implemented Goreaud & Pélissier (1999, Journal of Vegetation Science 10: 433-438), which are analytical solutions for circular and rectangular study areas. I consider keeping it, although it is very cryptic and virtually impossible to "touch".
 
-CalcRingArea seems to be just the accumulated sum of (possibly truncated) circles, one for each point in a dataset. Note:
+`CalcRingArea` seems to be just the accumulated sum of (possibly truncated) circles, one for each point in a dataset. Note:
 
 -   it calculates areas of circles, not rings, despite its name
 -   it does not correct for overlap, so it counts many times the same areas
 
-The area of rings ("annuli") is calculated by the Annuli function, which repeadly calls CalcRingArea and substracts small circles from larger circles successively. This general approach should be kept.
+The area of rings ("annuli") is calculated by the `Annuli` function, which repeadly calls `CalcRingArea` and substracts small circles from larger circles successively. This general approach should be kept.
 
-NDcount and NeighborDensities try to do similar things. NDcount (author Tania Brenes) wraps splancs::khat function to count neighbors with edge correction. NeighborDensities (author Rick Condit) incorporates filters, the possibility of counting neighbors from a different dataset (e.g. adult trees neighboring seedlings), and "counting" as accumulated basal area instead of individual counts. It depends on specific column names like "status". There are risky unit conversions inside, so it does make strong assumptions about the units of the input: clearly a vulnerable point.
+`NDcount` and `NeighborDensities` try to do similar things. `NDcount` (author Tania Brenes) wraps `splancs::khat` function to count neighbors with edge correction. `NeighborDensities` (author Rick Condit) incorporates filters, the possibility of counting neighbors from a different dataset (e.g. adult trees neighboring seedlings), and "counting" as accumulated basal area instead of individual counts. It depends on specific column names like "status". There are risky unit conversions inside, it does make strong assumptions about the units of the input: clearly a vulnerable point.
 
-RipUvK is the highest-level function in this group of functions. It runs over each species calculating a series of spatial statistics for con-specifics at different distances. It seems easy to use, it is not very long. It is not very flexible, and calls external functions of undefined packages, probably splancs package: khat, spoints.
+`RipUvK` is the highest-level function in this group of functions. It runs over each species calculating a series of spatial statistics for con-specifics at different distances. It seems easy to use, it is not very long. It is not very flexible, and calls external functions of undefined packages, probably `splancs` package: `khat`, `spoints`.
 
-Because the code has obvious points of vulnerability, I decide to rewrite. I do not run formal tests.
+Because the code has obvious points of vulnerability (units, column names, ...), and has very limited flexibility (filters, aggregation, expectations), I decide to rewrite.
 
 ## Design principles for alternative code
 
@@ -137,12 +139,12 @@ In any case, numerical null models require fast code, because of computational c
 
 If all these things are implemented, an updated workflow would clearly expand the current feasible workflow:
 
--   use of any metric of abundance
+-   allow the use of any metric of abundance
 -   neighbors of any class around focal points of any class, defined outside
 -   filters are outside: maximum flexibility (and responsibility)
--   minimize assumptions: work on {x, y} general datasets, with boundaries expressed as spatial data
+-   minimize assumptions: work on {x, y} general datasets, with boundaries expressed as spatial objects
 -   account for edge effects in boundaries of arbitrary shape
--   use of any null distribution of points, not just PPP
+-   allow the use of any null distribution of points, not just PPP
 
 ## Current status of alternative code
 
