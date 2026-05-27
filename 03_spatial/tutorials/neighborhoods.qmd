@@ -1,0 +1,672 @@
+---
+title: "Neighborhoods, aggregation, etc."
+author: "Gabriel Arellano"
+date: today
+format:
+  pdf:
+    code-overflow: wrap
+    toc: true
+    toc-depth: 2
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
+    include-in-header:
+      text: |
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, topsep=2pt}
+editor: visual
+---
+
+## Context
+
+Spatial neighborhood analyses are used to quantify how organisms, stems, species, functional groups, or other ecological units are arranged around focal individuals or locations. In forest ecology, these analyses are commonly used to evaluate things like:
+
+-   aggregation of conspecific individuals. Classical summaries include neighbor counts or densities within circles or rings, Ripley’s K, and transformations such as Besag’s L.
+-   amount of conspecifics and heterospecifics around focal trees, e.g. for density dependence analyses.
+-   spatial segregation of species.
+-   crowding indexes, as a proxy for competition.
+-   etc.
+
+In some of these applications, but not all, the observations are compared with spatial null expectations. The most common form of null expectation for points is the Poisson point patter = uniform random and independent distribution of all points. Other null models generate expectations respecting the aggregation of different subsets of points (e.g. the torus translation test often applied for testing species-habitat associations).
+
+## Code
+
+This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. The code is intentionally auxiliary in nature, not heavily wrapped. The functions are helpers to:
+
+-   calculate distances between points, but *very fast.*
+-   handling boundaries of arbitrary shape, not just rectangular windows: relevant for edge effects.
+-   contribute useful defaults and heuristics.
+
+An important decision was to leave out of the functions the operations that require maximum flexibility in real-world ecological applications:
+
+-   defining classes or applying filters.
+-   aggregating / summarizing to get the metrics of interest, given a set of points in a neighborhood.
+-   generating null expectations and comparing them with observations.
+
+**IMPORTANT COROLARY: to apply this code to real ecological analyses, it is not possible to plug "data" in and forget. You would need to adapt the examples / instructions below to your own case.**
+
+As this is code for spatial analyses, it uses general inputs and general vocabulary of spatial analyses:
+
+-   `query` and `reference` inputs, as tables of (x, y) coordinates. By "query" it is meant the focal trees or locations, around which we find neighbors. By "reference" it is meant the (potential) neighbors. In some cases, reference = query, e.g. to study aggregation of conspecifics.
+-   boundaries as spatial `sf` polygon objects.
+-   `radii`: the sequence of scales of interest.
+-   `case`: either circles or rings, for different types of neighborhoods.
+
+Load the code and inspect it here:
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Source functionality:
+source(paste0(path, "evaluation/0-code-to-source.r")) # auxiliary
+f = paste0(path, "03_spatial/R/new/neighborhoods.R")
+source(f)
+
+# Check the functions
+functions_in_script(f)
+
+```
+
+## Workflow
+
+The code takes responsibility for the boundary- and area-related difficult calculations and for the *very fast* identification of pairs of neighbors. Filtering and summarizing (e.g. counting neighbors, calculating crowding indexes, etc.) will be responsibility of the user. This section guides you through a general recommended workflow:
+
+### Step 1: identify query and reference
+
+Here you define what are the classes, how are you going to filter of subset the data, and so on. Remember: query = the focal trees or locations, and reference = the potential neighbors around the focal points.
+
+Most importantly:
+
+-   spatial analyses in ecology almost invariably refer to individual trees, not stems. Make sure you are working with an individual-level table, not a stem-level table.
+-   spatial analyses will not work with missing coordinates, so you need to filter those out first.
+-   many forest datasets keep dead and alive trees together (in some ForestGEO tables, also the "prior" trees). Most spatial analyses focus on living trees, so make sure you filter by `status = "alive"` or the equivalent filter in your dataset.
+-   if your data exceeds your boundary, then you need to filter the data first: for example, if you have data from the full plot but want to run the spatial analyses within the (possibly complex) boundary of a single habitat within the plot.
+
+Other than that, you have to define the query and reference datasets according to the goals of your analyses:
+
+-   species by species:
+
+    -   for example, define the structure of nested loops for sp = *i* and sp = *j*, for species associations;
+    -   or *j* is any species different than *i*, for heterospecific counting;
+    -   of `reference` = `query` for conspecific aggregation analyses.
+
+-   by size classes; e.g. small trees around large trees, etc.
+
+-   other categories using other data, e.g. broken small trees (dead or alive) around large dead trees.
+
+Alignment is very important, because the code will identify neighbors just by indexes in `query` and `reference` tables. To use those indexes to obtain summaries, etc., you need to respect the alignment with the table where you store data. For that, something like this is generally safe:
+
+```{r}
+#| eval: false
+keep <- !is.na(data$x) & !is.na(data$y)
+query_data <- data[keep,]
+result <- get_distances_up_to_r(query = query_data[,c("x", "y")], ...)
+```
+
+While something like this is almost always a bad idea, as it would immediately break alignment:
+
+```{r}
+#| eval: false
+result <- get_distances_up_to_r(query = na.omit(data[,c("x", "y")]), ...)
+```
+
+So, overall, the data processing step should filter rows (observations) but keep columns (variables of potential interest), and just call the {x, y} coodinates when needed. Something like this:
+
+```{r}
+#| eval: false
+
+# Subset data explicitly for the query points
+keep1 <- !is.na(data$x) & !is.na(data$y) # mandatory for spatial analyses
+keep2 <- data$sp == "PREMON" # if query is one species
+keep3 <- data$dbh >= 10 # if query contains large trees, etc.
+use_for_query <- keep1 & keep2 & keep3 & ... # all conditions that apply
+
+query_data <- data[which(use_for_query),,drop = FALSE]
+
+# Subset data explicitly for the reference points
+keep1 <- !is.na(data$x) & !is.na(data$y) # mandatory for spatial analyses
+keep2 <- data$sp %in% names(which(table(data$sp) >= 100)) # if reference contains common spp
+keep3 <- data$dbh > 0 & data$dbh < 10 # if we want only small trees as neighbors, etc.
+use_for_reference <- keep1 & keep2 & keep3 & ... # all conditions that apply
+
+reference <-data[which(use_for_reference),, drop = FALSE]
+
+# Then call the coordinate columns only when needed
+neighbors <- get_distances_up_to_r(query = query_data[,c("x", "y")],
+                                   reference = reference_data[,c("x", "y")],
+                                   ...)
+
+```
+
+### Step 2: define boundary and scales of interest
+
+Boundaries are needed to account for edge effects in spatial analyses. Most often, they are rectangular. However, the code here was developed to handle irregular boundaries, and be as general as possible. It could be used to run analyses within specific habitats, or for forests that do not completely fill the rectangular plot (e.g. Ngel Nyaki, Nigeria).
+
+The `get_boundary()` function is a general helper that can transform a rectangular window into an `sf` object or estimate the area of observation based on a set of {x, y} points.
+
+Similarly, the `get_radii()` function can return a vector of scales of interest, using rules of thumb, in case you do not have a specific vector of interest. It has a useful default for the maximum distance so, in practice, you would have to specify the `case` (circles or rings for the neighborhoods) and the number of scales to evaluate, which typically depends on the size of the datasets and constrain total code running times.
+
+### Step 3: identify the neighbors
+
+After defining query and reference datasets, boundary, and scales of observation, the `get_distances_up_to_r()` function will return all {i, j} pairs and their distance, up to a given maximum distance. Individuals *i* come from `query` and individuals *j* from `reference`. These are just row indexes, so it is important that you keep alignment with the variables of interest, to be able to characterize the neighborhoods in the next step.
+
+In general, given a set of scales of interest (`radii`), this is the most important thing you need to identify all neighbors at all scales:
+
+```{r}
+#| eval: false
+neighbors <- get_distances_up_to_r(..., radius = max(radii)) 
+```
+
+It will return information info for the largest possible neighborhood, very fast, without the need to repeat calculations or store multiple results.
+
+Note: in some applications, like the aggregation of conspecifics, reference = query. When that is the case, each individual is also considered a neighbor of itself, in a pair {i, i=j} with distance = 0. In these cases, something like this will be required:
+
+```{r}
+#| eval: false
+keep <- which(neighbors$query_i != neighbors$reference_j)
+neighbors <- neighbors[keep,]
+```
+
+If, for whatever reason, you have used a stem-level table instead of an individual-level table, this would also get rid of all {i, j} pairs that belong to the same individual (assuming they share coordinates):
+
+```{r}
+#| eval: false
+keep <- which(neighbors$dist > 0)
+neighbors <- neighbors[keep,]
+```
+
+From this large `neighbors` object it is easy to obtain the set of neighbors for each of the scales, doing something like:
+
+```{r}
+#| eval: false
+neighbors <- get_distances_up_to_r(..., radius = max(radii)) 
+
+for(k in 1:length(radii))
+{
+  # for circles
+  radius.k = radii[k]
+  w <- which(neighbors$dist <= radius.k)
+  neighbors.k <- neighbors[w,]
+
+  # for rings
+  outer.radius.k = radii[k]
+  if(k == 1) inner.radius.k = 0
+  if(k >= 2) inner.radius.k = radii[k - 1]
+  w <- which(neighbors$dist > inner.radius.k & neighbors$dist <= outer.radius.k)
+  neighbors.k <- neighbors[w,]
+}
+```
+
+Note that `get_distances_up_to_r()` is *very fast*, but returns huge objects. In preliminary runs, it returns 1-10 million rows per second. This is unavoidable, and there is not a more efficient way of reporting distances between neighbors than the sparse representation that this function returns. But, in some cases, the output can outflow memory. If that can happen, the general recommendation is to split the query dataset into chunks. The general template is:
+
+```{r}
+#| eval: false
+
+# Get a very rough idea of the size of the output, using
+# the average density of points in reference to guess
+# the number of {i, j} pairs in the largest neighborhood.
+n = nrow(query_data)
+m = nrow(reference_data)
+A = sf::st_area(boundary) # boundary as sf object, use get_boundary(...) if needed
+a = pi*max(radii)^2 # assumes same units as boundary
+Q = n * a  * m / A 
+
+# If Q is greater than few hundred millions, safer to split in chunks.
+# The maximum allowed by data.table is 2^31 - 1 rows.
+max_output_size = 10^8 # not a magic number, reduce it if needed
+chunk_size = max_output_size / a / m * A
+chunks <- split(1:n, ceiling(1:n / chunk_size))
+
+# Go chunk by chunk
+for(h in 1:length(chunks))
+{
+  # Subset the query only, not the reference
+  # even if the reference = query.
+  query.data.h <- query_data[chunks[[h]],, drop = FALSE]
+  
+  # Do things for this chunk only:
+  # Note: the "reference" remains the same! You want to identify
+  # all neighbors around the query individuals, not just some of them.
+  neighbors.h <- get_distances_up_to_r(query = query.data.h[,c("x", "y")],
+                                       reference = reference_data[,c("x", "y")], 
+                                       ...)
+  
+  # The i indexes in the {i, j} are internal to the chunk now!
+  # It depends on how you end organizing the code, but
+  # probably a good / safe practice is to go back to global query 
+  # indexes as soon as possible, with direct replacement:
+  global.query.i <- chunks[[h]][neighbors.h$query_i]
+  neighbors.h$query_i <- global.query.i
+  
+  # Etc.
+  
+}
+
+```
+
+Loops may be needed for the chunks, because of the storage limitations. The need for other loops (species by species, etc.) will depend on how one summarizes or aggregates the metrics of interest.
+
+### Step 4: characterize neighborhoods with the metric(s) of interest
+
+At this point, and regardless of the structure into loops, you should have pairs of individuals that are neighbors at a given scale. Then, you can process this information in any way you want:
+
+-   count number of neighbors
+-   count conspecific vs. heterospecific neighbors
+-   calculate neighborhood diversity
+-   calculate accumulated biomass
+-   calculate crowding indexes, possibly weighting by distance
+-   etc.
+
+Two things are important:
+
+First, and obviously: you should have used the appropriate `reference` input. If you want to count number of species in the neighborhoods you should have used a `reference` input with all the species, not just one, and so on.
+
+Second: alignment is key. The output of `get_distances_up_to_r()` are pairs of query and reference indexes as {i, j}, and these are rows in matrixes that only contain (x, y) coordinates. If you want to call other variables (basal area, biomass, species identity, etc.) then these indexes must correspond to the tables with those variables. For that reason, the safe way of obtaining neighbors is to have complete data tables for the query and reference points, and call the {x, y} columns when necessary, without breaking alignment in any way. See Step 1.
+
+The code was developed specifically to maximize flexibility in this step. There is no room here to even summarize the possible ways the information can be summarized. Just few reminders:
+
+-   `aggregate()` is base R and useful for simple grouped summaries without extra dependencies. It is explicit and stable, but can become verbose when several summaries or several grouping variables are needed.
+-   `dplyr` provides readable verbs such as `group_by()`, `summarise()`, and `count()`, often connected with the pipe operator `|>`. This syntax is usually easier to read and modify, and is very well documented in many sources.
+-   The output of `get_distances_up_to_r()` is a data.table. The approach to summarize/aggregate data.table objects is almost guaranteed to be the fastest and most memory-efficient option for large tables, using compact expressions such as `DT[, .(n = .N), by = group]`. However, the syntax is not familiar to many users. It is probably best suited for advanced users or when performance is critical.
+
+If you only want to count neighbors, in simple cases, `tabulate()` is better than `table()` because it would end aligned, including zero counts:
+
+```{r}
+#| eval: false
+
+d <- get_distances_up_to_r(query, reference, ...)
+nn <- d[d$dist <= radius,] # scale of interest
+counts <- tabulate(nn$query_i, nbins = nrow(query))
+
+# table(nn$query_i) # this would require further processing
+```
+
+### Step 5: contrast with expectations
+
+#### Calculating areas
+
+At the very minimum, you need to calculate the areas of the neighborhoods. Areas will be well-known and easy to derive from radii for the core areas far from the boundary, but will be smaller and smaller the closer the focal point is to the (possibly complex) boundary. The `get_area_of_neighborhoods()` function does that, for any boundary.
+
+Having the available area for each neighborhood, and then expressing metrics on a per area basis, is one explicit way of comparing observations with expectations, under the assumption that the metric of interest will scale directly as a function of the area. This is true for individual counts, accumulated basal area, etc., but it won't be true for other metrics of interest.
+
+The `get_area_of_neighborhoods()` function includes useful defaults for boundary and radii. Thus, if you do not have that pre-defined, you could run this function first, as part of Step 2. It does not require neighbor information, just the location of the query points.
+
+#### Numerical null models
+
+The alternative to expressing things on a per-area basis is to run numerical null models.
+
+Null models compare observations (one instance) with expectations (many instances). If the observations deviate a lot from expectations, then there is a strong pattern. This is more general, but also more time consuming. It is needed if one is using a metric that does not scale linearly with the area, such as averages or anything related to species diversity, etc.
+
+Null models do not require the calculation of areas to control for edge effects. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects.
+
+Often, deviations from expectations are linked to null hypothesis testing, so we can tell at what scales a given species is *significantly* more aggregated than expected by chance, at what scales it is roughly as aggregated as expected by chance, etc. If you are testing hypotheses, you probably want to control for Type I error rate, because you are testing many scales, and (possibly) many species, and so on. It is beyond the scope of this tutorial to explain how to do that, but, as a general rule: if you want to learn something, don't do Bonferroni.
+
+The examples below implement the simplest of the null models: Poisson point pattern, or uniformly random and independent distribution of points. This is the null model implicit in most standard spatial analyses, and the one to use when studying aggregation. For other metrics (for example, abundance of species A around species B, number of species around focal locations, etc.) the general recommendation is to use null models that are more respectful towards reality (e.g. torus translations).
+
+#### Other
+
+Code for spatial analyses often comes with options to test for hypotheses at different scales, under different assumptions. For example, `envelopes()` in `spatstat` for Ripley's K, or wavelet analysis.
+
+## Examples
+
+This section uses real data to show how to run some spatial analyses in practice. It puts together all the individual steps mentioned above, with some variations. It includes:
+
+-   Example 1: Aggregation within one species, using number of individuals or accumulated basal area
+-   Example 2: Quantity of conspecifics and heterospecifics
+-   Example 3: Associations between pairs of species
+-   Example 4: Diversity in the neighborhood of different species
+
+Note that, except for the first example, the filtering, categorizations, summary metrics, and null expectations, are all outside the functions themselves. It is the responsibility of the user to define these things.
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Load data from the Luquillo forest plot, public domain, as an example
+load(paste0(path, "data_examples/luquillo.full2.rdata"))
+data <- luquillo.full2
+dim(data)
+head(data)
+colnames(data)
+summary(data)
+
+# Spatial analyses almost invariably refer to individuals, not stems,
+# so we should go from stem-level information to individual-level information.
+
+# In real applications, you should pay attention and do proper data aggregation
+# from the stem level to the individual level. That is more difficult than
+# it seems. I do not want to over-complicate the example here, so I simply
+# subset the dataset for the main stems of each individual, taking
+# advantage of the codes. This is something that was important in the old
+# workflows but NOT a general recommendation.
+
+main <- grep("MAIN", data$codes)
+data <- data[main,]
+dim(data)
+
+```
+
+### Example 1: Aggregation within species
+
+This example uses the new code to calculate aggregation of conspecific individuals. It is slower than alternatives like `spatstat::Ktest()` but it offers greater flexibility in the definition of boundary (complex) and the abundance/summary metric (outside the functions themselves).
+
+```{r}
+
+library(sf)
+
+# Study aggregation of one species, but only within a low-disturbance
+# portion of Luquillo plot, using a boundary of complex shape:
+
+low_disturbance_xy <- rbind(
+  c(0,   0),
+  c(320, 0),
+  c(320, 100),
+  c(300, 100),
+  c(300, 120),
+  c(160, 120),
+  c(160, 140),
+  c(140, 140),
+  c(140, 160),
+  c(120, 160),
+  c(120, 180),
+  c(100, 180),
+  c(100, 200),
+  c(80,  200),
+  c(80,  220),
+  c(60,  220),
+  c(60,  240),
+  c(40,  240),
+  c(40,  260),
+  c(0,   260),
+  c(0,   0)
+)
+
+boundary  <- sf::st_sfc(st_polygon(list(low_disturbance_xy)))
+
+# In general it will be useful to get subsets of the dataset with all the variables,
+# so it is easier to align from a given point to a given value in the table.
+sp = "PREMON"
+keep1 <- data$sp == sp
+keep2 <- data$status == "A"
+keep3 <- !is.na(data$gx)
+keep4 <- !is.na(data$gy)
+keep  <- keep1 & keep2 & keep3 & keep4
+query_data <- data[keep,]
+
+pts <- sf::st_as_sf(query_data[,c("gx", "gy")], coords = 1:2)
+inside <- lengths(sf::st_intersects(pts, boundary)) > 0
+
+query_data <- query_data[inside,]
+
+# (In general, we would do the same for a reference subset, but here we are
+# exploring conspecific aggregation, so query = reference).
+
+plot(query_data[,c("gx", "gy")], asp = 1, cex = 0.1)
+plot(boundary, asp = 1, border = "blue", lwd = 3, add = TRUE)
+
+# Scales to study? 
+radii <- get_radii(query = query_data[,c("gx", "gy")], m = 50, case = "circles")
+max(radii)
+
+# Identify the neighbors:
+# We do it once, for the maximum radius. We subset and process later.
+# Because we want aggregation of one species with itself, then reference = query.
+neighbors <- get_distances_up_to_r(query = query_data[,c("gx", "gy")],
+                                   reference = query_data[,c("gx", "gy")],
+                                   radius = max(radii))
+dim(neighbors)
+head(neighbors)
+
+# Note: because reference = query in this application, every individual
+# appears as a neighbor of itself. We can remove them:
+keep <- which(neighbors$query_i != neighbors$reference_j)
+neighbors <- neighbors[keep,]
+
+# Then, we can summarize those neighborhoods any way we want.
+# The data.table synthax is faster and, if you can, do it that way.
+# There are different tools for data aggregation in R, and
+# you may have to explore them, depending on your goals, size of dataset, etc.
+# Here I use simple base code as a template, going scale by scale.
+
+# First, I externalize the calculation of basal area
+# (this would be done on "reference" in general, but
+# for conspecifics reference = query)
+query_data$BA <- pi*(query_data$dbh/2)^2
+neighbors$BA_j <- query_data$BA[neighbors$reference_j]
+head(neighbors)
+
+# Then, I create empty objects to store results:
+N.total.in.neighborhoods <- matrix(NA, nrow = nrow(query_data), ncol = length(radii))
+BA.total.in.neighborhoods <- matrix(NA, nrow = nrow(query_data), ncol = length(radii))
+
+# Then, I look through scales:
+# (I use "k" to avoid confusion with {i,j} pairs of neighbors)
+for(k in 1:length(radii))
+{
+  radius = radii[k]
+  sub <- neighbors[neighbors$dist <= radius,]
+  
+  # Counting: how many times "i" appears = number of j neighbors
+  counts <- tabulate(sub$query_i, nbins = nrow(query_data))
+  N.total.in.neighborhoods[,k] <- counts
+  
+  # Sum basal areas:
+  agg.ba <- aggregate(x = sub$BA_j, by = list(sub$query_i), FUN = "sum", na.rm = TRUE)
+  BA.total.in.neighborhoods[agg.ba[,1], k] <- agg.ba[,2]
+  
+  # Track progress:
+  print(paste0(k, "/", length(radii)))
+}
+
+N.total.in.neighborhoods[1:10, 1:10]
+BA.total.in.neighborhoods[1:10, 1:10]
+
+
+# Express in a per-area basis removes edge effects,
+# and the effect of larger outer circles too:
+A <- get_area_of_neighborhoods(query = query_data[,c("gx", "gy")],
+                          boundary = boundary,
+                          radii = radii,
+                          case = "circles",
+                          tol = 0.05)
+
+N.per.area.in.neighborhoods <- N.total.in.neighborhoods / A$areas
+BA.per.area.in.neighborhoods <- BA.total.in.neighborhoods / A$areas
+
+y <- colMeans(N.per.area.in.neighborhoods, na.rm = TRUE)
+plot(radii, y, las = 1, ylab = "# ind. per unit area")
+ref = nrow(query_data) / sf::st_area(boundary)
+abline(h = ref) # the overall density of individuals
+
+y <- colMeans(BA.per.area.in.neighborhoods, na.rm = TRUE)
+plot(radii, y, las = 1, ylab = "basal area per unit area", log = "y")
+ref = sum(query_data$BA, na.rm = TRUE) / sf::st_area(boundary)
+abline(h = ref) # the overall density of basal area
+
+
+```
+
+Having the available area for each neighborhood, and then expressing metrics on a per area basis, can be one explicit way of accounting for edge effects. This was the approach taken in old CTFS code.
+
+Alternatively, one can control for edge effects using numerical null models, and avoiding the calculation of areas entirely. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects.
+
+I present a template on how to do that, for the simple case of number of neighbors. However, this would be most useful for metrics that do *not* grow linearly with area, like species diversity, and that cannot be directly corrected by expressing in a per-area basis.
+
+```{r}
+
+# Null models compare observations (one instance) with expectations (many instances).
+# If reality does not deviate much from the expectations by the null model, then
+# the researcher cannot reject the null hypothesis modelled by the null model.
+# If reality deviates  from the expectations, then we can reject the null hypothesis.
+
+# Let's say we are interested in the mean number of conspecific
+# neighbors at different scales, and whether that is more or 
+# less than the expected by chance.
+obs <- colMeans(N.total.in.neighborhoods) # observations
+barplot(obs)
+
+# The expectations will be stores in a matrix, with one row per simulation:
+nsim = 99 # 999 or so for real applications -- small numbers for examples and rendering
+null <- matrix(NA, ncol = length(radii), nrow = nsim)
+
+# Get the null expectations
+for(sim in 1:nsim)
+{
+  # The simplest of the expectations is uniform random distribution of points, 
+  # within the valid boundaries. Easy to get from sf::st_sample.
+  null_xy <- sf::st_sample(x = get_boundary(boundary),
+                           size = nrow(query_data),
+                           type = "random",
+                           exact = TRUE)
+  null_xy <- sf::st_coordinates(null_xy)
+
+  # Expected conspecific neighbors, if the species was randomly distributed:
+  null_neighbors <- get_distances_up_to_r(query = null_xy,
+                                           reference = null_xy,
+                                           radius = max(radii))
+  
+  keep <- which(null_neighbors$query_i != null_neighbors$reference_j)
+  null_neighbors <- null_neighbors[keep,]
+
+  # Then same loop through scales as before:
+  for(k in length(radii):1)
+  {
+    radius = radii[k]
+    null_sub <- null_neighbors[null_neighbors$dist <= radius,]
+    null_counts <- tabulate(null_sub$query_i, nbins = nrow(null_xy))
+    null[sim,k] <- mean(null_counts) # store in the right place
+  }
+  print(sim)
+}
+
+# There are different ways of comparing observations with expectations.
+# A common one in ecology is the Standardized Effect Size calculated
+# as SES = (observations - mean(expectations)) / sd(expectations).
+mean.null <- apply(null, 2, mean, na.rm = TRUE)
+sd.null <- apply(null, 2, sd, na.rm = TRUE)
+SES <- (obs - mean.null) / sd.null
+
+plot(radii, SES, ylim = range(c(-2, +2, SES)), las = 1)
+abline(h = c(-2, +2), lty = 2) # rough guidelines for "strong" effect
+
+
+
+```
+
+The approach taken is very fast but demands a lot of memory, so this can be a practical limitation for large datasets. For the moment, I will wait for users' feedback.
+
+## Legacy notes
+
+#### Old CTFS functions
+
+The code substitutes these original CTFS functions:
+
+-   "CalcRingArea" in spatial \> RipUvK.r
+-   "partialcirclearea" in spatial \> RipUvK.r
+-   "circlearea" in spatial \> RipUvK.r
+-   "Annuli" in spatial \> RipUvK.r
+-   "NDcount" in spatial \> NeighborDensityFun.r
+-   "NeighborDensities" in spatial \> NeighborDensityFun.r
+-   "RipUvK" in spatial \> RipUvK.r
+
+The old functions were closer to "plug data in and forget" than the current functions. The cost is very limited flexibility. Now, filters, abundance metrics, null expectations, and classes to compare, are all outside the functions. This puts more power = responsibility on the hands of the users.
+
+All area-related tasks are handled by the `get_area_of_neighborhoods()` function now, covering circles and rings, and arbitrary boundary shapes.
+
+The neighbor-counting CTFS functions implemented common ways of aggregating data. The functions made many assumptions about classes to include, units, etc. and also use obsolete spatial calculations for boundaries, etc. Neighbor-counting is just one instance of the general task of calculating *any* metric of interest over a set of neighbors. The current code does not attempt to solve that type of task in general. You will have to adapt the examples to your case, and find efficient ways of aggregating or summarizing data for your case.
+
+Finally, the Ripley's K is not implemented at all. It is already implemented in many R package, probably dozens of them. Because this is a standard tool, here is a worked example below on how to do that type of analysis:
+
+#### Example: Ripley's K and Besag's L
+
+Ripley’s K function measures how many neighboring points occur within distance *r*, relative to what is expected under complete spatial randomness. Values above expectation indicate clustering; values below expectation indicate regularity or inhibition. Besag’s L is a variance-stabilized transformation of K, often plotted as L(r) − r, making deviations from randomness easier to interpret.
+
+```{r}
+
+# We use one species as a example
+sp = "PREMON" # Prestoea, the most common palm
+
+# The gold standard is in spatstat packages:
+library(spatstat.geom)
+library(spatstat.explore)
+
+# This is the rectangular observation window:
+W <- owin(xrange = round(range(data$gx, na.rm = TRUE)),
+          yrange = round(range(data$gy, na.rm = TRUE)))
+
+# Point pattern spatial object for the species;
+# we focus only on the living trees.
+x <- data$gx[data$sp == sp & data$status == "A"]
+y <- data$gy[data$sp == sp & data$status == "A"]
+PPP <- ppp(x = x, y = y, window = W)
+
+# Aggregation at different scales:
+radii <- seq(from = 0, to = 50, by = 0.5)
+K <- Kest(PPP, r = radii, correction = "translate")
+L <- Lest(PPP, r = radii, correction = "translate")
+
+# Results:
+plot(K, . - theo ~ r, main = "Ripley's K: K(r) - Kpois(r)")
+plot(L, . - theo ~ r, main = "Besag's L: L(r) - r")
+
+# With simulation envelopes, only for Besag's L,
+# which is easier to interpret visually:
+L.env <- envelope(PPP, fun = Lest, r = radii, nsim = 199, verbose = FALSE)
+plot(L.env, . - theo ~ r, main = "Global CSR envelope: L(r) - r")
+
+```
+
+The analysis above shows some "repulsion" at short distances for the individuals of *Prestoea* in Luquillo. That is: fewer individuals at distances 0-3 m or so than expected by chance. This is not very common: most tree species are aggregated at all scales. We can ask: What are the species that show "avoidance" (fewer individuals than expected) and at what scales? This is an example on how to get that:
+
+```{r}
+
+# What species, and at what scales, have fewer neighbors than expected?
+# We exclude species with too few individuals:
+min.n = 100
+a <- sort(table(data$sp[data$status == "A"]), decreasing = TRUE)
+spp <- names(which(a >= min.n))
+
+# This is the rectangular observation window:
+W <- owin(xrange = round(range(data$gx, na.rm = TRUE)),
+          yrange = round(range(data$gy, na.rm = TRUE)))
+
+# Scales of observation, centered over short distances:
+radii <- seq(from = 0, to = 20, by = 0.2)
+
+# Run loop through species:
+segregations <- NULL
+for(sp in spp)
+{
+  x.sp <- data$gx[data$sp == sp & data$status == "A"]
+  y.sp <- data$gy[data$sp == sp & data$status == "A"]
+  PPP.sp <- ppp(x = x.sp, y = y.sp, window = W)
+  L.sp.env <- envelope(PPP.sp, fun = Lest, r = radii, nsim = 49, verbose = FALSE)
+
+  w <- which(L.sp.env$obs < L.sp.env$lo)
+  if(length(w) > 0)
+  {
+    add <- data.frame(sp = sp, r = L.sp.env$r[w])
+    segregations <- rbind(segregations, add)
+  }
+  print(paste0(which(spp == sp), "/", length(spp)))
+}
+
+# How frequent is it?
+nrow(segregations) # number of scales with significant segregations
+length(radii) * length(spp) # number of scales evaluated
+segregations
+
+# What are the species and scales involved?
+hist(segregations$r)
+table(segregations$sp)
+
+# Etc.
+
+```
