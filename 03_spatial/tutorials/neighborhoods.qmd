@@ -317,11 +317,10 @@ Code for spatial analyses often comes with options to test for hypotheses at dif
 This section uses real data to show how to run some spatial analyses in practice. It puts together all the individual steps mentioned above, with some variations. It includes:
 
 -   Example 1: Aggregation within one species, using number of individuals or accumulated basal area
--   Example 2: Quantity of conspecifics and heterospecifics
--   Example 3: Associations between pairs of species
--   Example 4: Diversity in the neighborhood of different species
+-   Example 2: Quantity of conspecifics and heterospecifics at short distances
+-   Example 3: Diversity in the neighborhood of different species
 
-Note that, except for the first example, the filtering, categorizations, summary metrics, and null expectations, are all outside the functions themselves. It is the responsibility of the user to define these things.
+Note that, filtering, categorizations, summary metrics, and null expectations, are all outside the functions themselves!
 
 ```{r}
 
@@ -458,24 +457,28 @@ for(k in 1:length(radii))
   N.total.in.neighborhoods[,k] <- counts
   
   # Sum basal areas:
-  agg.ba <- aggregate(x = sub$BA_j, by = list(sub$query_i), FUN = "sum", na.rm = TRUE)
+  agg.ba <- aggregate(x = sub$BA_j,
+                      by = list(sub$query_i),
+                      FUN = "sum", na.rm = TRUE)
   BA.total.in.neighborhoods[agg.ba[,1], k] <- agg.ba[,2]
   
   # Track progress:
-  print(paste0(k, "/", length(radii)))
+  #print(paste0(k, "/", length(radii)))
 }
 
-N.total.in.neighborhoods[1:10, 1:10]
-BA.total.in.neighborhoods[1:10, 1:10]
+N.total.in.neighborhoods[1:5, 1:5]
+BA.total.in.neighborhoods[1:5, 1:5]
 
 
 # Express in a per-area basis removes edge effects,
-# and the effect of larger outer circles too:
+# and the effect of larger outer circles too.
+# (I accept 5% error in the estimation of area of edge neighborhoods).
 A <- get_area_of_neighborhoods(query = query_data[,c("gx", "gy")],
                           boundary = boundary,
                           radii = radii,
                           case = "circles",
                           tol = 0.05)
+
 
 N.per.area.in.neighborhoods <- N.total.in.neighborhoods / A$areas
 BA.per.area.in.neighborhoods <- BA.total.in.neighborhoods / A$areas
@@ -493,11 +496,7 @@ abline(h = ref) # the overall density of basal area
 
 ```
 
-Having the available area for each neighborhood, and then expressing metrics on a per area basis, can be one explicit way of accounting for edge effects. This was the approach taken in old CTFS code.
-
-Alternatively, one can control for edge effects using numerical null models, and avoiding the calculation of areas entirely. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects.
-
-I present a template on how to do that, for the simple case of number of neighbors. However, this would be most useful for metrics that do *not* grow linearly with area, like species diversity, and that cannot be directly corrected by expressing in a per-area basis.
+Having the available area for each neighborhood, and then expressing metrics on a per area basis, can be one explicit way of accounting for edge effects. This was the approach taken in old CTFS code. Alternatively, one can control for edge effects using numerical null models, and avoiding the calculation of areas entirely. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects. I present a template on how to do that, for the simple case of number of neighbors. However, this would be most useful for metrics that do *not* grow linearly with area, like species diversity, and that cannot be directly corrected by expressing in a per-area basis.
 
 ```{r}
 
@@ -510,10 +509,10 @@ I present a template on how to do that, for the simple case of number of neighbo
 # neighbors at different scales, and whether that is more or 
 # less than the expected by chance.
 obs <- colMeans(N.total.in.neighborhoods) # observations
-barplot(obs)
+#barplot(obs)
 
 # The expectations will be stores in a matrix, with one row per simulation:
-nsim = 99 # 999 or so for real applications -- small numbers for examples and rendering
+nsim = 9 # 999 or so for real applications -- small numbers for examples and rendering
 null <- matrix(NA, ncol = length(radii), nrow = nsim)
 
 # Get the null expectations
@@ -521,18 +520,20 @@ for(sim in 1:nsim)
 {
   # The simplest of the expectations is uniform random distribution of points, 
   # within the valid boundaries. Easy to get from sf::st_sample.
+  # You may need more sophisticated null models here, depending on your goals.
   null_xy <- sf::st_sample(x = get_boundary(boundary),
                            size = nrow(query_data),
                            type = "random",
                            exact = TRUE)
+  
   null_xy <- sf::st_coordinates(null_xy)
 
-  # Expected conspecific neighbors, if the species was randomly distributed:
+  # Expected conspecific neighbors, under the null distribution of points.
   null_neighbors <- get_distances_up_to_r(query = null_xy,
                                            reference = null_xy,
                                            radius = max(radii))
   
-  keep <- which(null_neighbors$query_i != null_neighbors$reference_j)
+  keep <- which(null_neighbors$query_i != null_neighbors$reference_j) # remove neighbors of themselves
   null_neighbors <- null_neighbors[keep,]
 
   # Then same loop through scales as before:
@@ -543,7 +544,7 @@ for(sim in 1:nsim)
     null_counts <- tabulate(null_sub$query_i, nbins = nrow(null_xy))
     null[sim,k] <- mean(null_counts) # store in the right place
   }
-  print(sim)
+  #print(sim)
 }
 
 # There are different ways of comparing observations with expectations.
@@ -560,7 +561,381 @@ abline(h = c(-2, +2), lty = 2) # rough guidelines for "strong" effect
 
 ```
 
-The approach taken is very fast but demands a lot of memory, so this can be a practical limitation for large datasets. For the moment, I will wait for users' feedback.
+Going through numerical models does not require calculating areas, which is a time-consuming step. It may be more useful, in general. In terms of controlling for edge effects, the null models have some benefits over expressing things on a per-area basis:
+
+-   while the area reflects the average expectation, the null model incorporates variance around that: hypothesis-testing possible
+-   the null expectation helps also in cases of magnitudes that do not grow linearly with area
+
+The approach taken is very fast but demands a lot of memory, so this can be a practical limitation for large datasets. Working with large data objects is problematic and anything based on distances between pairs tend to be large and time-consuming. The problem is worse when applying null models (1 + 999 times worse). These are some useful things to consider:
+
+-   you may not need to store 999 times the large {i, j, distance} null neighborhood object. Instead, it can be temporary within the loop, and you store the relevant data summaries only.
+-   you may store null expectations into files during the loop, and read and process later.
+-   if you are going to end summarizing into a SES using mean(null) and sd(null), you can keep updated running values of them using Welford's algorithm. Check it out. It would save the need to store almost anything.
+-   instances of null models can be run in parallel, if you know how to run code in parallel.
+
+### Example 2: conspecifics vs. heterospecifics at short distances
+
+Here, I present a template on how to calculate both conspecifics and heterospecifics at very short distances. This type of calculation may be relevant for those studying negative density dependence, species coexistence, etc. I look for small trees around large trees, as a rough proxy for "mother trees" and "recent recruits". It is an example of the type of flexibility you may want to adapt to your case.
+
+```{r}
+
+# We define what we will consider "large" and "small" trees,
+# as this will determine both query and reference datasets.
+large = 250 # mm
+small = 50  # mm
+
+# In this case, we will iterate over smaller query datasets, one per species.
+# (It is probably not necessary for the size of our data, but if we can
+# use the time to do the loop, it's probably easier to organize and
+# safer, from the memory overflow point of view).
+
+# The reference dataset, however, will contain all small trees of all
+# the species, because we will be looking at conspecifics and
+# heterospecifics. Thus, it can be defined out of the loop
+# and used again and again.
+
+keep1 <- data$status == "A"
+keep2 <- !is.na(data$gx)
+keep3 <- !is.na(data$gy)
+keep4 <- data$dbh <= small
+keep  <- keep1 & keep2 & keep3 & keep4 
+reference_data <- data[keep,, drop = FALSE]
+
+# Unexpected problems? Solve them.
+#table(is.na(reference_data$gx))
+#table(is.na(reference_data$gy))
+keep2 <- !is.na(reference_data$gx)
+keep3 <- !is.na(reference_data$gy)
+keep <- keep2 & keep3
+reference_data <- reference_data[keep,, drop = FALSE]
+
+# Now, we define the scales of interest and the target spp:
+spp <- unique(data$sp)
+radii <- get_radii(rmax = 10, m = 50, case = "circles") # very short distances
+
+# Then, we loop across species:
+
+con <- matrix(0, nrow = length(spp), ncol = length(radii),
+              dimnames = list(spp, paste0("radius=", radii))) # empty storage
+het <- matrix(0, nrow = length(spp), ncol = length(radii),
+              dimnames = list(spp, paste0("radius=", radii))) # empty storage
+
+for(sp in spp)
+{
+  # Define the query data, based on the target species,
+  # the large size, living status, valid coordinates, ...
+  keep1 <- data$status == "A"
+  keep2 <- !is.na(data$gx)
+  keep3 <- !is.na(data$gy)
+  keep4 <- data$dbh >= large
+  keep5 <- data$sp == sp
+  keep  <- keep1 & keep2 & keep3 & keep4 & keep5
+  query_data <- data[keep,, drop = FALSE]
+  
+  # Unexpected problems? Solve them.
+  #table(is.na(query_data$gx))
+  #table(is.na(query_data$gy))
+  keep2 <- !is.na(query_data$gx)
+  keep3 <- !is.na(query_data$gy)
+  keep <- keep2 & keep3
+  query_data <- query_data[keep,, drop = FALSE]
+  
+  # Skip if we lack data:
+  if(nrow(query_data) == 0) next
+  
+  # Obtain neighborhoods:
+  neighbors <- get_distances_up_to_r(query = query_data[,c("gx", "gy")],
+                                     reference = reference_data[,c("gx", "gy")],
+                                     radius = max(radii))
+  
+  # There won't be neighbors of themselves if the size thresholds
+  # split the data cleanly. But, just in case, the way to remove
+  # neighbors of themselves when query =! reference has to get
+  # the unique identifyiers first:
+  id.in.query <- query_data$treeID[neighbors$query_i]
+  id.in.reference <- reference_data$treeID[neighbors$reference_j]
+  not.themselves <- id.in.query != id.in.reference
+  neighbors <- neighbors[not.themselves,]
+
+  # Get the mean number of neighbors of same or
+  # different species, scale by scale:
+  n.con <- sapply(radii, function(r) {
+    at.distance <- neighbors$dist <= r
+    same.sp <- reference_data$sp[neighbors$reference_j] == sp
+    sub <- neighbors[at.distance & same.sp, ]
+    mean(tabulate(sub$query_i, nbins = nrow(query_data)))
+  })
+  
+  n.het <- sapply(radii, function(r) {
+    at.distance <- neighbors$dist <= r
+    different.sp <- reference_data$sp[neighbors$reference_j] != sp
+    sub <- neighbors[at.distance & different.sp, ]
+    mean(tabulate(sub$query_i, nbins = nrow(query_data)))
+  })
+  
+  # Store results and track progress
+  con[sp,] <- n.con
+  het[sp,] <- n.het
+  #print(paste0(which(spp == sp), "/", length(spp)))
+}
+
+
+# Inspect and process results any way you need:
+proportion_conspecifics <- con / (con + het)
+
+common <- names(sort(table(data$sp[data$status == "A"]), decreasing = TRUE))[1:20]
+rare <- spp[!spp %in% common]
+
+plot(radii, colMeans(proportion_conspecifics[common,], na.rm = TRUE),
+     col = "red", type = "o",
+     las = 1,
+     ylim = c(0, 0.1), 
+     xlim = range(c(0, radii)),
+     ylab = "proportion of conspecifics",
+     xlab = "distance")
+
+points(radii, colMeans(proportion_conspecifics[rare,], na.rm = TRUE),
+     col = "gray", type = "o")
+
+
+# Wow! It seems that the scale at which the proportion of
+# conspecifics is LOWEST for common species is the same
+# scale at which the proportion of conspecificis is
+# the HIGHEST for rare species! Maybe you can write a paper!
+
+# Jokes aside: the % of conspecifics peaks at shorter
+# distances for common species than for rare species.
+# This seems congruent with general theory.
+
+
+```
+
+### Example 3: diversity in neighborhoods
+
+We can think of some species "promoting" diversity more than others, or preferring locations with higher or lower diversity (without assuming direct causal relationship), etc. In this example I calculate diversity indexes in the neighborhood of different species, at different scales.
+
+The example also highlights the use of doing data summaries and aggregation directly from within data.table objects, using `data.table` syntax.
+
+```{r}
+
+# Define query dataset:
+keep1 <- data$status == "A"
+keep2 <- !is.na(data$gx)
+keep3 <- !is.na(data$gy)
+keep <- keep1 & keep2 & keep3
+query_data <- data[keep,, drop = FALSE]
+
+# Define the reference dataset:
+# (We are interested in neighbors of any species around any species, so reference = query)
+reference_data <- query_data 
+
+# Now the scales of interest:
+radii <- get_radii(m = 25, rmax = 10) # more informative at closer distances?
+
+# We would be looking at the entire rectangular plot:
+window <- c(xmin = 0, ymin = 0, xmax = round(max(data$gx, na.rm = TRUE)), ymax = round(max(data$gy, na.rm = TRUE)))
+
+# Are these datasets too large to cross at once?
+n = nrow(query_data)
+m = nrow(reference_data)
+A = sf::st_area(get_boundary(window = window)) # boundary as sf object, use get_boundary(...) if needed
+a = pi*max(radii)^2 # assumes same units as boundary
+Q = n * a  * m / A 
+Q # larger than 10^8?
+
+# It seems we will get less than 100 million pairs of neighbors.
+# That's not too much. Let's calculate neighbors just once:
+neighbors <- get_distances_up_to_r(query = query_data[,c("gx", "gy")],
+                                   reference = reference_data[c("gx", "gy")],
+                                   radius = max(radii))
+
+# General way of removing neighbors of themselves:
+id.in.query <- query_data$treeID[neighbors$query_i]
+id.in.reference <- reference_data$treeID[neighbors$reference_j]
+not.themselves <- id.in.query != id.in.reference
+neighbors <- neighbors[not.themselves,]
+
+nrow(neighbors) / Q # Q was a good guess
+
+# Empty object to store results:
+spp <- unique(query_data$sp)
+diversity <- matrix(NA, nrow = length(spp), ncol = length(radii), dimnames = list(spp, paste0("r_", 1:length(radii))))
+# (etc)
+
+# Fill by subsetting at different scales:
+# Buf, before, we add the species identity for i and j:
+neighbors$sp_i <- query_data$sp[neighbors$query_i] # species identity of focal trees: will summarize around it 
+neighbors$sp_j <- reference_data$sp[neighbors$reference_j] # species identity of neighbors j: will count them
+
+for(k in 1:length(radii))
+{
+  # Subset
+  radius = radii[k]
+  sub <- neighbors[neighbors$dist <= radius, c("query_i", "sp_i", "sp_j")]
+  
+  # Use data.table syntax to obtain different diversity indexes:
+
+  # Extract query-level sp_i information, that will be used later to summarize
+  query_sp_i <- unique(sub[, .(query_i, sp_i)])
+
+  # Count abundance of each sp_j around each query_i
+  comp <- sub[, .(
+    abund = .N
+  ), by = .(query_i, sp_j)]
+  
+  # Total abundance around each query point or focal tree:
+  comp[, N := sum(abund), by = query_i]
+  
+  # Relative abundance of each species around the query point or focal trees
+  comp[, p := abund / N]
+  
+  # Diversity around each query point or focal tree
+  alpha <- comp[, .(
+    N = data.table::first(N),
+    richness = .N,
+    shannon = -sum(p * log(p)),
+    simpson_lambda = sum(p^2)
+  ), by = query_i]
+  
+  # Derived indices
+  alpha[, hill_q0 := richness]
+  alpha[, hill_q1 := exp(shannon)]
+  alpha[, hill_q2 := 1 / simpson_lambda]
+  alpha[, simpson := 1 - simpson_lambda]
+  alpha[, invsimpson := 1 / simpson_lambda]
+  alpha[, pielou := data.table::fifelse(richness > 1, shannon / log(richness), NA_real_)]
+
+  # Add sp_i and then summarize around it:
+  alpha <- merge(
+    alpha,
+    query_sp_i,
+    by = "query_i",
+    all.x = TRUE
+  )
+
+  alpha_by_sp_i <- alpha[, .(
+    n_query_i = .N,
+    mean_N = mean(N, na.rm = TRUE),
+    mean_richness = mean(richness, na.rm = TRUE),
+    mean_shannon = mean(shannon, na.rm = TRUE),
+    mean_hill_q1 = mean(hill_q1, na.rm = TRUE),
+    mean_hill_q2 = mean(hill_q2, na.rm = TRUE),
+    mean_simpson = mean(simpson, na.rm = TRUE),
+    mean_invsimpson = mean(invsimpson, na.rm = TRUE),
+    mean_pielou = mean(pielou, na.rm = TRUE)
+  ), by = sp_i]
+  
+  # Put in the right place
+  # (One index, as an example)
+  diversity[alpha_by_sp_i$sp_i, k] <- alpha_by_sp_i$mean_simpson
+  #print(paste0(k, "/", length(radii)))
+}
+
+
+# Then you visualize and process as you want
+YLIM = range(diversity, na.rm = TRUE)
+plot(radii, diversity["PREMON", ], type = "o", col = "green4", ylim = YLIM, ylab = "Diversity index", xlab = "distance", las = 1)
+points(radii, diversity["HIRRUG", ], type = "o", col = "red3")
+points(radii, diversity["CASARB", ], type = "o", col = "blue")
+legend("bottomright", legend = c("Prestoea montana", "Hirtella rugosa", "Casearia arborea"), lty = 1, col = c("green4", "red3", "blue"))
+
+```
+
+Diversity is something that does not grow linearly with area, so there is no need to calculate the area of the neighborhoods. In fact, that would be misleading.
+
+We can use null models to express diversity as "deviations from the expected", which would directly correct for edge effects. For simplicity, I use the simple null model of random distribution – this, by no means, is a general recommendation for studies of local diversity. The model is equivalent to permuting species identities.
+
+```{r}
+
+nsim = 9 # 999 for real applications
+null <- array(NA, dim = c(length(spp), length(radii), nsim),
+              dimnames = list(spp, NULL, NULL))
+
+for(sim in 1:nsim)
+{
+  # Null reference xy, assuming uniform distribution
+  m = nrow(reference_data)
+  xmin = floor(min(reference_data$gx, na.rm = TRUE))
+  xmax = ceiling(max(reference_data$gx, na.rm = TRUE))
+  ymin = floor(min(reference_data$gy, na.rm = TRUE))
+  ymax = ceiling(max(reference_data$gy, na.rm = TRUE))
+  null.x <- runif(m, min = xmin, max = xmax)
+  null.y <- runif(m, min = ymin, max = ymax)
+  null.reference.xy <- cbind(null.x, null.y)
+  
+  # Null neihgbors:
+  null.nnn <- get_distances_up_to_r(query = query_data[,c("gx", "gy")],
+                                   reference = null.reference.xy,
+                                   radius = max(radii))
+
+  # General way of removing neighbors of themselves:
+  id.in.query <- query_data$treeID[null.nnn$query_i]
+  id.in.reference <- reference_data$treeID[null.nnn$reference_j]
+  not.themselves <- id.in.query != id.in.reference
+  null.nnn <- null.nnn[not.themselves,]
+  
+  # Add species identities
+  null.nnn$sp_i <- query_data$sp[null.nnn$query_i]
+  null.nnn$sp_j <- reference_data$sp[null.nnn$reference_j]
+  
+  # Loop through scales for the null neighborhoods:
+  for(k in 1:length(radii))
+  {
+    # Subset
+    radius = radii[k]
+    sub.null <- null.nnn[null.nnn$dist <= radius, c("query_i", "sp_i", "sp_j")]
+    
+    # Repeat the same things as above, but for the null neighborhoods
+    null.query_sp_i <- unique(null.nnn[, .(query_i, sp_i)])
+    null.comp <- sub.null[, .(abund = .N), by = .(query_i, sp_j)]
+    null.comp[, N := sum(abund), by = query_i]
+    null.comp[, p := abund / N]
+    null.alpha <- null.comp[, .(simpson_lambda = sum(p^2)), by = query_i]
+    null.alpha[, simpson := 1 - simpson_lambda]
+  
+    null.alpha <- merge(
+      null.alpha,
+      null.query_sp_i,
+      by = "query_i",
+      all.x = TRUE
+    )
+
+    null.alpha_by_sp_i <- null.alpha[, .(mean_simpson = mean(simpson, na.rm = TRUE)),
+                                by = sp_i]
+    
+    # Store in the right place:
+    null[null.alpha_by_sp_i$sp_i,k,sim] <- null.alpha_by_sp_i$mean_simpson
+  }
+  
+  # track
+  #print(paste0(sim, "/", nsim))
+}
+
+
+# Then, compare observations with expectations:
+mean.null <- apply(null, c(1, 2), FUN = mean, na.rm = TRUE)
+sd.null   <- apply(null, c(1, 2), FUN = sd, na.rm = TRUE)
+sd.null[which(sd.null == 0)] <- min(sd.null[which(sd.null > 0)], na.rm = TRUE)
+SES_diversity <- (diversity - mean.null) / sd.null
+
+# Etc.
+
+YLIM = c(-500, +50)
+plot(radii, SES_diversity["PREMON", ], type = "o", col = "green4", ylim = YLIM, ylab = "SES_diversity", xlab = "distance", las = 1)
+points(radii, SES_diversity["HIRRUG", ], type = "o", col = "red3")
+points(radii, SES_diversity["CASARB", ], type = "o", col = "blue")
+
+legend("bottomleft", legend = c("Prestoea montana", "Hirtella rugosa", "Casearia arborea"), lty = 1, col = c("green4", "red3", "blue"))
+
+abline(h = c(-2, +2)) # guidelines for strong effect
+
+# Note: the null model is a complete mix, so it creates highly diverse
+# communities at almost every scale. Observed neighborhoods tend to be
+# way less diverse than expected, under this extreme expectation.
+# If you really want to learn about local diversity in neighborhoods,
+# then you really need to think about better null models than this!
+
+```
 
 ## Legacy notes
 
@@ -576,11 +951,11 @@ The code substitutes these original CTFS functions:
 -   `NeighborDensities` in spatial \> NeighborDensityFun.r
 -   `RipUvK` in spatial \> RipUvK.r
 
-The old functions were closer to "plug data in and forget" than the current functions. The cost is very limited flexibility. Now, filters, abundance metrics, null expectations, and classes to compare, are all outside the functions. This puts more power = responsibility on the hands of the users.
+The old functions were closer to "plug data in and forget" than the current functions. The cost was very limited flexibility. Now, filters, abundance metrics, null expectations, and classes to compare, are all outside the functions. This puts more power = responsibility on the hands of the users.
 
 All area-related tasks are handled by the `get_area_of_neighborhoods()` function now, covering circles and rings, and arbitrary boundary shapes.
 
-The neighbor-counting CTFS functions implemented common ways of aggregating data. The functions made many assumptions about classes to include, units, etc. and also use obsolete spatial calculations for boundaries, etc. Neighbor-counting is just one instance of the general task of calculating *any* metric of interest over a set of neighbors. The current code does not attempt to solve that type of task in general. You will have to adapt the examples to your case, and find efficient ways of aggregating or summarizing data for your case.
+The neighbor-counting CTFS functions implemented common ways of aggregating data. The functions made many assumptions about classes to include, units, etc. and also use obsolete spatial calculations for boundaries, etc. Neighbor-counting is just one instance of the general task of calculating *any* metric of interest over a set of neighbors. The current code does not attempt to solve that type of task in general. I have provided guidelines and templates instead. You will have to adapt the examples to your case, and find efficient ways of aggregating or summarizing data for your case.
 
 Finally, the Ripley's K is not implemented at all. It is already implemented in many R package, probably dozens of them. Because this is a standard tool, here is a worked example below on how to do that type of analysis:
 
@@ -620,53 +995,5 @@ plot(L, . - theo ~ r, main = "Besag's L: L(r) - r")
 # which is easier to interpret visually:
 L.env <- envelope(PPP, fun = Lest, r = radii, nsim = 199, verbose = FALSE)
 plot(L.env, . - theo ~ r, main = "Global CSR envelope: L(r) - r")
-
-```
-
-The analysis above shows some "repulsion" at short distances for the individuals of *Prestoea* in Luquillo. That is: fewer individuals at distances 0-3 m or so than expected by chance. This is not very common: most tree species are aggregated at all scales. We can ask: What are the species that show "avoidance" (fewer individuals than expected) and at what scales? This is an example on how to get that:
-
-```{r}
-
-# What species, and at what scales, have fewer neighbors than expected?
-# We exclude species with too few individuals:
-min.n = 100
-a <- sort(table(data$sp[data$status == "A"]), decreasing = TRUE)
-spp <- names(which(a >= min.n))
-
-# This is the rectangular observation window:
-W <- owin(xrange = round(range(data$gx, na.rm = TRUE)),
-          yrange = round(range(data$gy, na.rm = TRUE)))
-
-# Scales of observation, centered over short distances:
-radii <- seq(from = 0, to = 20, by = 0.2)
-
-# Run loop through species:
-segregations <- NULL
-for(sp in spp)
-{
-  x.sp <- data$gx[data$sp == sp & data$status == "A"]
-  y.sp <- data$gy[data$sp == sp & data$status == "A"]
-  PPP.sp <- ppp(x = x.sp, y = y.sp, window = W)
-  L.sp.env <- envelope(PPP.sp, fun = Lest, r = radii, nsim = 49, verbose = FALSE)
-
-  w <- which(L.sp.env$obs < L.sp.env$lo)
-  if(length(w) > 0)
-  {
-    add <- data.frame(sp = sp, r = L.sp.env$r[w])
-    segregations <- rbind(segregations, add)
-  }
-  print(paste0(which(spp == sp), "/", length(spp)))
-}
-
-# How frequent is it?
-nrow(segregations) # number of scales with significant segregations
-length(radii) * length(spp) # number of scales evaluated
-segregations
-
-# What are the species and scales involved?
-hist(segregations$r)
-table(segregations$sp)
-
-# Etc.
 
 ```

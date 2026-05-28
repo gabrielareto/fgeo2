@@ -340,7 +340,7 @@ get_area_of_neighborhoods <- function(query = NULL,
     }
     
     areas[,i] <- A
-    print(paste0(i, "/", m))
+    #print(paste0(i, "/", m))
   }
   
   # The ring case is solved from the circles case,
