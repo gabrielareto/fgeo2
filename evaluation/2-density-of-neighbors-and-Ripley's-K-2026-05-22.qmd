@@ -29,19 +29,9 @@ This set contains the following functions:
 -   `NeighborDensities` in spatial \> NeighborDensityFun.r
 -   `RipUvK` in spatial \> RipUvK.r
 
-## Overall criteria
-
 These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in `RipUvK.r` and `NeighborDensityFun.r` original scripts.
 
-This type of calculation is widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses. But, in general, counting points in certain areas around target individuals (or locations) is valuable. Perhaps most of these functions can be incorporated into a more general function that counts (or summarizes) data belonging to different classes, within areas that have a minimum and a maximum radius.
-
-Modelling or comparison with null expectations is less valuable for the `fgeo2` package. The Ripley's K function is surely maintained by other packages: `spatstat::Kest` and `spatstat::Lest` may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the `RipUvK` function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
-
-The study of neighborhoods can be done in many different ways, so it would be important to maximize flexibility in things like selecting the focal trees, picking neighborhood-level metrics, etc. If such flexibility is not feasible to incorporate within fgeo2 code, then it should be left out the functions, and substitute by examples or guidelines that the user can apply to their case and goals.
-
-## Preliminaries for code evaluation
-
-First, we declare the path to fgeo2 folder and all the functionality needed:
+## Code evaluation
 
 ```{r}
 
@@ -75,12 +65,6 @@ f7 <- list.files(paste0(path, "07_mapping_plotting/R/old/"),
 ff <- c(f1, f2, f3, f4, f5, f6, f7)
 for(f in ff) source(f)
 
-```
-
-## Review of original code
-
-```{r}
-
 # Use this to see the source code, manually
 if(FALSE)
 {
@@ -92,7 +76,12 @@ if(FALSE)
   NeighborDensities
   RipUvK
 }
+
 ```
+
+## Evaluation
+
+### Specific functions
 
 Some functions work on areas, other functions work on counts.
 
@@ -111,6 +100,22 @@ The area of rings ("annuli") is calculated by the `Annuli` function, which repea
 
 `RipUvK` is the highest-level function in this group of functions. It runs over each species calculating a series of spatial statistics for con-specifics at different distances. It seems easy to use, it is not very long. It is not very flexible, and calls external functions of undefined packages, probably `splancs` package: `khat`, `spoints`.
 
+### Is there a need for this?
+
+Yes. Calculations over neighborhoods are widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses, as it has been known for a long time that almost all forest species show aggregated patterns across scales. But, in general, counting points in certain areas around target individuals (or locations) is valuable. There are many questions that can be approached that way, if the code has flexibility.
+
+Modelling or comparison with null expectations is less valuable for the `fgeo2` package. The Ripley's K function is surely maintained by other packages: `spatstat::Kest` and `spatstat::Lest` may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the `RipUvK` function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
+
+### Generalization?
+
+The study of neighborhoods can be done in many different ways, so it would be important to maximize flexibility in things like selecting the focal trees, picking neighborhood-level metrics, etc. If such flexibility is not feasible to incorporate within fgeo2 code, then it should be left out the functions, and substitute by examples or guidelines that the user can apply to their case and goals.
+
+Perhaps most of these functions can be incorporated into a more general function that counts (or summarizes) data belonging to different classes, within areas that have a minimum and a maximum radius.
+
+Perhaps generalize rings and circles by declaring minimum and maximum radius, with minimum radius = 0 in all cases? Although that would allow overlapping rings and that may cause problems. I am not sure why circles vs. rings are important but the distinction is sharp, probably no need to make those instances of more general geometry.
+
+### Conclusion
+
 Because the code has obvious points of vulnerability (units, column names, ...), and has very limited flexibility (filters, aggregation, expectations), I decide to rewrite.
 
 ## Design principles for alternative code
@@ -119,11 +124,13 @@ Ideally, replacement code should incorporate the flexibility to count neighbors 
 
 It should be general and count everything in the input. If the user wants to focus on trees that are alive, for example, it should subset the dataset first. It does not seem robust to filter from within the function and make assumptions about column names, etc. Filter outside gives all the flexibility to the user, even if they keep lianas and trees together, or whatever they want. This is aligned with the goal of reducing dependency from "orthodox CTFS format".
 
-Edge effects are important. Original code handles rectangular boundaries only. Ideally, we should be able to define edges of any arbitrary shape. For example, so Ngel Nyaki plot can truncate circles to the border of the forested part of the plot, not just the rectangular borders. Or do counts + areas for specific habitat types within the rectangular plot, etc. Goreaud & Pélissier (1999) proposed an algorithm to generalize their approach to arbitrary boundaries, but implementing that would involve "fastidious calculations" (as they say) and would be prone to error. A grid-based approach approaches brute force but is easier to code and check. It should be preferred if computational costs allow it.
+Absence of strong defaults about status may help people think a bit about things that happen around dead trees, or how trees recruit around certain locations, and so on. It is better to have inputs that are simply pre-filtered (x, y) coordinates instead of "data" tables to be processed within the function. This can facilitate studying things around locations in a general sense, not just trees.
 
-Calculating distances to focal points could be relatively easy, but memory and computation is important for large datasets.
+Edge effects are important. Original code handles rectangular boundaries only. Ideally, we should be able to define edges of any arbitrary shape. For example, so Ngel Nyaki plot can truncate circles to the border of the forested part of the plot, not just the rectangular borders. Or do counts + areas for specific habitat types within the rectangular plot, etc. Goreaud & Pélissier (1999) proposed an algorithm to generalize their approach to arbitrary boundaries, but implementing that would involve "fastidious calculations" (as they say) and would be prone to error. It feel potentially powerful but difficult to write and virtually impossible to debug. Errors in implementation will be almost impossible to detect. A grid-based approach is closer to brute force but is easier to code and check. It should be preferred if computational costs allow it. We need ways of adjusting grid resolution as a function of tolerable error.
 
-It should be unit agnostic: return everything on the same units as the input.
+Calculating distances to focal points could be relatively easy, but memory and computation is important for large datasets. Almost surely this problem has been solved for large datasets in other packages.
+
+It should be unit agnostic: return everything on the same units as the input. This is a general criterion for code update.
 
 Ideally, the code should be fast. Solutions without loops would be preferred. Memory could be a constrain so tutorials should teach how to do things by chunks.
 
@@ -137,9 +144,9 @@ Comparing with expectations: the current code uses Ripley's K function, which is
 
 In any case, numerical null models require fast code, because of computational costs. Because these are very flexible tools, they should not be hard-coded in fgeo functionality.
 
-If all these things are implemented, an updated workflow would clearly expand the current feasible workflow:
+If all these things are implemented, an updated workflow would expand the current feasible workflow:
 
--   allow the use of any metric of abundance
+-   allow the use of any metric of abundance, maybe any characterization of neighborhoods
 -   neighbors of any class around focal points of any class, defined outside
 -   filters are outside: maximum flexibility (and responsibility)
 -   minimize assumptions: work on {x, y} general datasets, with boundaries expressed as spatial objects
