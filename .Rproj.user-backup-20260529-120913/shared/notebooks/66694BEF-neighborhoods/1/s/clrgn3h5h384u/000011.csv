@@ -1,0 +1,20 @@
+"0","# This is my local path. You may have to adapt this.
+g <- regexpr(""fgeo2"", getwd())
+path <- substr(getwd(), 1, g + attr(g, ""match.length""))
+
+# Source functionality:
+source(paste0(path, ""evaluation/0-code-to-source.r"")) # auxiliary
+f = paste0(path, ""03_spatial/R/new/neighborhoods.R"")
+source(f)
+
+# Check the functions
+functions_in_script(f)
+"
+"1","[1]"
+"1"," ""get_distances_up_to_r""    "
+"1"," ""get_boundary""             "
+"1"," ""core_vs_edge""             "
+"1"," ""get_radii""                "
+"1"," ""get_area_of_neighborhoods"""
+"1","
+"

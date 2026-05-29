@@ -33,7 +33,7 @@ In some of these applications, but not all, the observations are compared with s
 
 ## Code
 
-This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. The code is intentionally auxiliary in nature, not heavily wrapped. The functions are helpers to:
+This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. In forest ecology, neighborhoods can be used for many questions and in many different ways. It is a type of analysis that requies high flexibility. It is not feasible to incorporate all that flexibility within functions. Therefore, the code is intentionally auxiliary in nature, not heavily wrapped. The functions are helpers to:
 
 -   calculate distances between points, but *very fast.*
 -   handling boundaries of arbitrary shape, not just rectangular windows: relevant for edge effects.
@@ -45,7 +45,7 @@ An important decision was to leave out of the functions the operations that requ
 -   aggregating / summarizing to get the metrics of interest, given a set of points in a neighborhood.
 -   generating null expectations and comparing them with observations.
 
-**IMPORTANT COROLARY: to apply this code to real ecological analyses, it is not possible to plug "data" in and forget. You would need to adapt the examples / instructions below to your own case.**
+[**IMPORTANT COROLARY: to apply this code to real ecological analyses, it is not possible to plug "data" in and forget. You would need to adapt the examples / instructions below to your own case.**]{.underline}
 
 As this is code for spatial analyses, it uses general inputs and general vocabulary of spatial analyses:
 
@@ -76,7 +76,7 @@ functions_in_script(f)
 
 The code takes responsibility for the boundary- and area-related difficult calculations and for the *very fast* identification of pairs of neighbors. Filtering and summarizing (e.g. counting neighbors, calculating crowding indexes, etc.) will be responsibility of the user. This section guides you through a general recommended workflow:
 
-### Step 1: identify query and reference
+### Step 1: Identify query and reference
 
 Here you define what are the classes, how are you going to filter of subset the data, and so on. Remember: query = the focal trees or locations, and reference = the potential neighbors around the focal points.
 
@@ -143,7 +143,7 @@ neighbors <- get_distances_up_to_r(query = query_data[,c("x", "y")],
 
 ```
 
-### Step 2: define boundary and scales of interest
+### Step 2: Define boundary and scales of interest
 
 Boundaries are needed to account for edge effects in spatial analyses. Most often, they are rectangular. However, the code here was developed to handle irregular boundaries, and be as general as possible. It could be used to run analyses within specific habitats, or for forests that do not completely fill the rectangular plot (e.g. Ngel Nyaki, Nigeria).
 
@@ -151,7 +151,7 @@ The `get_boundary()` function is a general helper that can transform a rectangul
 
 Similarly, the `get_radii()` function can return a vector of scales of interest, using rules of thumb, in case you do not have a specific vector of interest. It has a useful default for the maximum distance so, in practice, you would have to specify the `case` (circles or rings for the neighborhoods) and the number of scales to evaluate, which typically depends on the size of the datasets and constrain total code running times.
 
-### Step 3: identify the neighbors
+### Step 3: Identify the neighbors
 
 After defining query and reference datasets, boundary, and scales of observation, the `get_distances_up_to_r()` function will return all {i, j} pairs and their distance, up to a given maximum distance. Individuals *i* come from `query` and individuals *j* from `reference`. These are just row indexes, so it is important that you keep alignment with the variables of interest, to be able to characterize the neighborhoods in the next step.
 
@@ -164,15 +164,25 @@ neighbors <- get_distances_up_to_r(..., radius = max(radii))
 
 It will return information info for the largest possible neighborhood, very fast, without the need to repeat calculations or store multiple results.
 
-Note: in some applications, like the aggregation of conspecifics, reference = query. When that is the case, each individual is also considered a neighbor of itself, in a pair {i, i=j} with distance = 0. In these cases, something like this will be required:
+Note: in many applications, points in `query` are also included, completely or partially, within `reference`. This will result in {i, j=i} pairs, or neighbors of themselves. The most obvious case is when reference = query, for the study of conspecific neighbors.
+
+In these cases, something like this will be required:
 
 ```{r}
 #| eval: false
+
+# Assuming "ID" is a unique point ID that applies to both datasets:
+ID_in_query     <- query_data$ID[neighbors$query_i]
+ID_in_reference <- reference_data$ID[neighbors$reference_j]
+not_themselves  <- ID_in_query != ID_in_reference
+neighbors       <- neighbors[not_themselves,]
+
+# Only if reference = query this will work directly:
 keep <- which(neighbors$query_i != neighbors$reference_j)
 neighbors <- neighbors[keep,]
 ```
 
-If, for whatever reason, you have used a stem-level table instead of an individual-level table, this would also get rid of all {i, j} pairs that belong to the same individual (assuming they share coordinates):
+If, for whatever reason, you have used a stem-level table instead of an individual-level table, this would also get rid of all {i, j} pairs that belong to the same individual (assuming stems within individuals share coordinates):
 
 ```{r}
 #| eval: false
@@ -251,7 +261,7 @@ for(h in 1:length(chunks))
 
 Loops may be needed for the chunks, because of the storage limitations. The need for other loops (species by species, etc.) will depend on how one summarizes or aggregates the metrics of interest.
 
-### Step 4: characterize neighborhoods with the metric(s) of interest
+### Step 4: Characterize neighborhoods with the metric(s) of interest
 
 At this point, and regardless of the structure into loops, you should have pairs of individuals that are neighbors at a given scale. Then, you can process this information in any way you want:
 
@@ -268,11 +278,13 @@ First, and obviously: you should have used the appropriate `reference` input. If
 
 Second: alignment is key. The output of `get_distances_up_to_r()` are pairs of query and reference indexes as {i, j}, and these are rows in matrixes that only contain (x, y) coordinates. If you want to call other variables (basal area, biomass, species identity, etc.) then these indexes must correspond to the tables with those variables. For that reason, the safe way of obtaining neighbors is to have complete data tables for the query and reference points, and call the {x, y} columns when necessary, without breaking alignment in any way. See Step 1.
 
-The code was developed specifically to maximize flexibility in this step. There is no room here to even summarize the possible ways the information can be summarized. Just few reminders:
+The code was developed specifically to maximize flexibility in this step. There is no room here to even list the possible ways the information can be summarized. Neighborhoods are just small pieces of forest, local communities, and you can apply to them, in theory, almost any ecological analysis. In practice, you would be constrained by computational limitations, as neighborhoods are very numerous, so they are summarized by relatively simple metrics (most often, just counting individuals).
+
+Just a few reminders:
 
 -   `aggregate()` is base R and useful for simple grouped summaries without extra dependencies. It is explicit and stable, but can become verbose when several summaries or several grouping variables are needed.
 -   `dplyr` provides readable verbs such as `group_by()`, `summarise()`, and `count()`, often connected with the pipe operator `|>`. This syntax is usually easier to read and modify, and is very well documented in many sources.
--   The output of `get_distances_up_to_r()` is a data.table. The approach to summarize/aggregate data.table objects is almost guaranteed to be the fastest and most memory-efficient option for large tables, using compact expressions such as `DT[, .(n = .N), by = group]`. However, the syntax is not familiar to many users. It is probably best suited for advanced users or when performance is critical.
+-   The output of `get_distances_up_to_r()` is a data.table. The approach to summarize/aggregate data.table objects is almost guaranteed to be the fastest and most memory-efficient option for large tables, using compact expressions such as `DT[, .(n = .N), by = group]`. This syntax is not widely known, so this is probably best suited for advanced users or when performance is critical. See Example 3 below.
 
 If you only want to count neighbors, in simple cases, `tabulate()` is better than `table()` because it would end aligned, including zero counts:
 
@@ -286,7 +298,7 @@ counts <- tabulate(nn$query_i, nbins = nrow(query))
 # table(nn$query_i) # this would require further processing
 ```
 
-### Step 5: contrast with expectations
+### Step 5: Contrast with expectations
 
 #### Calculating areas
 
@@ -304,7 +316,7 @@ Null models compare observations (one instance) with expectations (many instance
 
 Null models do not require the calculation of areas to control for edge effects. The null expectations already incorporate the fact that points near the boundaries will tend to have fewer neighbors (and thus lower basal area, fewer species, etc). If deviations are standardized, they will solve for edge effects.
 
-Often, deviations from expectations are linked to null hypothesis testing, so we can tell at what scales a given species is *significantly* more aggregated than expected by chance, at what scales it is roughly as aggregated as expected by chance, etc. If you are testing hypotheses, you probably want to control for Type I error rate, because you are testing many scales, and (possibly) many species, and so on. It is beyond the scope of this tutorial to explain how to do that, but, as a general rule: if you want to learn something, don't do Bonferroni.
+Often, deviations from expectations are linked to null hypothesis testing, so we can tell at what scales a given species is *significantly* more aggregated than expected by chance, at what scales it is roughly as aggregated as expected by chance, etc. If you are testing hypotheses, you probably want to control for Type I error rate, because you are testing many scales, and (possibly) many species. It is beyond the scope of this tutorial to explain how to do that, but, as a general rule: do better than Bonferroni.
 
 The examples below implement the simplest of the null models: Poisson point pattern, or uniformly random and independent distribution of points. This is the null model implicit in most standard spatial analyses, and the one to use when studying aggregation. For other metrics (for example, abundance of species A around species B, number of species around focal locations, etc.) the general recommendation is to use null models that are more respectful towards reality (e.g. torus translations).
 
@@ -573,7 +585,7 @@ The approach taken is very fast but demands a lot of memory, so this can be a pr
 -   if you are going to end summarizing into a SES using mean(null) and sd(null), you can keep updated running values of them using Welford's algorithm. Check it out. It would save the need to store almost anything.
 -   instances of null models can be run in parallel, if you know how to run code in parallel.
 
-### Example 2: conspecifics vs. heterospecifics at short distances
+### Example 2: Conspecifics vs. heterospecifics at short distances
 
 Here, I present a template on how to calculate both conspecifics and heterospecifics at very short distances. This type of calculation may be relevant for those studying negative density dependence, species coexistence, etc. I look for small trees around large trees, as a rough proxy for "mother trees" and "recent recruits". It is an example of the type of flexibility you may want to adapt to your case.
 
@@ -710,7 +722,7 @@ points(radii, colMeans(proportion_conspecifics[rare,], na.rm = TRUE),
 
 ```
 
-### Example 3: diversity in neighborhoods
+### Example 3: Diversity in neighborhoods
 
 We can think of some species "promoting" diversity more than others, or preferring locations with higher or lower diversity (without assuming direct causal relationship), etc. In this example I calculate diversity indexes in the neighborhood of different species, at different scales.
 

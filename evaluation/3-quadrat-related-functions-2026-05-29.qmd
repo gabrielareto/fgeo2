@@ -1,0 +1,121 @@
+---
+title: "Evaluation of quadrat-related functions"
+author: "Gabriel Arellano"
+date: today
+format:
+  pdf:
+    code-overflow: wrap
+    toc: true
+    toc-depth: 2
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
+editor: visual
+---
+
+## Goal
+
+There is a set of functions in the CTFS / fgeo functionality that seems related to handling quadrats and coordinates in ForestGEO plots. These are 80+ functions that seem to work around:
+
+-   transformations
+    -   local coordinates + quadrat info = global coordinates
+
+    -   global coordinates + quadrat info = local coordinates
+
+    -   quadrat code –\> quadrat location
+-   splitting plot into pieces
+    -   quadrats of standard size
+
+    -   smaller quadrats
+
+    -   hectares
+-   selecting
+    -   certain quadrats
+
+    -   neighboring quadrats
+
+    -   random quadrats
+
+This code seems concentrated in the CTFS `quadfunc.r` script. That script may contain some extra functions not that directly related to these tasks. This is the evaluation of the whole script, and the dependencies it creates.
+
+## Load functions
+
+First, we declare the path to fgeo2 folder, and source useful auxiliary functions:
+
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Source useful functionality:
+source(paste0(path, "evaluation/0-code-to-source.r"))
+
+# Other functionality:
+library(igraph, quietly = TRUE)
+
+```
+
+This chunk of code will source all the scripts, something similar to the old "startCTFS" function, but following a different structure of folders:
+
+```{r}
+
+# Source the R scripts
+f1 <- list.files(paste0(path, "01_utilities/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f2 <- list.files(paste0(path, "02_biomass/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f3 <- list.files(paste0(path, "03_spatial/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f5 <- list.files(paste0(path, "05_demography_growth/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f6 <- list.files(paste0(path, "06_topography_habitat/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/old/"),
+                 full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+
+ff <- c(f1, f2, f3, f4, f5, f6, f7)
+for(f in ff) source(f)
+```
+
+Note that it works on (possibly) updated scripts. The history of changes is briefly being recorded in the "function_inventory" table. If you want to evaluate the structure of dependencies in the original code by Condit, change "new" by "old" in the path names above.
+
+## Map dependencies
+
+This maps all the mutual dependencies among the whole body of functions:
+
+```{r}
+
+# All functions in the target body of code:
+all <- unique(unlist(lapply(ff, function(f) functions_in_script(f))))
+
+# All of the dependencies among all functions in the global environment:
+edges <- get_all_dependencies()
+
+# Subset the dependencies for the target functions only:
+keep <- edges$from %in% all | edges$to %in% all
+edges <- edges[keep,,drop = FALSE]
+
+# Proper graph representation, maybe useful:
+g <- graph_from_data_frame(edges, directed = TRUE)
+
+pdf(paste0(path, "evaluation/results/dependencies-", Sys.Date(), ".pdf"),
+    height = 33, width = 33)
+
+plot(g, layout = layout.fruchterman.reingold, 
+     vertex.label = V(g)$name,
+     vertex.size = 5,
+     vertex.color= V(g)$color,
+     vertex.frame.color= "white",
+     vertex.label.color = "black",
+     edge.width=E(g)$weight, 
+     edge.color="black")
+
+dev.off()
+```
+
+\

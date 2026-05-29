@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# R / RStudio local state
+.Rproj.user/
+.Rhistory
+.RData
