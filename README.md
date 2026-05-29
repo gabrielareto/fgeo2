@@ -1,6 +1,6 @@
 # ForestGEO / CTFS R code review and development
 
-This repository contains working R code for evaluating, updating, and developing analytical workflows for ForestGEO forest plot data, and possibly other compatible forest datasets.
+This repository contains working R code for evaluating, updating, and developing analytical workflows for ForestGEO forest plot data, and other compatible forest datasets.
 
 ForestGEO, formerly known as the Center for Tropical Forest Science (CTFS), is an initiative led by the Smithsonian Institution that studies forest diversity via 80+ research sites. Each research site conducts censuses of every tree within the plot at that location. There is substantial convergence in standards and methods within this network. In recent years, ForestGEO has co-led the development of the Alliance for Tropical Science (ATFS) to promote collaboration among tropical forest research networks in the analysis of tropical forest plot data.  
 
