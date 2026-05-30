@@ -162,3 +162,5 @@ remove_dir_to_point_in_history <- function(path, historical_path)
   
   invisible(TRUE)
 }
+
+
