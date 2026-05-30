@@ -100,8 +100,9 @@ index.to.rowcol <- function(index, gridsize = 20, plotdim = c(1000, 500)) {
     
     return(data.frame(row = row, col = col))
 }
+
 # </source> </function> <function> <name> index.to.gxgy </name> <description> Calculate the x and y coordinates given the
-# quadrat index, as calculated in gygy.to.index.  </description> <arguments> </arguments> <sample> </sample> <source>
+# quadrat index, as calculated in gxgy.to.index.  </description> <arguments> </arguments> <sample> </sample> <source>
 index.to.gxgy <- function(index, gridsize = 20, plotdim = c(1000, 500)) {
     badindex <- (index <= 0 | index > plotdim[1] * plotdim[2]/(gridsize^2))
     
@@ -168,11 +169,13 @@ findborderquads <- function(index, dist = 20, gridsize = 20, plotdim = c(1000, 5
     
     layers <- floor(dist/gridsize)
     
-    for (i in (row - layers):(row + layers)) for (j in (col - layers):(col + layers)) if (i != row | j != col) 
-        if (i >= 1 & i <= maxrow & j >= 1 & j <= maxcol) {
+    for (i in (row - layers):(row + layers))
+      for (j in (col - layers):(col + layers))
+        if (i != row | j != col) 
+          if (i >= 1 & i <= maxrow & j >= 1 & j <= maxcol) {
             no.boundaries <- no.boundaries + 1
             bound.index[no.boundaries] <- rowcol.to.index(i, j, gridsize, plotdim)
-        }
+          }
     
     return(bound.index[bound.index > 0])
 }
@@ -189,6 +192,7 @@ create.neighbordata <- function(abundperquad) {
     
     return(neighborabund)
 }
+
 # </source> </function> <function> <name> findneighborabund </name> <description> For every quadrat, finds neighboring quadrats
 # and then returns a vector of abundances in those neighbors, as well as the number of neighboring quadrats. A subroutine used
 # by create.neighbordata.  </description> <arguments> </arguments> <sample> </sample> <source>
@@ -220,6 +224,8 @@ neighbors <- function(pres, plotdim = c(1000, 500)) {
     
     return(neigh)
 }
+
+
 # </source> </function> <function> <name> torus.shift </name> <description> Creates a torus-shifted quadrat topographic
 # dataset. It accepts a quadrat dataset with elevation, convexity, and slope for each 20x20 m quadrat in a plot. It returns a
 # parallel dataset that is torus shifted, slip.horiz quadrats left-right and slip.vert quadrats up-down.  That is, in the new
@@ -252,6 +258,8 @@ torus.shift <- function(quaddata, slip.horiz, slip.vert, invert = F, reverse = F
     rownames(newquaddata) <- 1:totalquad
     return(newquaddata)
 }
+
+
 # </source> </function> <function> <name> getsmallerquads </name> <description> Takes a vector of indices for a larger quadrat
 # dimension, as created by gxgy.to.index, and for each returns a vector of indices of smaller quadrats that would fit
 # completely within. Both larger and smaller quadrats must be square. Returns a matrix, each row being a vector of smaller
@@ -278,6 +286,8 @@ getsmallerquads <- function(index, gridlarge, gridsmall, plotdim) {
     
     return(smallquad)
 }
+
+
 # </source> </function> <function> <name> full.xygrid </name> <description> Create a complete of points x-y, given the sequence
 # of unique x and the sequence of unique y. So if x=y=0:2, it creates all pairs: 0,0; 0,1; 0,2; 1,0; 1,1; 1,2; etc.
 # </description> <arguments> </arguments> <sample> </sample> <source>
