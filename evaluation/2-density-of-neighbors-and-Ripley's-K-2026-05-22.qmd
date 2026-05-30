@@ -31,7 +31,7 @@ This set contains the following functions:
 
 These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in `RipUvK.r` and `NeighborDensityFun.r` original scripts.
 
-## Code evaluation
+## Load code
 
 ```{r}
 
