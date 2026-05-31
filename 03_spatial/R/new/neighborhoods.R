@@ -5,6 +5,9 @@
 get_distances_up_to_r <- function(query = NULL, reference = NULL, radius) {
   
   # Fast calculation of distances up to a given radius.
+  # Note: if this function breaks, then you will have to find an
+  # alternative that will calculate distances fast and return
+  # a sparse distance matrix of the form {i, j, distance between i and j}.
   
   # Parameters:
   # query: the set of focal points, around which we are going to look
@@ -28,12 +31,14 @@ get_distances_up_to_r <- function(query = NULL, reference = NULL, radius) {
   
   # Reorganize output
   k <- lengths(nn$id)
-  
-  data.table::data.table(
+  d <- data.table::data.table(
     query_i = rep(seq_along(k), k),
     reference_j = unlist(nn$id, use.names = FALSE),
     dist = unlist(nn$dist, use.names = FALSE)
-  )[dist <= radius]
+  )
+  
+  d <- d[d$dist <= radius,]
+  d
 }
 
 
