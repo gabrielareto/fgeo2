@@ -15,7 +15,7 @@ format:
 editor: visual
 ---
 
-## Goal
+# Goal
 
 Evaluate, understand, and decide over a set of related functions that count individuals in circular areas and compare those counts with a null expectation, implementing Ripley's K test. At the moment, this is an isolated set of functions; see "1-dependencies-and-priorities-2026-05-20.pdf" report.
 
@@ -31,7 +31,7 @@ This set contains the following functions:
 
 These functions are located in two different scripts but all are related to the same type of calculation: counting number of neighbors in a given area, and compare that with some null expectation (Ripley's K function). The set covers all code in `RipUvK.r` and `NeighborDensityFun.r` original scripts.
 
-## Load code
+# Load code
 
 ```{r}
 
@@ -79,9 +79,9 @@ if(FALSE)
 
 ```
 
-## Evaluation
+# Evaluation
 
-### Specific functions
+## Specific functions
 
 Some functions work on areas, other functions work on counts.
 
@@ -100,13 +100,13 @@ The area of rings ("annuli") is calculated by the `Annuli` function, which repea
 
 `RipUvK` is the highest-level function in this group of functions. It runs over each species calculating a series of spatial statistics for con-specifics at different distances. It seems easy to use, it is not very long. It is not very flexible, and calls external functions of undefined packages, probably `splancs` package: `khat`, `spoints`.
 
-### Is there a need for this?
+## Is there a need for this?
 
 Yes. Calculations over neighborhoods are widely used in ForestGEO / ATFS, for example to estimate competition around target individuals and so on. Perhaps not to much for point pattern analyses, as it has been known for a long time that almost all forest species show aggregated patterns across scales. But, in general, counting points in certain areas around target individuals (or locations) is valuable. There are many questions that can be approached that way, if the code has flexibility.
 
 Modelling or comparison with null expectations is less valuable for the `fgeo2` package. The Ripley's K function is surely maintained by other packages: `spatstat::Kest` and `spatstat::Lest` may be the gold standard (and fastest?). The code implements a well-known mathematical formula so it should not require a lot of maintenance. However, the `RipUvK` function is a clear candidate to remove, and substitute by a more general tutorial on how to apply Ripley's K to forest data.
 
-### Generalization?
+## Generalization?
 
 The study of neighborhoods can be done in many different ways, so it would be important to maximize flexibility in things like selecting the focal trees, picking neighborhood-level metrics, etc. If such flexibility is not feasible to incorporate within fgeo2 code, then it should be left out the functions, and substitute by examples or guidelines that the user can apply to their case and goals.
 
@@ -114,15 +114,15 @@ Perhaps most of these functions can be incorporated into a more general function
 
 Perhaps generalize rings and circles by declaring minimum and maximum radius, with minimum radius = 0 in all cases? Although that would allow overlapping rings and that may cause problems. I am not sure why circles vs. rings are important but the distinction is sharp, probably no need to make those instances of more general geometry.
 
-### Conclusion
+## Conclusion
 
 Because the code has obvious points of vulnerability (units, column names, ...), and has very limited flexibility (filters, aggregation, expectations), I decide to rewrite.
 
-## Design principles for alternative code
+# Design principles for alternative code
 
 Ideally, replacement code should incorporate the flexibility to count neighbors of any class to any class, for example: adult tree neighboring seedlings, individuals of species A neighboring species A (conspecifics), individuals of species A neighboring species B (some heterospecifics), etc. The conspecific vs. heterospecific counting, which is the most frequent, is just a special case. But parameters should be general, not specific assuming this particular application.
 
-It should be general and count everything in the input. If the user wants to focus on trees that are alive, for example, it should subset the dataset first. It does not seem robust to filter from within the function and make assumptions about column names, etc. Filter outside gives all the flexibility to the user, even if they keep lianas and trees together, or whatever they want. This is aligned with the goal of reducing dependency from "orthodox CTFS format".
+It should be general and count everything in the input. If the user wants to focus on trees that are alive, for example, they should subset the dataset first. It does not seem robust to filter from within the function and make assumptions about column names, etc. Filter outside gives all the flexibility to the user, even if they keep lianas and trees together, or whatever they want. This is aligned with the goal of reducing dependency from "orthodox CTFS format".
 
 Absence of strong defaults about status may help people think a bit about things that happen around dead trees, or how trees recruit around certain locations, and so on. It is better to have inputs that are simply pre-filtered (x, y) coordinates instead of "data" tables to be processed within the function. This can facilitate studying things around locations in a general sense, not just trees.
 
@@ -153,6 +153,16 @@ If all these things are implemented, an updated workflow would expand the curren
 -   account for edge effects in boundaries of arbitrary shape
 -   allow the use of any null distribution of points, not just PPP
 
-## Current status of alternative code
+# Current status of alternative code
+
+All the improvements above have been implemented. Things that require a lot of flexibility are outside the functions, substituted by tutorials or guidelines. The new functions focus on the common operations only:
+
+-   `get_distances_up_to_r()`: returns {i, j, distance between i and j}, which is the most general and flexible way of identifying neighbors within a given distance *r*. The user can then process these neighborhoods any way they want.
+-   `get_boundary()`: returns an `sf` polygon object with a boundary of any arbitrary shape. It will be passed to the other functions so they can process arbitrary boundaries.
+-   `get_radii()`: implements useful defaults and rules of thumb to define the sequence of scales to evaluate, both for circles and rings.
+-   `core_vs_edge()`: an auxiliary function to split a set of points into far or near a given boundary. It is used to accelerate grid-based calculation of areas.
+-   `get_area_of_neighborhoods()`: calculates the available area of each neighborhood, which is the most direct way of controlling for edge effects. It uses exact formulas for areas of complete circles (or rings) when the neighborhood is far from the boundary, but a grid-based approach for arbitrarily-shaped neighborhoods that intersect with an arbitrarily-shaped boundary. The density of the grid used is adjusted to meet a user-defined tolerance to error (5% by default).
+
+Filtering, neighborhood summarizing, and comparison with expectations, are outside the functions to allow the user maximum flexibility.
 
 See "neighborhoods.qmd" in the spatial module.
