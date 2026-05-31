@@ -40,9 +40,10 @@ The main priorities are:
 These are some principles that are guiding code development:
 
 -   Ask for what you need: avoid generalized "data" input. If a function needs coordinates, input must be "xy" or similar, not full data tables.
--   Functions cannot be examples:
+-   Abstraction: functions cannot be examples:
+    -   make_polygon(....) is better than make_triangle(...), make_square(...), etc.
     -   If a function does only a small proportion of what an ecologist may need, then it should change.
-    -   If a function cannot possibly do most of what an ecologist may need, then it should focus on the core / general tasks, and be complemented by a tutorial with guidelines / examples / templates that cover a variety of cases.
+    -   If a function cannot possibly do most of what an ecologist may need, then it should focus on the core / general tasks, and be complemented by a tutorial with guidelines / examples / templates that cover a representative / useful variety of cases.
 -   Related to that: there are many things ecologists do that require more flexibility than the things that functions within this package could do. For that reason:
     -   Most functions in this package don't group data, don't test hypotheses, don't fit models. There are too many ways of doing these things, and hard-coding them within functions will constrain more than help.
     -   But, in tutorials, the examples/templates show how to group data, how to test hypotheses, etc., to place function behavior into realistic contexts.
