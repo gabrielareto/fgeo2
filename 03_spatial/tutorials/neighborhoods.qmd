@@ -19,7 +19,7 @@ format:
 editor: visual
 ---
 
-## Context
+# Context
 
 Spatial neighborhood analyses are used to quantify how organisms, stems, species, functional groups, or other ecological units are arranged around focal individuals or locations. In forest ecology, these analyses are commonly used to evaluate things like:
 
@@ -31,7 +31,7 @@ Spatial neighborhood analyses are used to quantify how organisms, stems, species
 
 In some of these applications, but not all, the observations are compared with spatial null expectations. The most common form of null expectation for points is the Poisson point patter = uniform random and independent distribution of all points. Other null models generate expectations respecting the aggregation of different subsets of points (e.g. the torus translation test often applied for testing species-habitat associations).
 
-## Code
+# Code
 
 This tutorial introduces updated code and instructions for calculating neighborhood summaries at multiple spatial scales. In forest ecology, neighborhoods can be used for many questions and in many different ways. It is a type of analysis that requies high flexibility. It is not feasible to incorporate all that flexibility within functions. Therefore, the code is intentionally auxiliary in nature, not heavily wrapped. The functions are helpers to:
 
@@ -72,11 +72,11 @@ functions_in_script(f)
 
 ```
 
-## Workflow
+# Workflow
 
 The code takes responsibility for the boundary- and area-related difficult calculations and for the *very fast* identification of pairs of neighbors. Filtering and summarizing (e.g. counting neighbors, calculating crowding indexes, etc.) will be responsibility of the user. This section guides you through a general recommended workflow:
 
-### Step 1: Identify query and reference
+## Step 1: Identify query and reference
 
 Here you define what are the classes, how are you going to filter of subset the data, and so on. Remember: query = the focal trees or locations, and reference = the potential neighbors around the focal points.
 
@@ -143,7 +143,7 @@ neighbors <- get_distances_up_to_r(query = query_data[,c("x", "y")],
 
 ```
 
-### Step 2: Define boundary and scales of interest
+## Step 2: Define boundary and scales of interest
 
 Boundaries are needed to account for edge effects in spatial analyses. Most often, they are rectangular. However, the code here was developed to handle irregular boundaries, and be as general as possible. It could be used to run analyses within specific habitats, or for forests that do not completely fill the rectangular plot (e.g. Ngel Nyaki, Nigeria).
 
@@ -151,7 +151,7 @@ The `get_boundary()` function is a general helper that can transform a rectangul
 
 Similarly, the `get_radii()` function can return a vector of scales of interest, using rules of thumb, in case you do not have a specific vector of interest. It has a useful default for the maximum distance so, in practice, you would have to specify the `case` (circles or rings for the neighborhoods) and the number of scales to evaluate, which typically depends on the size of the datasets and constrain total code running times.
 
-### Step 3: Identify the neighbors
+## Step 3: Identify the neighbors
 
 After defining query and reference datasets, boundary, and scales of observation, the `get_distances_up_to_r()` function will return all {i, j} pairs and their distance, up to a given maximum distance. Individuals *i* come from `query` and individuals *j* from `reference`. These are just row indexes, so it is important that you keep alignment with the variables of interest, to be able to characterize the neighborhoods in the next step.
 
@@ -261,7 +261,7 @@ for(h in 1:length(chunks))
 
 Loops may be needed for the chunks, because of the storage limitations. The need for other loops (species by species, etc.) will depend on how one summarizes or aggregates the metrics of interest.
 
-### Step 4: Characterize neighborhoods with the metric(s) of interest
+## Step 4: Characterize neighborhoods with the metric(s) of interest
 
 At this point, and regardless of the structure into loops, you should have pairs of individuals that are neighbors at a given scale. Then, you can process this information in any way you want:
 
@@ -298,9 +298,9 @@ counts <- tabulate(nn$query_i, nbins = nrow(query))
 # table(nn$query_i) # this would require further processing
 ```
 
-### Step 5: Contrast with expectations
+## Step 5: Contrast with expectations
 
-#### Calculating areas
+### Calculating areas
 
 At the very minimum, you need to calculate the areas of the neighborhoods. Areas will be well-known and easy to derive from radii for the core areas far from the boundary, but will be smaller and smaller the closer the focal point is to the (possibly complex) boundary. The `get_area_of_neighborhoods()` function does that, for any boundary.
 
@@ -308,7 +308,7 @@ Having the available area for each neighborhood, and then expressing metrics on 
 
 The `get_area_of_neighborhoods()` function includes useful defaults for boundary and radii. Thus, if you do not have that pre-defined, you could run this function first, as part of Step 2. It does not require neighbor information, just the location of the query points.
 
-#### Numerical null models
+### Numerical null models
 
 The alternative to expressing things on a per-area basis is to run numerical null models.
 
@@ -320,11 +320,11 @@ Often, deviations from expectations are linked to null hypothesis testing, so we
 
 The examples below implement the simplest of the null models: Poisson point pattern, or uniformly random and independent distribution of points. This is the null model implicit in most standard spatial analyses, and the one to use when studying aggregation. For other metrics (for example, abundance of species A around species B, number of species around focal locations, etc.) the general recommendation is to use null models that are more respectful towards reality (e.g. torus translations).
 
-#### Other
+### Other
 
 Code for spatial analyses often comes with options to test for hypotheses at different scales, under different assumptions. For example, `envelopes()` in `spatstat` for Ripley's K, or wavelet analysis.
 
-## Examples
+# Examples
 
 This section uses real data to show how to run some spatial analyses in practice. It puts together all the individual steps mentioned above, with some variations. It includes:
 
@@ -364,7 +364,7 @@ dim(data)
 
 ```
 
-### Example 1: Aggregation within species
+## Example 1: Aggregation within species
 
 This example uses the new code to calculate aggregation of conspecific individuals. It is slower than alternatives like `spatstat::Ktest()` but it offers greater flexibility in the definition of boundary (complex) and the abundance/summary metric (outside the functions themselves).
 
@@ -585,7 +585,7 @@ The approach taken is very fast but demands a lot of memory, so this can be a pr
 -   if you are going to end summarizing into a SES using mean(null) and sd(null), you can keep updated running values of them using Welford's algorithm. Check it out. It would save the need to store almost anything.
 -   instances of null models can be run in parallel, if you know how to run code in parallel.
 
-### Example 2: Conspecifics vs. heterospecifics at short distances
+## Example 2: Conspecifics vs. heterospecifics at short distances
 
 Here, I present a template on how to calculate both conspecifics and heterospecifics at very short distances. This type of calculation may be relevant for those studying negative density dependence, species coexistence, etc. I look for small trees around large trees, as a rough proxy for "mother trees" and "recent recruits". It is an example of the type of flexibility you may want to adapt to your case.
 
@@ -722,7 +722,7 @@ points(radii, colMeans(proportion_conspecifics[rare,], na.rm = TRUE),
 
 ```
 
-### Example 3: Diversity in neighborhoods
+## Example 3: Diversity in neighborhoods
 
 We can think of some species "promoting" diversity more than others, or preferring locations with higher or lower diversity (without assuming direct causal relationship), etc. In this example I calculate diversity indexes in the neighborhood of different species, at different scales.
 
@@ -949,9 +949,9 @@ abline(h = c(-2, +2)) # guidelines for strong effect
 
 ```
 
-## Legacy notes
+# Legacy notes
 
-#### Old CTFS functions
+## Old CTFS functions
 
 The code substitutes these original CTFS functions:
 
@@ -971,7 +971,7 @@ The neighbor-counting CTFS functions implemented common ways of aggregating data
 
 Finally, the Ripley's K is not implemented at all. It is already implemented in many R package, probably dozens of them. Because this is a standard tool, here is a worked example below on how to do that type of analysis:
 
-#### Example: Ripley's K and Besag's L
+## Example: Ripley's K and Besag's L
 
 Ripley’s K function measures how many neighboring points occur within distance *r*, relative to what is expected under complete spatial randomness. Values above expectation indicate clustering; values below expectation indicate regularity or inhibition. Besag’s L is a variance-stabilized transformation of K, often plotted as L(r) − r, making deviations from randomness easier to interpret.
 
