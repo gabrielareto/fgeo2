@@ -50,7 +50,7 @@ These are some principles that are guiding code development:
     -   Yes: the code does, in a transparent way, something related to ecology, biology, math, spatial calculations, plotting, ...
     -   No: the code does things relevant for software development but not ecology: wrap, test, re-shape, etc. Almost always cryptic by definition.
 -   No internal functions. All functions should be transparent for debugging or recycling code.
--   Small redundancy is better than small dependency.
+-   Small redundancy is better than small dependency. Repeating pi\*r\^2 is OK.
 -   If a function will not be improved, make it fast and compact. If a function will be probably improved, make it long and easy to read.
 
 ## Repository status
