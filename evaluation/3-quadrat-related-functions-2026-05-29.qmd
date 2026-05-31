@@ -131,7 +131,7 @@ plot(g, layout = layout.fruchterman.reingold,
 
 # Evaluation
 
-This seems a relatively well-defined set of functions with surprisingly few dependents and only one direct dependency (`pst` function, which is a CTFS version of paste/collapse).
+This seems a relatively well-defined set of functions with surprisingly few dependents and only one direct dependency (`pst()` function, which is a CTFS version of paste/collapse).
 
 ## Goal and structure of most functions
 
@@ -143,33 +143,42 @@ As said above, most functions seem to "translate" from one form and resolution o
 -   quadrat index
 -   row and column (of quadrats)
 
-There are somewhat cryptic mentions to smaller quadrats in the names of `getsmallerquads` and `lxly.to.p5` functions. No functions depend on them, so it is possible that they will be removed or substituted by more general ways of splitting into quadrats of arbitrary resolution.
+There are somewhat cryptic mentions to smaller quadrats in the names of `getsmallerquads()` and `lxly.to.p5()` functions. No functions depend on them, so it is possible that they will be removed or substituted by more general ways of splitting into quadrats of arbitrary resolution.
 
 It seems most of the difficult things require quadrat indexes, which is not something users will be familiar with, as the data tables typically store quadrat names, the fieldwork is done using quadrat names, etc. This, in itself, makes anything based on quadrat indexes difficult to de-bug or scrutinize, and thus it is a point of vulnerability.
 
-The functions apply to trees or quadrats, with quadrats being simplified as points. For example:
+There is an important naming convention for quadrats: CCRR, where CC are two digits for the column (location along x), and RR are two digits for the row (location along y). Both CC and RR could start at 00 or 01, depending on the site-level convention.
 
--   `quad.to.gxgy`: returns global coordinates of the bottomleft coordinate of each quadrat, given a CCRR column-row naming convention, and a given gridsize (= quadrat size).
+-   the CCRR convention applies to BCI and other places, but it is not a universally accepted convention, so this is clearly a tricky point.
+-   the CCRR convention can be different for quadrats of different size, e.g. 5x5 m quadrats within 20x20 m quadrats only use one digit for (internal) column and one digit for (internal) row.
+-   the specification varies between CTFS functions, sometimes start = 0, sometimes start = "zero".
+-   the specific CCRR convention should be trivial to guess from the complete data table, but other conventions for naming quadrats may not be that obvious.
 
--   `gxgy.to.quad`: returns the quadrat membership of the trees, given their global coordinates.
+The CCRR using numerical digits is a typical point of vulnerability in ForestGEO datasets, as it looks like a number, but it is not a number. Excel often goes from "0133" to "133". This creates issues again and again. Condit code has warnings related to that, things like "Must rewrite if three digit quadrats". The function `convert.rowcol()` adds initial zeros.
 
-For the CCRR column-row naming convention, sometimes start = 0, sometimes start = "zero". This refers to whether the first column (or row) is indicated by "00" or "01". This, by the way, should be trivial to guess from the complete data table.
+Interestingly, the `index.to.rowcol()` function returns numerical rows and columns, that always start with 1. So we can find datasets with row = 1, col = 1, and quadrat = 0000 in CCRR convention with start = 0.
 
-Interestingly, the `index.to.rowcol` function returns numerical rows and columns, that always start with 1. So we can find datasets with row = 1, col = 1, and quadrat = 0000 in CCRR convention with start = 0.
+There are two systems to uniquely identify quadrats within this code:
 
-The CCRR using numerical digits is a typical point of vulnerability in ForestGEO datasets, as it looks like a number, but it is not a number. Excel often goes from "0133" to "133". This creates issues again and again. Condit code has warnings related to that, things like "Must rewrite if three digit quadrats". The function `convert.rowcol` adds initial zeros.
+-   quadrat name or code, following CCRR form
+-   quadrat index: numerical, one per quadrat. This is used internally to many of these functions, but does not directly affects important functionality (but check wavelet analysis, and imageJ-related code).
 
-There is a weird convention in Condit's code when coordinates are unknown, where quadrat = 9999 instead of quadrat = NA. In contrast, `gxgy.to.index` returns quadrat index = NA when there is not enough information to determine location.
+The functions apply to trees or quadrats, with quadrats being represented by their corners. For example:
+
+-   `quad.to.gxgy()`: returns global coordinates of the bottomleft coordinate of each quadrat, given a CCRR column-row naming convention, and a given gridsize (= quadrat size).
+-   `gxgy.to.quad()`: returns the quadrat membership of the trees, given their global coordinates.
+
+There is a weird convention in Condit's code when coordinates are unknown, where quadrat = 9999 instead of quadrat = NA. In contrast, `gxgy.to.index()` returns quadrat index = NA when there is not enough information to determine location.
 
 ## Neighboring-related functions
 
-There is a small set of functions related to shifting, identifying and comparing with neighboring quadrats... Possibly related to null models:
+There is a small set of functions related to identifying and comparing with neighboring quadrats... Their purpose is not clear, and it does not seems something people would use broadly. Possibly related to null models?:
 
--   `create.neighbordata:` risky and confusing. Takes as input an "abundanceperquad" object, which follows certain conventions (species in rows, data sorted by quadrat index). Clear candidate for removal. Nothing depends on this. The input is probably the output of the `abundanceperquad` function, but the dependency is implicit, not explicit. It uses `findneighborabund` (next).
--   `findneighborabund`: takes similar input, but called "abundvect" now. It finds neighboring quadrats using `findborderquads` (next), and then copy-pastes abundances from the abundance vector.
--   `findborderquads`: calculates indexes of neighboring quadrats, for a given quadrat index. Probably useful, although using this just to calculate species abundances seems like a narrow application.
--   `neighbors`: very bad name, super general word, for an extremely narrow application. This function takes a vector of absence/presence for all quadrats, and returns proportion of presences among the neighboring quadrats. It is difficult to understand why this has become part of the broadly distributed CTFS package.
--   `torus.shift`: Creates a torus-shifted quadrat topographic dataset. This can be safely removed if a standard torus translation (or constrained, for that matter) is integrated into the pack of functions. Any quadrat-based map can be translated just by translating the corners, then going back to (null) quadrat codes, if needed.
+-   `create.neighbordata():` risky and confusing. Takes as input an "abundanceperquad" object, which follows certain conventions (species in rows, data sorted by quadrat index). Clear candidate for removal. Nothing depends on this. The input is probably the output of the `abundanceperquad()` function, but the dependency is implicit, not explicit. It uses `findneighborabund()` (next).
+-   `findneighborabund()`: takes similar input, but called "abundvect" now. It finds neighboring quadrats using `findborderquads()` (next), and then copy-pastes abundances from the abundance vector.
+-   `findborderquads()`: calculates indexes of neighboring quadrats, for a given quadrat index. Probably useful, although using this just to calculate species abundances seems like a narrow application.
+-   `neighbors()`: very bad name, super general word, for an extremely narrow application. This function takes a vector of absence/presence for all quadrats, and returns proportion of presences among the neighboring quadrats. It is difficult to understand why this has become part of the broadly distributed CTFS package.
+-   `torus.shift()`: Creates a torus-shifted quadrat topographic dataset. This can be safely removed if a standard torus translation (or constrained, for that matter) is integrated into the pack of functions. Any quadrat-based map can be translated just by translating the corners, then going back to (null) quadrat codes, if needed.
 
 Although not directly connected, there is an interesting function `distance()` that calculates the distances between quadrats. It only wraps from quadrat indexes to coordinates, and then applies `xydistvect()` function in utilities \> geometry. Using distances seems a more general approach to identify neighboring quadrats, generalizable to k = 4, k = 8, and so on, using standard k-NN routines.
 
@@ -179,49 +188,87 @@ Although not directly connected, there is an interesting function `distance()` t
 
 ## Depending functions
 
-There are different pats of CTFS / fgeo code that depend on the quadrat-related functions.
+There are different pats of CTFS / fgeo code that depend on the quadrat-related functions. So, if anything changes, the depending code must be adjusted accordingly (assuming it will be kept).
 
-First, they relate with `fullplot.imageJ`. That function is part of a practical routing to go from paper maps to digital coordinates. Still waiting to understand whether this is needed now that people work with tablets and all that.
+First, they relate with `fullplot.imageJ()`. That function is part of a practical routing to go from paper maps to digital coordinates. Still waiting to understand whether this is needed now that people work with tablets and all that.
 
-Second, `gxgy.to.index` and `index.to.gxgy` relate to, apparently, rather trivial functions to pick quadrats or summarize abundance by quadrat: `abundanceperquad` and `selectrandomquad2`. Clearly, these tasks don't need dedicated functions. The user must be able to summarize abundances by any combination of things, e.g. \[quadrat x species\] or \[family x size class x habitat\], or whatever. Something similar can be said for `selectrandomquad2`.
+Second, `gxgy.to.index()` and `index.to.gxgy()` relate to, apparently, rather trivial functions to pick quadrats or summarize abundance by quadrat: `abundanceperquad()` and `selectrandomquad2()`. Clearly, these tasks don't need dedicated functions. The user must be able to summarize abundances by any combination of things, e.g. \[quadrat x species\] or \[family x size class x habitat\], or whatever. Something similar can be said for `selectrandomquad2()`.
 
-Third, `gxgy.to.index` is called by functions that run the wavelet analysis applied to ForestGEO datasets. This is probably something work isolating and developing by itself. Ideally, it should be generalize and integrated with other spatial null models. In any case, it does not seem a desirable or necessary dependency.
+-   Note: `selectrandomquad2()` does **not** pick a random quadrat among the available quadrats. Instead, it returns the coordinates of a square within the plot of a given size. It uses `index.to.gxgy()` internally as a trick, assuming 1x1 m grid. It seems something useful to do random visualizations of how the forest looks like at local scales, using `graph.quadrats()` internally. Will be reviewed later, but clearly weak candidate to remain as it is.
 
-Fourth, there are links to a topograhical function: `allquadratslopes`.
+Third, `gxgy.to.index()` is called by functions that run the wavelet analysis applied to ForestGEO datasets. This is probably something work isolating and developing by itself. Ideally, it should be generalize and integrated with other spatial null models. In any case, it does not seem a desirable or necessary dependency.
+
+Fourth, there are links to a topograhical function: `allquadratslopes()`.
 
 Finally, there is an isolated pair of functions that should be examined together:
 
--   `full.xygrid` (in the quadfunc.r script) is equal to `base::expand.grid()`.
--   `graph.mvnorm` (in utilities \> distributions) apparently is just used to graph contours on multivariate normal distributions). Maybe something to move to the mapping + plotting module.
+-   `full.xygrid()` (in the quadfunc.r script) is equal to `base::expand.grid()`.
+-   `graph.mvnorm()` (in utilities \> distributions) apparently is just used to graph contours on multivariate normal distributions). Maybe something to move to the mapping + plotting module.
 
-# Design principles for new code
+# Thinking forward
 
 Clearly, the only piece of information really needed is just the global coordinates, {gx, gy}. That is what should be kept in a good, easy-to-use data table.
 
 However:
 
 -   that is not always the case
--   during data digitization the input can be local coordinates and quadrats, so we still need functionality to end with global coordinates.
+-   during data digitization the input can be local coordinates and quadrats (or sub-quadrats), so we still need functionality to end with global coordinates.
+-   other tables (maps) are often expressed as {quadrat, x} pairs, for example {quadrat, habitat}, instead of spatially explicit information. Because this sub-optimal practice is widespread, main data tables must contain, in general, quadrat names or codes.
 
-If {gx, gy} is the stepping stone, then we can split these translations as two separated problems:
+Here I am paying attention to code, not data conventions or good practices. The \[5x5 m within 20x20 m quadrats\] convention is something that ForestGEO users must be able to navigate with the new code. That means respect towards `lxly.to.p5()` functionality.
 
--   from whatever you have (quadrat names from field, local coordinates at 20x20 m or 5x5 m resolution, etc) into global coordinates.
--   from global coordinates into whatever way of splitting the plot you want:
-    -   specific or customized, to go back to specific quadrat naming conventions
+The new code has to be useful in these two scenarios:
 
-    -   general: quadrats of any resolution
+-   The user has internal coordinates and quadrats (e.g. from fieldwork) but not global coordinates
+-   The user has global coordinates: they should be able to derive anything from that.
 
-        -   there will be unused borders, remainers
+## Only one way of identifying quadrats
 
-        -   some resolutions will fit exactly, we can anticipate them
+The CTFS code uses two ways of identifying quadrats: quadrat code or name (CCRR convention), and quadrat index (numerical, consecutive). The quadrat index is used often but mostly internally. Users are not familiar with that. It's not used for field work. It's rarely part of the distribution of the dataset.
 
-A very general wrapper would be: \[anything you have\] –\> \[everything you may possibly need\]. And then tell the user to keep everything in the table and call the appropriate column whenever is the case. However, this would be sometimes limited. For example:
+In general: quadrat-level info can be linked to *any* quadrat-level unique ID. There is no need for more than one quadrat-level unique ID to link data with maps, etc.
 
--   we can randomize habitat membership by randomizing quadrats, assuming a habitat map as a {quadrat, habitat} dataset.
--   we can randomize global coordinates and then access other datasets through quadrat membership
--   etc.
+It is possible that the users store maps or quadrat-level information using different quadrat-level unique IDs. We need ways of helping users figure out the location of those quadrats, allowing flexibility in quadrat ID conventions. Otherwise they won't be able to link datasets with each other.
 
-Here I am paying attention to code, not data conventions. The \[5x5 m within 20x20 m quadrats\] convention is something that ForestGEO users must be able to navigate with the new code. That means respect towards `lxly.to.p5` function.
+However, for the new code, it is better if it can work based on *any* way of identifying quadrats uniquely, regardless of whether that is a numerical code, or alpha-numerical, or whatever.
+
+The main bottleneck, perhaps not solvable, would be to declare those quadrat-IDing conventions for a generality of cases. CCRR and consecutive numerical can be useful defaults or guesses.
+
+## Small pieces vs. larger outputs
+
+The old code handles small pieces of information, maybe it's faster that way. But the different pieces of information work together: local coordinates don't make global sense without quadrat membership, and so on.
+
+The idea of **global sense** may be important. Perhaps the output of all functions must be sufficient for it to make global sense. (This will be limited to the input, probably, as we do not want to enforce a specific definition of "global" beyond "everything that you included").
+
+Thing to consider:
+
+-   if input are coordinates, the output must contain coordinates too
+-   moving quadrat IDs around is not safe without objects that specify their location: either the user have them, or we must create them right away. Given clear quadrat IDing convention, it should be easy to get (xmax, ymax, xmin, ymin), which is preferred over left-bottom corner or centroid or anything ambiguous.
+
+Maybe accumulative outputs are safer than itemized outputs? For example, if input is global coordinates of trees, the output can be global coordinates of points + quadrat membership + local coordinates of points *and* also the quadrat-level table with (xmin, ymin, xmax, ymax) and attributes describing quadrat IDing convention.
+
+## From internal to global
+
+Given quadrat-level information, sufficient to know quadrat-level location, and internal coordinates, one can get global coordinates.
+
+The routine is the same for the whole plot, or for coordinates within large quadrats given subquadrats and within-subquadrat-level coordinates.
+
+## From global to internal
+
+From global coordinates, one should be able to get anything.
+
+A "split into quadrats of side = x" function in the script will be useful, in general:
+
+-   if applied to the entire plot, and fits well within 20 m, then it will do what `getsmallerquads()` does
+-   if not, then it's just two classifications into non-nested quadrats
+    -   some resolution would leave unused borders, remainers
+    -   some resolutions will fit exactly, we can anticipate them
+    -   or we can find the closest resolution that will fit exactly, with a warning + attributes
+-   the same routing can be applied to local or global coordinates, so this could also do what `lxly.to.p5()` does.
+
+Anytime a set of points is split into quadrats of a given resolution, the corresponding within-quadrat coordinates must be attached.
+
+## Neighboring quadrats, etc.
 
 The neighbor-related functions, according to the "functions cannot be examples" principle, will be probably substituted by:
 
@@ -232,15 +279,25 @@ The neighbor-related functions, according to the "functions cannot be examples" 
 
 As happens with the neighborhood analyses (of points): neighboring quadrats are just pieces of forest, subsets of trees, and the are many things that could be done with that, not just a couple.
 
-It seem that a "split into quadrats of side = x" function in the script will be useful, in general:
+## Other dependents
 
--   if applied to the entire plot, and fits well within 20 m, then it will do what `getsmallerquads()` does
--   if not, then it's just two classifications into non-nested quadrats
--   if can be applied to local or global coordinates, so this could also do what `lxly.to.p5()` does.
+Although not fully developed now, modify the following functions so they don't break:
+
+-   `fullplot.imageJ()`
+
+-   `allquadratslopes()`
+
+-   `selectrandomquad2()`
+
+-   `rasterize()`, part of the wavelet analysis
+
+-   `abundanceperquad()`, but consider direct removal
+
+-   `graph.mvnorm()`: depends on `full.xygrid()` = `base::expand.grid()` (apparently)
 
 ## Not urgent
 
--   quadrats are just polygons... Perhaps there are gains if we facilitate a polygon representation for quadrats.
+-   quadrats are just polygons... Perhaps there are potential gains if we facilitate a polygon representation for quadrats. Probably enough by giving (xmin, ymin, xmax, ymax).
 
 # Clean up
 
