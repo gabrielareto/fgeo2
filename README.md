@@ -39,7 +39,7 @@ The main priorities are:
 
 These are some principles that are guiding code development:
 
--   Ask for what you need: avoid generalized "data" input. If a function needs coordinates, input must be "xy" or similar, not full data tables.
+-   Usability: within and outside ForestGEO. Ask for what you need: avoid generalized "data" input. If a function needs coordinates, input must be "xy" or similar, not full data tables.
 -   Abstraction: functions cannot be examples:
     -   make_polygon(....) is better than make_triangle(...), make_square(...), etc.
     -   If a function does only a small proportion of what an ecologist may need, then it should change.
