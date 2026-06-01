@@ -350,10 +350,7 @@ make_dir_to_point_in_history <- function(path, commit)
   # Resolve commit / tag to full commit hash
   commit_id <- system2(
     "git",
-    c(
-      "-C", shQuote(path),
-      "rev-parse", paste0(commit, "^{commit}")
-    ),
+    c("-C", shQuote(path), "rev-parse", paste0(commit, "^{commit}")),
     stdout = TRUE,
     stderr = TRUE
   )
@@ -369,6 +366,41 @@ make_dir_to_point_in_history <- function(path, commit)
     tempdir(),
     paste0(basename(path), "_at_", substr(commit_id, 1, 12))
   )
+  
+  # If it already exists, reuse it only if it points to the right commit
+  if (dir.exists(historical_path)) {
+    
+    existing_commit <- system2(
+      "git",
+      c("-C", shQuote(historical_path), "rev-parse", "HEAD"),
+      stdout = TRUE,
+      stderr = TRUE
+    )
+    
+    if (!is.null(attr(existing_commit, "status"))) {
+      stop(
+        "The historical path already exists but is not a valid Git worktree:\n",
+        historical_path,
+        call. = FALSE
+      )
+    }
+    
+    if (!identical(existing_commit[1], commit_id)) {
+      stop(
+        "The historical path already exists but points to a different commit:\n",
+        historical_path,
+        call. = FALSE
+      )
+    }
+    
+    warning(
+      "Historical path already exists; reusing it:\n",
+      historical_path,
+      call. = FALSE
+    )
+    
+    return(historical_path)
+  }
   
   # Create historical checkout
   status <- system2(
@@ -387,7 +419,6 @@ make_dir_to_point_in_history <- function(path, commit)
   
   historical_path
 }
-
 
 
 remove_dir_to_point_in_history <- function(path, historical_path)
