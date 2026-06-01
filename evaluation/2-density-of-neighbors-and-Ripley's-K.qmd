@@ -39,13 +39,6 @@ These functions are located in two different scripts but all are related to the 
 g <- regexpr("fgeo2", getwd())
 path <- substr(getwd(), 1, g + attr(g, "match.length"))
 
-# Source useful functionality:
-source(paste0(path, "evaluation/0-code-to-source.r"))
-
-# Other functionality:
-library(igraph)
-library(fgeo)
-
 # This chunk of code will source all the old R scripts:
 f1 <- list.files(paste0(path, "01_utilities/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)

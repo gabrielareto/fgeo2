@@ -21,7 +21,7 @@ editor: visual
 
 # Goal
 
-There is a set of functions in the CTFS / fgeo functionality that seems related to handling quadrats and coordinates in ForestGEO plots. Most of the 20 functions seem to translate from one form (and resolution) of location into another. These are the types of location information in this type of datasets:
+There is a set of functions in the CTFS / fgeo functionality that seems related to handling quadrats and coordinates in ForestGEO plots. These are the types of location information in this type of datasets:
 
 -   gx and gy: global coordinates within the plot, relative to a (0, 0) corner
 -   lx and ly: local coordinates within the quadrat
@@ -36,13 +36,15 @@ There is a set of functions in the CTFS / fgeo functionality that seems related 
 
     -   sometimes with specific naming that refers to location within larger quadrat (e.g. 5x5 m quadrats, useful for fieldwork and filling maps, within 20x20 quadrats used for data analyses and summaries)
 
-Additionally, there are functions related to identifying neighbors, selecting quadrats, and other related tasks. Probably secondary in importance.
+This is the evaluation of the functionality included in the old CTFS distribution of scripts, and the newer fgeo package version:
 
-This is the evaluation of the functions in the CTFS `quadfunc.r` script and, possibly, their downstream dependencies.
+-   In the old CTFS distribution there are 20 functions. Most of them translate from one form (and resolution) of location into another. Besides, there are functions related to identifying neighbors, selecting quadrats, and other related tasks. Probably secondary in importance. I evaluate the functions in the CTFS `quadfunc.r` script and, possibly, their downstream dependencies.
+
+-   In the newer `fgeo` package, the functionality has been incorporated through functions that add new columns to data tables, in the `add_var.R` and `add_subquad.R` scripts. It seems this represents an improvement, at least in terms of consistency.
 
 # Load code
 
-We declare paths to the project (watched by git), load a specific version of the code, and auxiliary functions.
+Older CTFS code is within local scripts. We declare paths to the project (watched by git), load a specific version of the code, and auxiliary functions.
 
 ```{r}
 
@@ -85,6 +87,24 @@ scripts <- unique(unlist(lapply(modules, function(m) {
 
 # Source scripts, then new:
 for(f in scripts) source(f)
+
+```
+
+Newer `fgeo` code is in a set of four fgeo-related packages: `fgeo.analyze`, `fgeo.plot,` `fgeo.tool`, `fgeo.x`. It depends on the `ctfs` package, which is a forma R package including CFS scripts.
+
+```{r}
+# fgeo package is 
+#pak::pak("forestgeo/ctfs") # install ctfs
+library(ctfs)
+library(fgeo)
+
+edges <- get_all_dependencies(
+  packages = c("fgeo", "fgeo.tool", "fgeo.x", "fgeo.analyze", "fgeo.plot", "ctfs"),
+  include_global = TRUE,
+  internal = TRUE
+)
+
+dim(edges)
 
 ```
 
@@ -163,6 +183,8 @@ There are two systems to uniquely identify quadrats within this code:
 -   quadrat name or code, following CCRR form
 -   quadrat index: numerical, one per quadrat. This is used internally to many of these functions, but does not directly affects important functionality (but check wavelet analysis, and imageJ-related code).
 
+In both cases, the location of the quadrats is implicit! Not explicit! The only way to make quadrat location explicit is to use `quad.to.gxgy()` or `index.to.gxgy()` but that is misleading, as it derives from the assumptions themselves.
+
 The functions apply to trees or quadrats, with quadrats being represented by their corners. For example:
 
 -   `quad.to.gxgy()`: returns global coordinates of the bottomleft coordinate of each quadrat, given a CCRR column-row naming convention, and a given gridsize (= quadrat size).
@@ -205,9 +227,34 @@ Finally, there is an isolated pair of functions that should be examined together
 -   `full.xygrid()` (in the quadfunc.r script) is equal to `base::expand.grid()`.
 -   `graph.mvnorm()` (in utilities \> distributions) apparently is just used to graph contours on multivariate normal distributions). Maybe something to move to the mapping + plotting module.
 
+# Quadrat-naming conventions
+
+One of the goals of this package update is to reduce dependency on the "CTFS orthodox format" or other formal assumptions. The quadrat naming or IDing conventions is clearly a point of vulnerability, as the code assumes CCRR convention (with start = 0 or start = 1). It also assumes the BCI convention for 5x5 m subquadrats.
+
+The quadrat IDing convention assumed by old CTFS code is widely adopted but not universal, not even within ForestGEO. Many ForestGEO sites keep multiple versions of the data: one to store within STRI servers and orthodox, and another version they like more and use more often for more internal projects.
+
+I review quadrat-IDing conventions in different datasets that I have used for ForestGEO / AFTS projects.
+
+-   BCI:
+-   Other STRI plots in Panama, the small ones:
+-   Amacayacu:
+-   Yasuni:
+-   Fushan:
+-   Pasoh:
+-   Lambir:
+-   Palanan:
+-   Khao Chong:
+-   HKK:
+-   Rabi:
+-   Korup:
+-   Ituri:
+-   Mpala: extra zeros! Very long plot
+-   Ngel Nyaki:
+-   Luquillo:
+
 # Thinking forward
 
-Clearly, the only piece of information really needed is just the global coordinates, {gx, gy}. That is what should be kept in a good, easy-to-use data table.
+Ideally, the only piece of information really needed is just the global coordinates, {gx, gy}. That is what should be kept in a good, easy-to-use data table.
 
 However:
 
@@ -222,17 +269,31 @@ The new code has to be useful in these two scenarios:
 -   The user has internal coordinates and quadrats (e.g. from fieldwork) but not global coordinates
 -   The user has global coordinates: they should be able to derive anything from that.
 
-## Only one way of identifying quadrats
+## Quadrat-level information
 
-The CTFS code uses two ways of identifying quadrats: quadrat code or name (CCRR convention), and quadrat index (numerical, consecutive). The quadrat index is used often but mostly internally. Users are not familiar with that. It's not used for field work. It's rarely part of the distribution of the dataset.
+The best practice would be to have:
 
-In general: quadrat-level info can be linked to *any* quadrat-level unique ID. There is no need for more than one quadrat-level unique ID to link data with maps, etc.
+-   a tree or stem-level table
+-   a quadrat-level table with quadrat-level information; most importantly: location
+-   a single unique quadrat-level ID to link both tables
+
+Without any other additional assumption.
+
+The current code deviates significantly from that.
+
+The CTFS code uses two ways of identifying quadrats: quadrat code or name (CCRR convention), and quadrat index (numerical, consecutive). The quadrat index in particular is used often but mostly internally. Users are not familiar with that. It's not used for field work. It's rarely part of the distribution of the dataset. Ideally, we want to get rid of quadrat indexes.
+
+A major limitation of the current code is that quadrat location is treated as *implicit* in quadrat IDing conventions (either CCRR or quadrat index). In other words: one cannot specify {quadrat IDs, locations} without changing their codes or indexes. The only way to make quadrat location explicit is to use `quad.to.gxgy()` or `index.to.gxgy()` but this is not raw data, it simply derives from the assumptions themselves.
+
+Clearly, *arbitrary* quadrat-level IDs should be allowed, to store locations or any other quadrat-level info in quadrat-level tables (maps, etc.). The new could should be able to work under *any* way of identifying quadrats uniquely, regardless of whether that is a numerical code, or alpha-numerical, or whatever.
 
 It is possible that the users store maps or quadrat-level information using different quadrat-level unique IDs. We need ways of helping users figure out the location of those quadrats, allowing flexibility in quadrat ID conventions. Otherwise they won't be able to link datasets with each other.
 
-However, for the new code, it is better if it can work based on *any* way of identifying quadrats uniquely, regardless of whether that is a numerical code, or alpha-numerical, or whatever.
+A major improvement would be to allow the user to declare or inform somehow the links between quadrat IDs and quadrat locations, and facilitate the creation of quadrat-level tables with locations and maybe other things.
 
-The main bottleneck, perhaps not solvable, would be to declare those quadrat-IDing conventions for a generality of cases. CCRR and consecutive numerical can be useful defaults or guesses.
+**In short, a major improvement would be to move from \[rigid quadrat IDs with location implicit\] to \[arbitrary quadrat IDs + explicit locations\].**
+
+In practice, however, people may be storing quadrat-level locations inside those quadrat IDs, so we still have to solve that. The main bottleneck, would be to infer locations from a wide range of quadrat ID conventions. CCRR and consecutive numerical can be useful defaults or guesses, but cannot be enough.
 
 ## Small pieces vs. larger outputs
 
