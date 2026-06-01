@@ -1,5 +1,5 @@
 ---
-title: "Evaluation of dependencies"
+title: "Evaluation of dependencies in CTFS and fgeo+ctfs"
 author: "Gabriel Arellano"
 date: today
 format:
@@ -19,13 +19,21 @@ editor: visual
 
 Here we explore dependencies of the (possibly updated) set of functions in the CTFS / fgeo / fgeo2 body of code. One of the problems with the code is the dense network of inter-dependencies. One of the goals of the current evaluation is to reduce dependency to facilitate debugging and improving.
 
-There are relatively large sets of functions that seem to be linked to obsolete functionality, such as pseudo-Bayesian modeling or geometrical code to process digitized paper maps of stems. Identifying those clusters early will facilitate the work, if they are deprecated early.
+I am using this terminology:
+
+-   CTFS: refers to the original distribution of scripts by Rick Condit, not formal, but where (most) of the functionality is. It remains the most stable distribution of functionality. It's in local scripts.
+-   ctfs: the R package that encapsulates CTFS scripts. Initially created as the "working engine" behind fgeo R package.
+-   fgeo: the newer R package that has been demonstrated impossible to maintain and debug without a dedicated maintainer. Initially, it only wrapped ctfs \~ CTFS, but later reorganized code, including adding or removing functionality. It is way more solid and consistent than CTFS, but highly boureauchratic and cryptic for the final user.
+
+For the most part, I will be following CTFS structure and code, which is more transparent and closer to the final user. I will use fgeo to check for improvements in functionality, more than anything.
+
+In CTFS, there are relatively large sets of functions that seem to be linked to obsolete functionality, such as pseudo-Bayesian modeling or geometrical code to process digitized paper maps of stems. Some of that was not included in fgeo. Identifying those clusters early can facilitate the work.
 
 Because part of the functionality is going to be deprecated, substituted by new code, or delegated into other packages, it is useful to work from high-level functions (they depend on others, but nothing depends on them) to low-level functions (others depend on them, but they don't do much by themselves). If a high-level function gets deprecated, then the dependencies may also be deprecated. Although the order in which the work is being done is not relevant for the user, it can help the current update and future code improvements.
 
-# Load functions
+# Preliminaries
 
-First, we declare the path to fgeo2 folder, and source useful auxiliary functions:
+First, we declare the path to fgeo2 folder, load fgeo and ctfs packages, and source useful auxiliary functions:
 
 ```{r}
 
@@ -33,13 +41,21 @@ First, we declare the path to fgeo2 folder, and source useful auxiliary function
 g <- regexpr("fgeo2", getwd())
 path <- substr(getwd(), 1, g + attr(g, "match.length"))
 
-# Source useful functionality:
-source(paste0(path, "evaluation/0-code-to-source.r"))
+# Load ctfs+fgeo packages:
+#pak::pak("forestgeo/ctfs")
+#pak::pak("forestgeo/fgeo")
+library(ctfs, quietly = TRUE)
+library(fgeo, quietly = TRUE)
 
-# Other functionality:
+# Other useful functionality:
+source(paste0(path, "evaluation/0-code-to-source.r"))
 library(igraph, quietly = TRUE)
 
 ```
+
+# Dependencies and priorities from CTFS code
+
+## Load CTFS local code
 
 This chunk of code will source all the scripts, something similar to the old "startCTFS" function, but following a different structure of folders:
 
@@ -65,11 +81,9 @@ ff <- c(f1, f2, f3, f4, f5, f6, f7)
 for(f in ff) source(f)
 ```
 
-Note that it works on (possibly) updated scripts. The history of changes is briefly being recorded in the "function_inventory" table. If you want to evaluate the structure of dependencies in the original code by Condit, change "new" by "old" in the path names above.
+## Map CTFS dependencies
 
-# Map dependencies
-
-This maps all the mutual dependencies among the whole body of functions:
+This maps all the mutual dependencies among the CTFS body of functions (in the global environment):
 
 ```{r}
 
@@ -87,6 +101,7 @@ colnames(edges) <- c("from", "to")
 
 # Proper graph representation, maybe useful:
 g <- graph_from_data_frame(edges, directed = TRUE)
+g.ctfs <- g # we make a copy for comparison later
 
 pdf(paste0(path, "evaluation/results/original-CTFS-dependencies.pdf"),
     height = 33, width = 33)
@@ -103,7 +118,7 @@ plot(g, layout = layout.fruchterman.reingold,
 dev.off()
 ```
 
-# From high-level to low-level
+## From high-level to low-level
 
 It would be easier to review the code from high to low-level functions:
 
@@ -123,7 +138,7 @@ how_high <- (n_up / max(n_up)) - (n_down / max(n_down))
 as.matrix(head(sort(how_high, decreasing = TRUE), 20))
 ```
 
-# Isolated sets of functions
+## Isolated sets of functions
 
 Although most of the code belongs to one network of interdependent code, there are several sets of functions that are disconnected from the rest. Early on, these are potentially low-hanging fruits for review and development. Later, we expect more self-contained modules of intermediate size.
 
@@ -139,4 +154,55 @@ lapply(seq_len(cl$no)[-which.max(cl$csize)], function(i) {
 
 ```
 
-\
+# Dependencies in fgeo + ctfs packages
+
+As a potentially useful reference, I also map the dependencies involving `fgeo` + `ctfs` R packages. Remember that `fgeo` is a wrapper that loads four packages:
+
+-   `fgeo.tool`
+-   `fgeo.x`
+-   `fgeo.analyze`
+-   `fgeo.plot`
+
+```{r}
+
+# Dependencies of fgeo + ctfs packages:
+edges <- get_all_dependencies(
+  packages = c("fgeo", "fgeo.tool", "fgeo.x", "fgeo.analyze", "fgeo.plot", "ctfs"),
+  include_global = FALSE,
+  internal = TRUE
+)
+
+edges <- edges[, c("from_id", "to_id")]
+colnames(edges) <- c("from", "to")
+
+# Proper graph representation:
+g <- graph_from_data_frame(edges, directed = TRUE)
+
+# Visual representation:
+V(g)$color <- rep("gray", length(V(g)))
+V(g)$color[grepl("fgeo.tool::", V(g)$name)] <- "gold"
+V(g)$color[grepl("fgeo.x::", V(g)$name)] <- "gold"
+V(g)$color[grepl("fgeo.analyze::", V(g)$name)] <- "gold"
+V(g)$color[grepl("fgeo.plot::", V(g)$name)] <- "gold"
+V(g)$color[grepl("ctfs::", V(g)$name)] <- "orange"
+
+pdf(paste0(path, "evaluation/results/fgeo+ctfs-dependencies.pdf"),
+    height = 33, width = 33)
+
+plot(g, layout = layout.fruchterman.reingold, 
+     vertex.label = V(g)$name,
+     vertex.size = 5,
+     vertex.color= V(g)$color,
+     vertex.frame.color= "white",
+     vertex.label.color = "black",
+     edge.width=E(g)$weight, 
+     edge.color="black")
+
+dev.off()
+
+```
+
+The newer version of the code increases the number of functions and number of dependencies between functions (in addition to dependencies to other packages, not considered here):
+
+-   Number of functions: `{r} length(V(g.ctfs))` in CTFS, *vs.* `{r} length(V(g))` in `fgeo` + `ctfs`.
+-   Number of dependencies: `{r} length(E(g.ctfs))` in CTFS, *vs.* `{r} length(E(g))` in `fgeo` + `ctfs`.
