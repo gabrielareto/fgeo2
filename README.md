@@ -12,6 +12,15 @@ Based on the feedback gathered from the users, ForestGEO has these code-related 
 
 -   Goal 2: Expand the functionality for QA/QC tasks, adding systematic tools for data checking, error detection, and quality control, which are recurring needs but largely absent from the original code.
 
+## Sources of code
+
+For the most part, I am using this terminology in documents and commit descriptions:
+
+-   CTFS: refers to the original distribution of scripts by Rick Condit, not formal, but where (most) of the functionality is. It remains the most stable distribution of functionality. It's in local scripts.
+-   ctfs: the R package that encapsulates CTFS scripts. Initially created as the "working engine" behind fgeo R package.
+-   fgeo: the newer R package that has been demonstrated impossible to maintain and debug without a dedicated maintainer. Initially, it only wrapped ctfs \~ CTFS, but later reorganized code, including adding or removing functionality. It is way more solid and consistent than CTFS, but highly boureauchratic and cryptic for the final user.
+-   fgeo2: the current version of the code, this project.
+
 ## Scope
 
 The repository is used to track code changes, code evaluations, tests, examples, and implementation notes. It is a working development repository, not a formal R package.
