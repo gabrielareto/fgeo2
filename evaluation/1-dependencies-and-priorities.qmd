@@ -15,7 +15,7 @@ format:
 editor: visual
 ---
 
-## Goal and approach
+# Goal and approach
 
 Here we explore dependencies of the (possibly updated) set of functions in the CTFS / fgeo / fgeo2 body of code. One of the problems with the code is the dense network of inter-dependencies. One of the goals of the current evaluation is to reduce dependency to facilitate debugging and improving.
 
@@ -23,7 +23,7 @@ There are relatively large sets of functions that seem to be linked to obsolete 
 
 Because part of the functionality is going to be deprecated, substituted by new code, or delegated into other packages, it is useful to work from high-level functions (they depend on others, but nothing depends on them) to low-level functions (others depend on them, but they don't do much by themselves). If a high-level function gets deprecated, then the dependencies may also be deprecated. Although the order in which the work is being done is not relevant for the user, it can help the current update and future code improvements.
 
-## Load functions
+# Load functions
 
 First, we declare the path to fgeo2 folder, and source useful auxiliary functions:
 
@@ -46,19 +46,19 @@ This chunk of code will source all the scripts, something similar to the old "st
 ```{r}
 
 # Source the R scripts
-f1 <- list.files(paste0(path, "01_utilities/R/new/"),
+f1 <- list.files(paste0(path, "01_utilities/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f2 <- list.files(paste0(path, "02_biomass/R/new/"),
+f2 <- list.files(paste0(path, "02_biomass/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f3 <- list.files(paste0(path, "03_spatial/R/new/"),
+f3 <- list.files(paste0(path, "03_spatial/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f4 <- list.files(paste0(path, "04_abundance_diversity/R/new/"),
+f4 <- list.files(paste0(path, "04_abundance_diversity/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f5 <- list.files(paste0(path, "05_demography_growth/R/new/"),
+f5 <- list.files(paste0(path, "05_demography_growth/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f6 <- list.files(paste0(path, "06_topography_habitat/R/new/"),
+f6 <- list.files(paste0(path, "06_topography_habitat/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-f7 <- list.files(paste0(path, "07_mapping_plotting/R/new/"),
+f7 <- list.files(paste0(path, "07_mapping_plotting/R/old/"),
                  full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
 
 ff <- c(f1, f2, f3, f4, f5, f6, f7)
@@ -67,7 +67,7 @@ for(f in ff) source(f)
 
 Note that it works on (possibly) updated scripts. The history of changes is briefly being recorded in the "function_inventory" table. If you want to evaluate the structure of dependencies in the original code by Condit, change "new" by "old" in the path names above.
 
-## Map dependencies
+# Map dependencies
 
 This maps all the mutual dependencies among the whole body of functions:
 
@@ -80,13 +80,15 @@ all <- unique(unlist(lapply(ff, function(f) functions_in_script(f))))
 edges <- get_all_dependencies()
 
 # Subset the dependencies for the target functions only:
-keep <- edges$from %in% all | edges$to %in% all
+keep <- edges$from_function %in% all | edges$to_function %in% all
 edges <- edges[keep,,drop = FALSE]
+edges <- edges[, c("from_function", "to_function")]
+colnames(edges) <- c("from", "to")
 
 # Proper graph representation, maybe useful:
 g <- graph_from_data_frame(edges, directed = TRUE)
 
-pdf(paste0(path, "evaluation/results/dependencies-", Sys.Date(), ".pdf"),
+pdf(paste0(path, "evaluation/results/original-CTFS-dependencies.pdf"),
     height = 33, width = 33)
 
 plot(g, layout = layout.fruchterman.reingold, 
@@ -101,7 +103,7 @@ plot(g, layout = layout.fruchterman.reingold,
 dev.off()
 ```
 
-## From high-level to low-level
+# From high-level to low-level
 
 It would be easier to review the code from high to low-level functions:
 
@@ -121,7 +123,7 @@ how_high <- (n_up / max(n_up)) - (n_down / max(n_down))
 as.matrix(head(sort(how_high, decreasing = TRUE), 20))
 ```
 
-## Isolated sets of functions
+# Isolated sets of functions
 
 Although most of the code belongs to one network of interdependent code, there are several sets of functions that are disconnected from the rest. Early on, these are potentially low-hanging fruits for review and development. Later, we expect more self-contained modules of intermediate size.
 
