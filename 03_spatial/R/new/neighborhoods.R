@@ -11,12 +11,33 @@ get_distances_up_to_r <- function(query = NULL, reference = NULL, radius) {
   
   # Parameters:
   # query: the set of focal points, around which we are going to look
-  # reference: the set of potential neighbors; will default to be the same as "query"
+  # reference: the set of potential neighbors
   # radius: the size of the local neighborhood around the focal point
   
-  # Reshape input
-  query <- as.matrix(query)
-  reference <- as.matrix(reference)
+  # Checks and warnings:
+  if(is.null(query)) stop("You must provide 'query'")
+  if(is.null(reference)) stop("You must provide 'reference', even if reference = query")
+  if(ncol(query) != 2) stop("'query' must have two columns with numerical coordinates")
+  if(ncol(reference) != 2) stop("'reference' must have two columns with numerical coordinates; possibly reference = query")
+  
+  query <- as.data.frame(query)
+  reference <- as.data.frame(reference)
+  if(!is.numeric(query[,1]) | !is.numeric(query[,2]) | !is.numeric(reference[,1]) | !is.numeric(reference[,2]))
+    stop("'query' and 'reference' must have numerical columns with coordinates")
+  
+  # To handle NAs, we have to record the original
+  # indexes, then remove NAs, then come back
+  # to original indexes before returning output.
+  query$original_i <- 1:nrow(query)
+  reference$original_j <- 1:nrow(reference)
+  query <- na.omit(query)
+  reference <- na.omit(reference)
+  original_i <- query$original_i
+  original_j <- reference$original_j
+  
+  # Reshape input, keep coordinates only
+  query <- as.matrix(query[,c(1, 2)])
+  reference <- as.matrix(reference[,c(1, 2)])
   storage.mode(query) <- "double"
   storage.mode(reference) <- "double"
   
@@ -38,8 +59,24 @@ get_distances_up_to_r <- function(query = NULL, reference = NULL, radius) {
   )
   
   d <- d[d$dist <= radius,]
+  
+  # Recover the original indexes:
+  d$query_i <- original_i[d$query_i]
+  d$reference_j <- original_j[d$reference_j]
   d
 }
+
+# small example
+if(FALSE)
+{
+  query <- data.frame(x = runif(3), y = runif(3))
+  reference <- data.frame(x = runif(10), y = runif(10))
+  query[2,] <- c(NA, NA)
+  reference[2,] <- c(NA, NA)
+
+  get_distances_up_to_r(query, reference, radius = 100)
+}
+
 
 
 get_boundary <- function(boundary = NULL, window = NULL, xy = NULL, q = 5)
