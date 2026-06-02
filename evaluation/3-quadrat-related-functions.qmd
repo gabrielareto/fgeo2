@@ -352,21 +352,21 @@ A recurrent auxiliary function is `guess_plotdim()`, which provides a default in
 
 The fgeo package does not include functionality to find neighboring quadrats or doing summaries on them, neither functionality to split the entire plot into quadrats of arbitary size (that remains an open issue in the github repository to date).
 
-# Design principles
+# Design principles for new code
 
 Based on the evaluation and overall goals, these are some reflections and design principles for the new code.
 
 ## Best practices
 
-If the project only had tree-level data, the only piece of information really needed is just the global coordinates of trees, {gx, gy}. If the project has quadrat-level data, there is a need for quadrat-level IDs and one (or more) quadrat-level table. The most important information in such a quadrat-level table is quadrat location. The link with other tables is made as with any other table: through shared keys = quadrat-level ID. Without any extra assumption.
+If the project only had tree-level data, the only piece of information really needed is just the global coordinates of trees, {gx, gy}. If the project has quadrat-level data, there is a need for quadrat-level IDs and at least one quadrat-level table. The most important information in such quadrat-level table is quadrat location. The link with other tables is made as with any other table: through shared keys = quadrat-level ID. Without any extra assumptions.
 
 Storing location implicit in a quadrat ID is a bad practice. If quadrat location is implicit in quadrat ID, one cannot specify {quadrat IDs, locations} without changing their codes or indexes. This is a great point of vulnerability. A major improvement would be to move from \[rigid quadrat IDs with location implicit\] to \[arbitrary quadrat IDs + explicit locations\].
 
 In general, in a well-managed project, quadrat-level IDs could take any form. The new code should be able to work under *any* way of identifying quadrats uniquely, regardless of whether that is a numerical code, or alpha-numerical, or whatever. It must not rely on any quadrat ID convention in particular.
 
-The step of finding location from ID must be rare, separated, explicit. Because of that, it should be OK to make it hard for the user: asking for many details, making it interactive, etc. It is not something that should be done again and again or by default within other functions.
+The step of finding location from ID must be rare, separated, explicit. It is just a hack, and it is a risky operation in general. Because of that, it should be OK to make it hard for the user: asking for many details, making it interactive, etc. It is not something that should be done again and again in analytical pipelines or by default within other functions.
 
-To locate quadrats, (xmax, ymax, xmin, ymin) should be preferred over (x, y), as there could be ambiguity regarding left-bottom corner or centroid or something else. This is closer to polygon language, and easier to make compatible with other ways of dividing plots into pieces. It would work for square or rectangular, does not need additional "grid size" information, it won't matter if the quadrats overlap with each other, etc.
+To locate quadrats, (xmin, ymin, xmax, ymax) should be preferred over (x, y), as there could be ambiguity regarding left-bottom corner or centroid or something else. This is closer to polygon language, and easier to make compatible with other ways of dividing plots into pieces. It would work for square or rectangular, does not need additional "grid size" information, it won't matter if the quadrats overlap with each other, etc.
 
 For a given team or network, a general recommendation is: get quadrat-level {xmin, ymin, xmax, ymax} coordinates, store them, use best practices from then on, and you won't need any of the functions we are discussing here at all, neither you will have to remember why you named the quadrats in a certain way, etc. You would relate with quadrat-level info the same way you relate with species-level info, habitat-level info, etc: through explicit unique IDs and explicit information stored in tables, not conventions. This general recommendation should be clear and strong in the documentation / tutorials.
 
@@ -401,7 +401,7 @@ Thing to consider:
 
 Maybe accumulative outputs are safer than itemized outputs? For example, if input is global coordinates of trees, the output can be global coordinates of points + quadrat membership + local coordinates of points *and* also the quadrat-level table with (xmin, ymin, xmax, ymax) and attributes describing quadrat IDing convention. This was the approach taken by `fgeo` package, with those `add_*()` functions.
 
-Do we want a "hard" definition of global? Probably not. It would make things more difficult. For example, splitting a plot into four subplots should be the same thing as splitting a smaller quadrat into four subquadrats. "Global" would mean "whatever you included", without a permanent reference to scales or objects that live outside the input. **More general vocabulary like large/small, outer/inner, unit/subunit, etc. should be preferred over global/local**.
+Do we want a "hard" definition of global? Probably not. It would make things more difficult, as we would need to carry global-level information as attributes or something like that. If we do not have a "hard global", splitting a plot into multiple subplots should be the same thing as splitting a smaller quadrat into multiple subquadrats. "Global" would mean "whatever you included", without a permanent reference to scales or objects that live outside the input. If that is the approach, **we should prioritize more general vocabulary like large/small, outer/inner, unit/subunit, etc. over global/local**.
 
 ## Splitting
 
@@ -413,17 +413,17 @@ The task of splitting seems something more "ecological" or useful for analyses t
 
 We could think of different ways of splitting:
 
--   into non-overlapping equal square pieces that fill the whole completely
--   into non-overlapping equal square pieces with some smaller remainders (a warning seems enough)
--   into overlapping equal square pieces? This is probably what the `selectrandomquad2()` function in CTFS was exploring.
+-   into non-overlapping equal (probably square) pieces that fill the whole completely
+-   into non-overlapping equal (probably square) pieces with some smaller remainders (a warning seems enough)
+-   into overlapping equal (probably square) pieces? This is what the `selectrandomquad2()` function in CTFS was exploring, apparently.
 
-This applies to subplots within the plot, subquadrats within quadrats, sub-sub-sub-sub-quadrats within sub-sub-sub-quadrats or whatever. Any resolution. Users may want to explore nested subdivisions of the plot, and things like that. I do not have to anticipate smart way of exploring ecological questions: I just need to think in the most general possible terms.
+This applies to subplots within the plot, subquadrats within quadrats, sub-sub-sub-sub-quadrats within sub-sub-sub-quadrats or whatever. Any resolution. Users may want to explore nested subdivisions of the plot to understand how things change with scale, and things like that. If we think in general terms, then users will be able to address more questions.
 
 Naming pieces of a whole may be easy or difficult. The easiest way is to simply use a sequence of numbers. The IDing conventions should make it easy both to interpret existing IDs and to generate new IDs.
 
-Splitting, in general, can be treated as arbitrary and resulting in temporary quadrats. Their locations don't need to be stored permanently, in general. However, **splitting + IDing convention is *the* way to recover quadrat codes** if the user lost them or if the user keeps quadrat-level information under different IDing conventions. Therefore, the splitting routines must be able to return quadrats neatly organized acoording to any given naming convention, and not just enforce simple numerical membership, for example. In fact, this is the only reason why splitting cannot be trivial in the new code, or simply omitted and substituted by teaching people how to group things into classes or bins.
+Splitting, in general, can be treated as arbitrary and resulting in temporary quadrats. Their locations don't need to be stored permanently, in general. However, **splitting + IDing convention is the way to recover quadrat codes** if the user lost them or if the user keeps quadrat-level information under different IDing conventions. Therefore, the splitting routines must be able to return quadrats neatly organized acoording to any given naming convention, and not just enforce simple numerical membership, for example. In fact, this is the only reason why splitting cannot be trivial in the new code, or simply omitted and substituted by teaching people how to group things into classes or bins in general.
 
-The split of 20 x 20 m into 5 x 5 m quadrats is just one instance of a general routine to split. It does not require specific functions. We just have to make sure that the IDing 11, 12, 13, 13, 21, 22, etc. convention can be passed as an argument. This would cover the functionality of `lxly.to.p5()` in CTFS and `fgeo.tool::add_subquad()` and its dependencies.
+The split of 20 x 20 m into 5 x 5 m quadrats is just one instance of a general routine to split. It does not require specific functions. We just have to make sure that the IDing 11, 12, 13, 13, 21, 22, etc. convention can be passed as an argument. This would cover the functionality of `lxly.to.p5()` in CTFS and `fgeo.tool::add_subquad()` and its dependencies. In this particular case, abstraction can save hundreds of lines of code and lots of intermediate functions.
 
 ## Quadrat naming or IDing conventions
 
@@ -442,35 +442,20 @@ The quadrat IDing convention assumed by old CTFS code is relatively common but n
 This is a review of different ForestGEO datasets:
 
 -   BCI: QuadratName uses CCRR but immediately recognized as numeric by Excel. Starts at 0000. QuadratID seems to be numeric but it is imperfectly sequential (maybe internal to database). Some tables use 'CCRR with ' first to avoid losing zeros through Excel. The convention for 5x5 m quadrats is CR within 20x20m quadrats (i.e. local meaning only), starting at 1, not 0.
-
     -   The same convention seems to apply to other STRI smaller plots, with P09 or P16 plots, for example, numbering quadrats from 0000 to 0404, immediately losing initial zeros in Excel.
-
 -   Amacayacu: uses letters to identify hectares, then has quadrat codes of the form A01, A02, etc. Newer versions of the dataset use the form A1, A2, ... without zeros. Each hectare (letter) has 25 quadrats.
-
     -   Michigan Big Woods plot also identifies hectares by letter first, but the shape of the plot is irregular so there would not be a good way to infer their order. Hectare-level location in this plot must be explicitly kept.
-
 -   Yasuni: Uses CCRR or CC,RR for 20x20m quadrats, depending on the table, starting at 00. It uses CR for 5x5m quadrats, from 11 to 44.
-
 -   Fushan: In the {quadrat, habitat} object it uses simple numerical sequence from 1 to 625, referring to 20 x 20 m quadrats, which are also identified by global coordinates of their centroids. In other tables it uses CCRR starting at 0, from 0000 to 2424. In other tables, it uses CC,RR, with separator: 00,00 to 24,24. Some tables identify 10x10m subquadrats as "\< v", "\< \^", "\> v", "\> \^".
-
 -   Pasoh: Uses CCRR for 20x20 m quadrats, starting at 00. Sometimes with ' before to not to lose zeros. It also uses CR for 5x5 m subquadrats, from 11 to 44.
-
 -   Lambir: Uses CCRR from 0101 to 5225 for 20x20m quadrats.
-
 -   Khao Chong: Uses 10x10m quadrats using CCRR starting at 01, from 0101 to 6040 (the whole plot is 600 x 400 m). Initial zero can be lost by Excel.
-
 -   HKK: Uses CC-RR, starting at 01 for 20x20 m quadrats. In some tables, uses ' first (to avoid losing zeros?). The 10x10 quadrats are labelled A, B, C, D internally.
-
 -   Rabi: Uses CCRR starting at 01 for 20x20m quadrats, from 0101 to 2525.
-
 -   Korup: Uses CCRR starting at 00 for 20x20m quadrats, from 0000 to 4924.
-
 -   Mpala: Uses CCRR from 0101 to 5025 in the tables I have. But the plot is longer than that: fgeo documentation mentions need for extra zero padding, so the forms CCCRR or CCCRRR are also feasible. It uses CR from 11 to 44 for 5x5m quadrats, but I have seen this only in field forms.
-
 -   Ngel Nyaki: Uses CCRR starting at 01 for 20x20m quadrats.
-
 -   Luquillo: Uses CCRR for 20x20 m quadrats, staring at 01, from 0101 to 1625 (the plot is 320 x 500 m). It also uses:
-
     -    10x10m subquadrast within 20x20m quadrats identified by cardinal directions: NW, NE, SW, SE.
     -   5x5m subquadrats within the 20x20m quadrats following CR, from 11 to 44.
 
@@ -480,14 +465,13 @@ Other networks may have different quadrat IDing conventions, but the variety of 
 
 Based on the examples evaluated, and some other generalizations, we can identify the following axes of variation in quadrat IDing conventions:
 
--   local vs. global meaning:
-    -   the codes for subquadrats refer to locations within specific larger quadrats
--   a flat sequence vs. a combination of row and col sub-ids.
+-   grid size = resolution of the quadrats (but possibly different along x and y)
+-   a simple sequence vs. a combination of row and col sub-ids.
 -   numbers vs. letters
 -   number of digits, i.e. whether do zero padding. Could be different for the different pieces that conform the quadrat ID.
 -   start at 0 or 1: initial zeros can disappear
 -   separators or initial characters to avoid losing zeros
--   order in which things are numbered or named:
+-   if a sequence, order in which things are numbered or named:
     -   along columns first, then move to the next column
     -   along rows first, then move to the next row
     -   maybe changing directions: S to N for column 1, then N to S for column 2, etc. Idem with going along rows first.
@@ -502,7 +486,9 @@ Although not present in the examples evaluated, we can anticipate cases of very 
 
 This might be covered with the other axes of variation as long as the numeric sequence can be declared in more detail, like in `seq(from = ..., to = ..., by = ...)` instead of simply `1:n`.
 
-Nestedness and inheritance is something that requires particular attention. The subquadrats may have codes that only make sense within a given quadrat, or inherit the ID of the mother unit, for example: e.g. 13A, 13-1, 13_1 for pieces of subplot "13", and so on. May refer to things like pieces of a map while digitizing, e.g. Map_0312_1, Map_0312_2, Map_0312_3, etc. When building IDs, this might require a `inherit = TRUE / FALSE` parameter or something equivalent? But that may limit the arbitrary application to sub-units within units. Perhaps it is better to have a couple of simple tutorial on how to combine ID of mother and children units, so the children-level IDs are unique at the higher level too (which is a preferred practice).
+Nestedness and inheritance is something that requires particular attention. The subquadrats may have codes that only make sense within a given quadrat, or inherit the ID of the mother unit. For example, the standard codes for 5x5m quadrats don't inherit anything: the subquadrat-level codes only have local meaning. In contrast, in Amacayacu, the quadrats (sub-sub-units) inherit the code of the hectares (sub-units, relative to the whole plot). Similarly, we could anticipate things like 13A, 13-1, 13_1 for pieces of subplot "13", and so on. May refer to things like pieces of a map while digitizing, e.g. Map_0312_1, Map_0312_2, Map_0312_3, etc. When building IDs, this might require a `inherit = TRUE / FALSE` parameter or something equivalent? But that may limit the arbitrary application to sub-units within units. This is something to think about. Hopefully two-step sequential building / decoding is solid.
+
+In any case, the best practice is to store quadrat IDs along their explicit locations (xmin, ymin, xmax, ymax). Extracting spatial meaning from quadrat IDs is risky and should remain a rare, infrequent task, to which the user has to pay proper attention. Therefore, we can be as detailed as we want in that step.
 
 ### Multiple levels or ways of splitting the plot
 
@@ -510,25 +496,15 @@ There can be two (or more) ways of splitting the plot stored in the data. For ex
 
 This should not be a problem, if naming conventions can be recorded well. This may be relevant for tutorials, more than the code itself. One or two or one hundred ways of splitting the plot should not make a big difference, as long as the IDs and features (locations) of those variables are clear.
 
-### Extensions
+### Think about extensions
 
-Current CTFS and fgeo code is impossible to adapt to new conventions.
-
-The code needs to be transparent, long, readable, even if repetitive, so it is easy to expand with new conventions, if they arrive.
-
-We can start by incorporating some conventions, and we can expand later.\
+Current CTFS and fgeo code is impossible to adapt to new conventions. The new code needs to be transparent, long, readable, even if repetitive, so it is easy to expand with new conventions, if they arrive. We can start by incorporating some conventions, and we can expand later.
 
 ### Difficult cases
 
-The names or numbers may go always south to north, or go back and forth in zig-zag or as a snake would move. This might be possible to incorporate.
+Cases outside the axes of variation above would be better encoded simply by storing {quadrat id, xmin, ymin, xmax, ymax}. Projects or networks with non-standard quadrat IDing conventions surely have that, even if just on a piece of paper in the wall. They can be treated as arbitrary IDs that require look up tables with explicit information about location, even if they have a system.
 
-More complicated systems are better encoded simply by storing {quadrat id, xmin, ymin, xmax, ymax}. Projects or networks with non-standard quadrat IDing conventions surely have that, even if just on a piece of paper in the wall. They can be treated as other cases that require look up tables with explicit information about location:
-
--   Local field codes: numeric or alphanumeric labels recorded in the field; not spatially interpretable without metadata.
--   Internal database IDs: e.g. arbitrary numeric IDs.
--   Field-sheet IDs: labels tied to datasheets or map files, not necessarily exact spatial cells.
-
-The non-rectangular cases seem difficult to integrate. Or maybe not. But I won't do it for the moment:
+The non-rectangular cases may or may not be difficult to integrate. I won't do it for the moment:
 
 -   Strip labels: regeneration or understory units labelled as strip 1, strip 2, etc., not square quadrats.
 -   Transect-distance labels: subplots labelled by distance, e.g. 0–20 m, 20–40 m. Maybe referred by midpoint: 10, 30, etc.
@@ -538,7 +514,7 @@ The non-rectangular cases seem difficult to integrate. Or maybe not. But I won't
 The neighbor-related functions, according to the "functions cannot be examples" principle, will be probably substituted by:
 
 -   A function to indentify neighboring quadrats
-    -   possibly constrained (e.g. only neighbors of the same habitat, or same community type, etc., using arbitrary grouping)
+    -   possibly constrained (e.g. only neighbors of the same habitat, or same community type, or from groups from `hclust()`, etc.).
     -   possibly through a "distance between quadrats" intermediate step, so we can generalize to k=4, k=8, etc., using k-NN routines.
 -   Tutorials or examples: abundances, presence/absence, basal area, ...
 
@@ -546,7 +522,7 @@ As happens with the neighborhood analyses (of points): neighboring quadrats are 
 
 ## Other dependents
 
-Although not fully developed now, modify the following functions so they don't break:
+Although not fully developed now, I should modify the following functions so they don't break:
 
 -   `fullplot.imageJ()`
 
@@ -566,8 +542,8 @@ Although not fully developed now, modify the following functions so they don't b
 
 # Summary
 
--   Things can be simplified radically, in terms of number of functions, number of dependencies, length of code, etc.
--   We cannot avoid the fundamental problem of guessing location from quadrat ID. For this to be general and usable outside ForestGEO's CCRR convention, we need powerful / detailed ways of handling naming or IDing conventions.
+-   There is a risky proliferation of functions to convert between pairs of conventions. The complexity of the code in `fgeo` in particular is crazily out of proportion, involving dozens of functions for what are, essentially, very simple calculations. Things must be simplified radically, in terms of number of functions, number of dependencies, and length of code.
+-   We cannot avoid the fundamental problem of guessing location from quadrat ID. For this to be general and usable outside ForestGEO's CCRR convention, we need powerful / detailed ways of handling naming or IDing conventions. This would be new complexity. It must be easy to understand and expand.
 -   Extracting locations implicit in IDs should not be done often or as a default. The good practice is to store explicit locations, and then use that in analytical workflows. We should push the users in that direction, and design most code under the assumption that the user has {tree id, quadrat id, etc} and {quadrat id, xmin, ymin, xmax, ymax, etc} tables.
 -   Splitting can be general and easy. But it is also the key to recovering quadrat IDs: it must handle naming conventions and order of quadrats with care.
 -   Things should try to make global sense. Any time a function splits a set of coordinates into pieces, it must return piecel-level ID, coordinates within pieces, piece locations, and, probably, the corresponding naming convention as an attribute.
