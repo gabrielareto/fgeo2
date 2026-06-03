@@ -498,7 +498,7 @@ This should not be a problem, if naming conventions can be recorded well. This m
 
 ### Think about extensions
 
-Current CTFS and fgeo code is impossible to adapt to new conventions. The new code needs to be transparent, long, readable, even if repetitive, so it is easy to expand with new conventions, if they arrive. We can start by incorporating some conventions, and we can expand later.
+Current CTFS and fgeo code is impossible to adapt to new conventions. The new code needs to be readable, even if long and repetitive, so it is easy to expand with new conventions if needed. We can start by incorporating some conventions, and we can expand later.
 
 ### Difficult cases
 
@@ -542,9 +542,9 @@ Although not fully developed now, I should modify the following functions so the
 
 # Summary
 
--   There is a risky proliferation of functions to convert between pairs of conventions. The complexity of the code in `fgeo` in particular is crazily out of proportion, involving dozens of functions for what are, essentially, very simple calculations. Things must be simplified radically, in terms of number of functions, number of dependencies, and length of code.
+-   There is a risky proliferation of functions to convert between pairs of conventions. The complexity of the code in `fgeo` in particular is out of proportion, involving dozens of functions for what are, essentially, very simple calculations. Things must be simplified radically, in terms of number of functions, number of dependencies, and length of code.
+-   There are two relevant scenarios: either the user keeps quadrat locations explicit (best practice) or implicit (bad practice). Getting and storing quadrat locations permanently is mandatory step for a well-managed project, so it should divide the funtions in two groups: those to get locations vs. those using locations.
 -   We cannot avoid the fundamental problem of guessing location from quadrat ID. For this to be general and usable outside ForestGEO's CCRR convention, we need powerful / detailed ways of handling naming or IDing conventions. This would be new complexity. It must be easy to understand and expand.
--   Extracting locations implicit in IDs should not be done often or as a default. The good practice is to store explicit locations, and then use that in analytical workflows. We should push the users in that direction, and design most code under the assumption that the user has {tree id, quadrat id, etc} and {quadrat id, xmin, ymin, xmax, ymax, etc} tables.
 -   Splitting can be general and easy. But it is also the key to recovering quadrat IDs: it must handle naming conventions and order of quadrats with care.
 -   Things should try to make global sense. Any time a function splits a set of coordinates into pieces, it must return piecel-level ID, coordinates within pieces, piece locations, and, probably, the corresponding naming convention as an attribute.
 -   Neighboring quadrats: not key, not in `fgeo`. Probably can be substituted by a tutorial on k-NN applied to quadrats, which is more general, with the tasks of the CTFS functions as examples: abundances, proportion of presences, ...
