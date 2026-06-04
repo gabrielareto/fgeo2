@@ -429,7 +429,7 @@ The split of 20 x 20 m into 5 x 5 m quadrats is just one instance of a general r
 
 ### Need for generalization?
 
-The conventions to identify quadrats seem central to the tasks that we need to solve. Conventions are declared within CTFS and fgeo code constantly, but there is not a fully fleshed system to handle them. The flexibility is limited to the variants of ForestGEO's most common conventions. \
+The conventions to identify quadrats seem central to the tasks that we need to solve. Conventions are declared within CTFS and fgeo code constantly, but there is not a fully fleshed system to handle them. The flexibility is limited to the variants of ForestGEO's most common conventions.\
 \
 If possible, we should be able to incorporate more flexibility. One of the goals of this package update is to reduce dependency on the "CTFS orthodox format" or other formal assumptions, so it can be more broadly usable (e.g. by participants in the Alliance for Tropical Forest Science).
 
@@ -456,7 +456,7 @@ This is a review of different ForestGEO datasets:
 -   Mpala: Uses CCRR from 0101 to 5025 in the tables I have. But the plot is longer than that: fgeo documentation mentions need for extra zero padding, so the forms CCCRR or CCCRRR are also feasible. It uses CR from 11 to 44 for 5x5m quadrats, but I have seen this only in field forms.
 -   Ngel Nyaki: Uses CCRR starting at 01 for 20x20m quadrats.
 -   Luquillo: Uses CCRR for 20x20 m quadrats, staring at 01, from 0101 to 1625 (the plot is 320 x 500 m). It also uses:
-    -    10x10m subquadrast within 20x20m quadrats identified by cardinal directions: NW, NE, SW, SE.
+    -   10x10m subquadrast within 20x20m quadrats identified by cardinal directions: NW, NE, SW, SE.
     -   5x5m subquadrats within the 20x20m quadrats following CR, from 11 to 44.
 
 Other networks may have different quadrat IDing conventions, but the variety of cases within ForestGEO datasets seems enough for the moment.

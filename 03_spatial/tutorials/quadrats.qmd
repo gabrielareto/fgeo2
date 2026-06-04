@@ -31,21 +31,21 @@ Because of the multiple spatial frameworks, we can find multiple variables for x
 -   within subplots or quadrats (e.g. "local" or 20 x 20 m quadrat coordinates in ForestGEO, {lx, ly} or {QX, QY})
 -   within smaller units (e.g. even more local coordinates within 5 x 5 m sub-quadrats)
 
-The vocabulary chosen here is:
+The vocabulary chosen here is slightly more general:
 
--   outer coordinates: relative to whatever sampling unit that can be split into smaller sub-units.
+-   outer coordinates: relative to whatever sampling unit that can be subdivided into smaller sub-units.
 -   inner coordinates: relative to the smaller sub-units in which a larger sampling unit is split.
 -   quadrat, for the sub-units in which a larger unit (plot, subplot, etc.) is split. It does not refer to any spatial scale in particular. Here, "quadrat" could mean half of the plot, or one hectare, or one 1x1 m quadrat within a 5x5 m quadrat within a 20 x 20 m quadrat, etc.
 
-Because the approach is general, to "pieces within other pieces", the outer coordinates may refer to a whole 50-ha plot, or only to a specific hectare within it, depending on the context. Similarly, the corners of small 5 x 5 m quadrats could refer to their location within the entire plot, or their (nested) location within specific 20 x 20 m quadrats.
-
-The code developed here does things at *an*y scale, and does *not* track coordinates that refer to an absolute or whole-plot-level scale, beyond of whatever the user inputs. If the user wants to track whole-plot-level coordinates, then they simply have to use within-whole-plot coordinates to express quadrat-level locations, for any level of nestedness or resolution to which those quadrats may refer.
+Because the approach is general, to "pieces within other pieces", the outer coordinates may refer to a whole 50-ha plot, or only within a specific hectare within it, depending on the context. Similarly, the corners of small 5 x 5 m quadrats could refer to their location within the entire plot, or their (nested) location within specific 20 x 20 m quadrats. The code developed here does things at *an*y scale, and does *not* track coordinates that refer to an absolute or whole-plot-level scale, beyond of whatever the user inputs. If the user wants to track whole-plot-level coordinates, then they simply have to use within-whole-plot coordinates consistently to express quadrat-level locations, for any level of nestedness or resolution to which those quadrats may refer.
 
 ## Good vs. bad practices
 
 If the project has quadrat-level data, there is a need for quadrat-level IDs and at least one quadrat-level table. The most important information in such quadrat-level table is quadrat location. The link with other tables is made as with any other table: through shared keys = quadrat-level ID. Without any extra assumptions.
 
-Storing location implicit in a quadrat-level ID is a bad practice. If quadrat location is implicit in quadrat ID, one cannot specify {quadrat IDs, locations} without changing their codes or indexes. This is a great point of vulnerability. If, for whatever reason, a team / project / network does not store quadrat locations explicitly, then they must be inferred from the quadrat name or ID. This step of finding location from ID must be rare, separated, explicit. It is just a hack, and it is a risky operation in general. It should be done as soon as possible and checked manually with care. It is not something that should be done again and again within analytical pipelines or by default within other functions.
+Storing location implicit in a quadrat-level ID is a bad practice. If quadrat location is implicit in quadrat ID, one cannot specify {quadrat IDs, locations} without changing their codes or indexes. This is a great point of vulnerability in data management, including CTFS scripts and `fgeo` R package.
+
+If, for whatever reason, a team / project / network does not store quadrat locations explicitly, then they must be inferred from the quadrat name or ID. This step of finding location from ID must be rare, separated, explicit. It is just a hack, and it is a risky operation in general. It should be done as soon as possible and checked manually with care. It is not something that should be done again and again within analytical pipelines or by default within other functions.
 
 In short: for a given team or network, a general recommendation is: get quadrat-level {xmin, ymin, xmax, ymax} coordinates as soon as possible, store them, and use best practices from then on. You would relate with quadrat-level info the same way you relate with species-level info, habitat-level info, etc: through explicit unique IDs and explicit information stored in tables, not conventions.
 
@@ -55,45 +55,163 @@ As said above, the code developed here does things at *an*y scale, and does *not
 
 # Code
 
-The new code targets the same general tasks that CTFS and fgeo code did. Most importantly, it goes from outer (global) to inner (local) coordinates and vice versa. This new version of the code is articulated around the idea that the user has to arrive, as soon as possible, to the quadrat-level locations. Then those locations must be stored permanently and used from then on following good practices. The new code also tries to fulfill other general criteria, like reducing the number of functions and dependencies, and make the functions more usable outside "orthodox ForestGEO" tables.
+The new code targets the same general tasks that CTFS and `fgeo` code did. Most importantly, it goes from outer (global) to inner (local) coordinates and *vice versa*. This new version of the code is articulated around the idea that the user has to arrive, as soon as possible, to the quadrat-level locations. Then those locations must be stored permanently and used from then on following good practices. The new code also tries to fulfill other general criteria, like reducing the number of functions and dependencies, and make the functions more usable outside "orthodox ForestGEO" tables.
 
-The code has these main functions:
+## Functions
 
--   `guess_quadrat_id_convention()`: takes everything the user knows about quadrat-naming or IDing conventions, quadrat names, coordinates and grouping of tree-level observations, etc. Then it returns a best-guess of all the parameters that define a given quadrat-naming or IDing convention. This is useful for safety checks, etc. within other functions. It is also useful in extraordinary cases of metadata loss.
+The code has two functions to help the user arrive to a quadrat-level table of the form {quadrat ID, xmin, ymin, xmax, ymax}. The rest of the functions assume that such a table exists.
 
--   `get_quadrat_locations()`: takes everything the user knows about quadrat-naming or IDing conventions, quadrat names, coordinates and grouping of tree-level observations, etc. Then a best-guess about quadrat-level locations is returned by combining the output of these two functions:
+The functions to create or infer quadrat-location tables are:
 
-    -   `get_quadrat_locations_from_id_convention()`: even in the absence of observations, it is possible to generate quadrat IDs and locations if the convention is sufficiently described, through a long set of descriptive parameters.
+-   `get_quadrat_locations_from_outer_coordinates()`: Use this if you have a set of observations already grouped into quadrats (e.g. {tree id, quadrat id, tree x, tree y}). The function will infer the characteristics of the grid and return the location of the quadrats as a table with one row per quadrat, of the form {quadrat ID, xmin, ymin, xmax, ymax}.
 
-    -   `get_quadrat_locations_from_outer_coordinates()`: even in the absence of a quadrat-naming or IDing convention, if the user has a set of observations grouped into quadrats (e.g. {tree id, quadrat id, tree x, tree y}), then the locations of those quadrats can be inferred.
+-   `get_quadrat_locations_from_id_convention()`: In the absence of observations, this will create quadrats from scratch, of a given size, and with IDs following the specific convention. You would have to describe the ID convention through a long set of descriptive parameters.
+
+Other two functions move point data (e.g. tree-level coordinates) between outer coordinates (e.g. plot-level {gx, gy}) and inner coordinates (e.g. quadrat-level {lx, ly}). Both use quadrat-level locations as input, so you must have obtained and stored those first.
+
+-   `assign_points_to_quadrats()`: Assigns points, given by outer coordinates, to a table of explicit quadrat locations. The output keeps the original point index, outer coordinates, assigned quadrat ID, and inner coordinates within each assigned quadrat.
+
+    -   Note: this is very flexible, and will return membership and inner coordinates into *any* set of rectangular shapes defined by the input, including standard quadrats (non-overlapping in a regular grid of complete coverage) but also overlapping quadrats, randomly located quadrats of different sizes, etc. This is fully intentional and key to facilitate flexibility in ecological analyses. However, if used for that, it will return a table for each \[point x quadrat\] combination, and will not respect the number of rows in the input.
+
+-   `compile_points_from_quadrats()`:
+
+Finally, other two functions transform quadrat-location tables across nested resolutions:
+
+-   `subdivide_quadrats()`:
+
+-   `collapse_quadrats()`:
 
 -   `split_into_quadrats()`: splits any set of outer coordinates into inner coordinates inside a given set of quadrats. Requires quadrat-level locations.
 
 -   `aggregate_from_quadrats()`: aggregates inner into outer coordinates. Requires quadrat-level locations. This is not something that any ecological analysis really needs, but it is a central task during the compilation of full datasets of large plots from fieldwork that makes progress quadrat by quadrat, and a few other data-management tasks.
 
-These main functions call a few auxiliary functions (e.g. to create sequences of letters according to different systems).
+These main functions call a few other auxiliary functions (e.g. to create sequences of letters according to different systems).
 
-Quadrat locations + IDs are key, and cannot be taken lightly. Therefore, the `get_quadrat_locations()` will make many checks for congruence in the input. If something does not make sense, it will stop or warn. Pay attention.
+points_outer_to_inner()\
+points_inner_to_outer()
 
-Note that `get_quadrat_locations()` can generate new quadrats from scratch, and would build their IDs according to any given convention. Thus, a general routine to split any set of tree observations into quadrats of any resolution is just `get_quadrat_locations(...) |> split_into_quadrats(...)`.
+subdivide_quadrat_locations()\
+collapse_quadrat_locations()
 
-Additionally, the problem of "translating" between quadrat naming/IDing conventions becomes trivial. It is sufficient to apply `get_quadrat_locations()` using any two conventions, but same grid resolution and plot limit parameters, and then matching locations to obtain equivalent IDs from both conventions. Extensions become improvements to `get_quadrat_locations()` function instead of requiring new sets of pair-wise translating functions.
+## Safety and checks in a key step
 
-# Conventions to build quadrat-level IDs
+Quadrat locations + IDs are key, and cannot be taken lightly.
+
+`get_quadrat_locations_from_outer_coordinates()` should be generally preferred, as it uses data that must have come from (at the time) known quadrat locations. But it will fail if you are using very non-random and small subsets of data, or if your plot does not have data in some quadrats.
+
+It is a general recomendation to use both `get_quadrat_locations_from_*()` functions and compare the results.
+
+Of course, if you are going to rely on a given ID convention, it is wise to make sure that you know it well. The `get_quadrat_locations_from_id_convention()` will make many checks for congruence in the input. If something does not make sense, it will stop or warn. Pay attention to that.
+
+One possibly useful safety check is to apply `get_quadrat_locations_from_id_convention()`, then use the resulting quadrat locations to split the points (e.g. tree-level data) into quadrats using `assign_points_to_quadrats()`, and then compare with the original quadrat membership of the points (assuming you already have it). Both should match under normal circumstances.
+
+## Some extra benefits
+
+Additionally, the problem of "translating" between quadrat naming/IDing conventions becomes trivial. It is sufficient to apply `get_quadrat_locations()` using any two conventions, but same grid resolution and plot limit parameters, and then matching locations to obtain equivalent IDs from both conventions. So, if you keep different quadrat-level tables or maps referring to the same locations but using different types of IDs, you could reorganize or link them by going to common IDs.
+
+# Quadrat ID conventions
+
+## Practical need for generalization
 
 Quadrat-level IDs could be arbitrary, making IDing conventions irrelevant, if teams / projects / networks kept the quadrat-level locations explicitly stored in quadrat-level tables. Handling quadrats and inner/outer coordinates would be straightforward.
 
-The new code has been developed under the pessimistic scenario that the user does not have a explicit table with the locations of the quadrats. This requires extracting locations from quadrat IDs. This requires, as we will see, an entire system to describe quadrat naming/IDing conventions.
+The new code has been developed under the pessimistic scenario that the user does not have a explicit table with the locations of the quadrats. This requires extracting locations from quadrat IDs.
 
-CTFS / fgeo old code is very concrete when it refers to these conventions: it only accepts four cases (CCRR starting at 0 or 1, CR for 5 x5 m quadrats, and consecutive numerical indexes). Because of this limitation, these functions are not broadly usable outside the most orthodox CTFS tables. A review of \~20 datasets (see evaluation folder) shows that there is substantial variation in the ways different teams (or the same team in different moments, or the same team for different tables) identify quadrats. Often, the conventions are different for quadrats at different resolution.
+CTFS / `fgeo` code is very concrete when it refers to these conventions: it only accepts four cases (CCRR starting at 0 or 1, CR for 5 x5 m quadrats, and consecutive numerical indexes). Because of this limitation, these functions are not broadly usable outside the most orthodox CTFS tables. A review of \~20 datasets (see evaluation folder) shows that there is substantial variation in the ways different teams (or the same team in different moments, or the same team for different tables) identify quadrats. Often, the conventions are different for quadrats at different resolution.
 
-The new code is way more flexible, by asking for very detailed descriptions of quadrat IDing conventions. These descriptions are based on a long set of (partially redundant) parameters.
+The new code tries to handle a broader range of quadrat IDing conventions. Because extracting location from ID should be a rare step, the code does not take much risk. Instead, it asks for a very detailed description of the quadrat IDing convention. These descriptions are based on a long set of (partially redundant) parameters:
+
+Note that the code gets locations + IDs. It will ask for the basic information of unit and sub-unit size.
+
+## Parameters
+
+-   `outer.xmin`, `outer.ymin`: Minimum x and y coordinates of the outer coordinate extent. These values define the lower-left corner of the coordinate frame in which quadrat locations will be expressed. If missing, both are assumed to be `0`.
+
+-   `outer.xmax`, `outer.ymax`: Maximum x and y coordinates of the outer coordinate extent. These values define the upper bounds of the coordinate frame in which quadrat locations will be expressed. These parameters are required. If the unit split into sub-units is the entire plot, these parameters are equivalent to `plotdim` parameter in CTFS / `fgeo`.
+
+-   `quadrat.side.x`, `quadrat.side.y`: Width and height of the quadrats = sub-units within the outer unit. If only one is supplied, the other is assumed to be equal.
+
+    -   If the outer extent is not exactly divisible by these values, quadrats along the outer edge are retained but made smaller. These smaller pieces are preferred over larger-than-usual quadrats because they would imply smaller data losses if the user wants to filter and keep only quadrats of the same size for ecological analyses.
+
+-   `built`: Rule used to build quadrat IDs. Use `"col+row"` when the ID is built from the column label followed by the row label, `"row+col"` when the row label comes first, or `"sequence"` when each quadrat receives one continuous sequential label.
+
+-   `example.part.for.col`: Prototype of the column part of the quadrat ID. This determines whether column labels are numeric or alphabetic, whether letters are upper- or lower-case, and how much zero-padding is used. Examples:
+
+    -   1 or "1" will generate the sequence 1, 2, 3, 4, ...
+
+    -   "01" will generate the sequence 01, 02, 03, 04, ...
+
+    -   0 or "0" will generate the sequence 0, 1, 2, 3, ..., unless `start.col.at` says otherwise.
+
+    -   "00" will generate the sequence 00, 01, 02, 03, unless `start.col.at` says otherwise.
+
+    -   "00001", "00000001", etc. will use zero padding accordingly.
+
+    -   "A" will generate sequence A, B, C, D, ..., Z, AA, AB, AC, ...
+
+    -   "a" will generate sequence a, b, c, d, ..., z, aa, ab, ac, ...
+
+    -   "AA" will generate sequence AA, AB, AC, ...
+
+    -   "aa" will generate sequence aa, ab, ac, ...
+
+-   `example.part.for.row`: Same as `example.part.for.col`, but for rows.
+
+-   `example.part.for.sequence`: Prototype of the complete quadrat ID when `built = "sequence"`. As above, this determines whether column labels are numeric or alphabetic, whether letters are upper- or lower-case, and how much zero-padding is used.
+
+-   `prefix`: Optional string added before every generated quadrat ID. For example, `prefix = "Q"` can produce IDs such as `"Q0101"`.
+
+-   `suffix`: Optional string added after every generated quadrat ID. For example, `suffix = "_A"` can produce IDs such as `"0101_A"`.
+
+-   `separator`: Optional string inserted between column and row parts when `built = "col+row"` or `built = "row+col"`. Examples: `""`, `"-"`, `"_"`, `", "` can result in IDs like `"0000"`, `"00-00"`, `"00_00"`, `"00, 00"`, etc.
+
+-   `seq.of.col.parts.along.one.row`: Optional custom sequence of column labels. If supplied, it replaces the automatically generated column labels. Its length must equal the number of quadrat columns. This can be useful if one has quadrat IDs based on coordinates, like `"00-00"` followed by`"20-00"` followed by `"40-00"`, etc., and other specific cases.
+
+-   `seq.of.row.parts.along.one.col`: Same as `seq.of.col.parts.along.one.row`, but for rows.
+
+-   `entire.sequence`: Optional complete vector of quadrat IDs. If supplied, it replaces all automatically generated IDs. Its length should match the total number of generated quadrats.
+
+-   `start.col.at`: First value used for automatically generated column labels. For numeric labels, this controls whether columns start at `0`, `1`, or another value. For the moment, it does not work for letters (but that can change, check it).
+
+-   `start.row.at`: First value used for automatically generated row labels. By default, it follows `start.col.at`.
+
+-   `start.sequence.at`: First value used for automatically generated sequential IDs when `built = "sequence"`.
+
+-   `along.columns.first.then.next.column`: Logical. Used only when `built = "sequence"`. If `TRUE`, sequential IDs are assigned along one column first, then continue in the next column.
+
+-   `along.rows.first.then.next.row`: Logical. Used only when `built = "sequence"`. If `TRUE`, sequential IDs are assigned along one row first, then continue in the next row. Exactly one of `along.columns.first.then.next.column` and `along.rows.first.then.next.row` should be `TRUE`.
+
+-   `changing.directions`: Logical. Used only when `built = "sequence"`. If `TRUE`, the sequential labelling direction alternates between consecutive columns or rows, producing a back-and-forth sequence.
+
+-   Output: A quadrat-location table with one row per quadrat and columns `quadrat_id`, `xmin`, `ymin`, `xmax`, and `ymax`. The coordinate columns describe each quadrat in the outer coordinate frame. This output can be stored as permanent quadrat metadata and used later to assign observations to quadrats or to translate between quadrat ID conventions.
+
+## Simpler or more complicated cases
+
+Note that `get_quadrat_locations_from_id_convention()` will generate new quadrats from scratch, and would build their IDs according to any given convention. Thus, a general routine to split any set of tree observations into quadrats of any resolution is just `get_quadrat_locations_from_id_convention(...) |> split_into_quadrats(...)`. This would however, go through all the complications of quadrat ID conventions. This is simpler code to generate quadrats from scratch:
+
+```{r}
+xmins <- seq(from = outer.xmin, to = outer.xmax, by = quadrat.side.x)
+xmins <- xmins[xmins < outer.xmax]
+ymins <- seq(from = outer.ymin, to = outer.ymax, by = quadrat.side.y)
+ymins <- ymins[ymins < outer.ymax]
+grid  <- expand.grid(xmin = xmins, ymin = ymins)
+grid$xmax <- pmin(outer.xmax, grid$xmin + quadrat.side.x)
+grid$ymax <- pmin(outer.ymax, grid$ymin + quadrat.side.y)
+
+
+```
+
+If your quadrat IDing convention cannot be fully described with the paramaters above, in one or two passes, my suggestion is to build a quadrat-level table containing quadrat ID and (xmin, ymin, xmax, ymax) of your quadrats, and use that directly. Alternatively, you could open an issue in GitHub, and/or modify the code directly, do a pull request, etc.
 
 # Use cases
 
 -   build quadrats from scratch
 
-    -   .
+-   from one convention to another
+
+-   global coordinates even within subquadrats
+
+-   two-step cases like Amacayacu
 
 # Legacy notes
 
@@ -108,5 +226,3 @@ The new code replaces functions in CTFS distribution of scripts and the `fgeo` f
 There is a very deep review of both CTFS scripts and `fgeo` package in a file named "quadrat-related-functions.pdf" (or similar) in the evaluation folder of this project. That document also develops the detailed reasoning underlying the design of the new code.
 
 The few dependencies in CTFS have been solved, or made irrelevant, in the new version of the code. There were no dependencies in `fgeo` package.
-
-# 
