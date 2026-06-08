@@ -55,7 +55,7 @@ As said above, the code developed here does things at *an*y scale, and does *not
 
 # Code
 
-The new code targets the same general tasks that CTFS and `fgeo` code did. Most importantly, it goes from outer (global) to inner (local) coordinates and *vice versa*. This new version of the code is articulated around the idea that the user has to arrive, as soon as possible, to the quadrat-level locations. Then those locations must be stored permanently and used from then on following good practices. The new code also tries to fulfill other general criteria, like reducing the number of functions and dependencies, and make the functions more usable outside "orthodox ForestGEO" tables.
+The new code targets the same general tasks that CTFS and `fgeo` code did. Most importantly, it goes from outer (global) to inner (local) coordinates and *vice versa*. This new version of the code is articulated around the idea that the user has to arrive, as soon as possible, to the quadrat-level locations. Then those locations must be stored permanently and used from then on, following good practices. The new code also tries to fulfill other general criteria, like reducing the number of functions and dependencies, and make the functions more usable outside "orthodox ForestGEO" tables.
 
 ## Functions
 
@@ -65,13 +65,11 @@ The functions to create or infer quadrat-location tables are:
 
 -   `get_quadrat_locations_from_outer_coordinates()`: Use this if you have a set of observations already grouped into quadrats (e.g. {tree id, quadrat id, tree x, tree y}). The function will infer the characteristics of the grid and return the location of the quadrats as a table with one row per quadrat, of the form {quadrat ID, xmin, ymin, xmax, ymax}.
 
--   `get_quadrat_locations_from_id_convention()`: In the absence of observations, this will create quadrats from scratch, of a given size, and with IDs following the specific convention. You would have to describe the ID convention through a long set of descriptive parameters.
+-   `get_quadrat_locations_from_id_convention()`: In the absence of observations, this will create quadrats from scratch, of a given size, and with IDs following the specific convention. You would have to describe the ID convention through a long set of descriptive parameters (see devoted section below).
 
 Other two functions move point data (e.g. tree-level coordinates) between outer coordinates (e.g. plot-level {gx, gy}) and inner coordinates (e.g. quadrat-level {lx, ly}). Both use quadrat-level locations as input, so you must have obtained and stored those first.
 
--   `assign_points_to_quadrats()`: Assigns points, given by outer coordinates, to a table of explicit quadrat locations. The output keeps the original point index, outer coordinates, assigned quadrat ID, and inner coordinates within each assigned quadrat.
-
-    -   Note: this is very flexible, and will return membership and inner coordinates into *any* set of rectangular shapes defined by the input, including standard quadrats (non-overlapping in a regular grid of complete coverage) but also overlapping quadrats, randomly located quadrats of different sizes, etc. This is fully intentional and key to facilitate flexibility in ecological analyses. However, if used for that, it will return a table for each \[point x quadrat\] combination, and will not respect the number of rows in the input.
+-   `assign_points_to_quadrats()`: Assigns points, given by outer coordinates, to quadrats, following a table of explicit quadrat locations. The output keeps the original point index, outer coordinates, assigned quadrat ID, and inner coordinates within each assigned quadrat. **Warning**: this function is very flexible, and will return membership and inner coordinates into *any* set of rectangular shapes defined by the input, including standard quadrats (forming a regular, complete grid) but also overlapping quadrats, randomly located quadrats of different sizes, quadrats covering part of the plot, or outside the plot, etc. The function returns a table for each \[point x quadrat\] combination, so alignment with the input is not guaranteed, unless the quadrats represent a complete, regular grid. If you are using the function for flexible cases, do due diligence.
 
 -   `compile_points_from_quadrats()`:
 
@@ -81,17 +79,11 @@ Finally, other two functions transform quadrat-location tables across nested res
 
 -   `collapse_quadrats()`:
 
--   `split_into_quadrats()`: splits any set of outer coordinates into inner coordinates inside a given set of quadrats. Requires quadrat-level locations.
+These main functions call a few other auxiliary functions:
 
--   `aggregate_from_quadrats()`: aggregates inner into outer coordinates. Requires quadrat-level locations. This is not something that any ecological analysis really needs, but it is a central task during the compilation of full datasets of large plots from fieldwork that makes progress quadrat by quadrat, and a few other data-management tasks.
+-   two functions to create sequences of letters according to different systems
 
-These main functions call a few other auxiliary functions (e.g. to create sequences of letters according to different systems).
-
-points_outer_to_inner()\
-points_inner_to_outer()
-
-subdivide_quadrat_locations()\
-collapse_quadrat_locations()
+-   `make_quadrats_non_overlapping()`: a possibly useful function that adjusts the limits of a given set of quadrats so they do not overlap with their closest neighbors (k = 8 by default). The function is used internally to `get_quadrat_locations_from_outer_coordinates()`. It does not do anything critical there, and it should not matter for most applications: it is mostly anticipating code extension and unusual cases. If the function breaks there, you should probably cancel that step.
 
 ## Safety and checks in a key step
 
