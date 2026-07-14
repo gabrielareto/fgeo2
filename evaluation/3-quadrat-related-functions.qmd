@@ -302,27 +302,27 @@ Finally, there is an isolated pair of functions that should be examined together
 
 # Evaluation of fgeo
 
-The fgeo package splits the functionality in very small pieces. The structure of dependencies is demencial and impossible to navigate for the average user. Apparently simple things like `add_quad()` have 20 upstream dependencies only within `fgeo.tool` package. One of the goals of this project is to simplify these dependencies.
+The fgeo package splits the functionality in very small pieces. The structure of dependencies is not possible to navigate for the average user. Apparently simple things like `add_quad()` have 20 upstream dependencies only within `fgeo.tool` package. One of the goals of this project is to simplify these dependencies.
 
-Unlike other parts of `fgeo`, the code is not simply wrapping `ctfs` = CTFS. In fact, the `ctfs` counterpars are not being called at all. Therefore, I have to identify the working code to see if there are differences or something extra in `fgeo` that is not in CTFS original distribution.
+Unlike other parts of `fgeo`, the code is not wrapping `ctfs` = CTFS. In fact, the `ctfs` counterpars are not being called at all. Therefore, I have to identify the working code to see if there are differences or something extra in `fgeo` that is not in CTFS original distribution.
 
 ## Main functions
 
 ### Standard cases
 
-The interface with the user takes the form of `add_*()` functions in `fgeo.tool`. Most of them only call to `add_var()` which in turns calls to `gxgy_to_var()` which in turns calls a range of functions of the form `gxgy_to_*()`, using global coordinates as the most flexible stepping stone:
+The interface with the user takes the form of `add_*()` functions in `fgeo.tool`. Most of them call to `add_var()` which in turns calls to `gxgy_to_var()` which in turns calls a range of functions of the form `gxgy_to_*()`, using global coordinates as the most flexible stepping stone:
 
 -   `add_col_row()` calls `add_var()` who calls `gxgy_to_var()` who calls `gxgy_to_rowcol()` who calls two things:
     -   `gxgy_to_index()`: calculates row+col and then calls `rowcol_to_index()`, which is working code equal to `rowcol.to.index()` in CTFS; and then
     -   `index_to_rowcol()`: working code equal to `index.to.rowcol()` in CTFS. Clearly unnecessary, as rows and columns had to be calculated before.
--   `add_quad()` only calls `add_col_row()` and then does a silly wrapping of `paste()` through `fgeo.tool::paste_colrow()`. The working code is same as above.
--   `add_hectindex()`calls `gxgy_to_hectindex()`, which is working code = `gxgy.to.hectindex()` in CTFS.
--   `add_index()`calls `add_var()` who calls `gxgy_to_var()` who calls `gxgy_to_index()`, which calculates row+col and then calls `rowcol_to_index()`, which is working code equal to `rowcol.to.index()` in CTFS.
+-   `add_quad()` calls `add_col_row()` and then does a trivial wrapping of `paste()` through `fgeo.tool::paste_colrow()`. The working code is same as above.
+-   `add_hectindex()` calls `gxgy_to_hectindex()`, which is working code = `gxgy.to.hectindex()` in CTFS.
+-   `add_index()` calls `add_var()` who calls `gxgy_to_var()` who calls `gxgy_to_index()`, which calculates row+col and then calls `rowcol_to_index()`, which is working code equal to `rowcol.to.index()` in CTFS.
 -   `add_lxly()` calls `add_var()` who calls `gxgy_to_var()` who calls `gxgy_to_lxly()`, which is working code that uses `gxgy_to_rowcol()` inside, which in turns calls other things (see above). The working `fgeo.tool::gxgy_to_lxly()` function does the same as `gxgy.to.lxly()` in CTFS.
 -   `add_qxqy()` calls `add_var()` who calls `gxgy_to_var()` who calls `gxgy_to_qxqy()` with just changes names of the output of `gxgy_to_lxly()`, which is the working code (see above).
 -   `add_gxgy()` calls to `quad_to_gxgy()`, which is equal to `quad.to.gxgy()` in CTFS.
 
-In short: there is nothing new in these functions except the sanity checks. The working code is copy-pasted from CTFS scripts.
+In short: there is nothing new in these functions except the sanity checks. The working code is copy-pasted from CTFS scripts without formal dependency.
 
 There are important things to learn, however:
 
@@ -338,9 +338,9 @@ The sub-quadrat case is treated as special, both in fgeo and CTFS. The function 
 -   it allows the start = 0 or start = 1 version, similar to the quadrat naming convention
 -   does all the necessary prior checks
 
-The cost in readability to achieve these improvements, however, is huge. It is very cryptic and incorporates an odd vs not-odd distinction internally that did not exist with the original code. It also has extra dependencies, making its behavior almost impossible to anticipate. It works, so it works... but it took Condit five very obvious lines to so almost the same thing.
+The cost in readability to achieve these improvements, however, is huge. It is very cryptic and incorporates an odd vs not-odd distinction internally that did not exist with the original code. It also has extra dependencies, making its behavior almost impossible to anticipate.
 
-In any case, treating this subquadrat-into-quadrat case as a special case seems a weak point of both CTFS and fgeo. **Splitting quadrats into subquadrats is not really different than splitting a plot into subplot = quadrats**. Both things are the same thing, they just require (x, y) coordinates at whatever level it is, and a IDing convention for the resulting pieces. I will keep this in mind when designing new code.
+In any case, treating this subquadrat-into-quadrat case as a special case seems a weak point of both CTFS and fgeo. **Splitting quadrats into subquadrats is not really different than splitting a plot into subplots = quadrats**. Both things are the same thing, they just require (x, y) coordinates at whatever level it is, and a IDing convention for the resulting pieces. I will keep this in mind when designing new code.
 
 ## Auxiliary functions
 
@@ -450,7 +450,7 @@ This is a review of different ForestGEO datasets:
 -   Pasoh: Uses CCRR for 20x20 m quadrats, starting at 00. Sometimes with ' before to not to lose zeros. It also uses CR for 5x5 m subquadrats, from 11 to 44.
 -   Lambir: Uses CCRR from 0101 to 5225 for 20x20m quadrats.
 -   Khao Chong: Uses 10x10m quadrats using CCRR starting at 01, from 0101 to 6040 (the whole plot is 600 x 400 m). Initial zero can be lost by Excel.
--   HKK: Uses CC-RR, starting at 01 for 20x20 m quadrats. In some tables, uses ' first (to avoid losing zeros?). The 10x10 quadrats are labelled A, B, C, D internally.
+-   HKK: Uses CC-RR, starting at 01 for 20x20 m quadrats. In some tables, uses ' first to avoid losing zeros?. Within 20x20 m quadrats, there are four 10x10 quadrats labelled A, B, C, D.
 -   Rabi: Uses CCRR starting at 01 for 20x20m quadrats, from 0101 to 2525.
 -   Korup: Uses CCRR starting at 00 for 20x20m quadrats, from 0000 to 4924.
 -   Mpala: Uses CCRR from 0101 to 5025 in the tables I have. But the plot is longer than that: fgeo documentation mentions need for extra zero padding, so the forms CCCRR or CCCRRR are also feasible. It uses CR from 11 to 44 for 5x5m quadrats, but I have seen this only in field forms.
@@ -544,7 +544,7 @@ Although not fully developed now, I should modify the following functions so the
 
 -   There is a risky proliferation of functions to convert between pairs of conventions. The complexity of the code in `fgeo` in particular is out of proportion, involving dozens of functions for what are, essentially, very simple calculations. Things must be simplified radically, in terms of number of functions, number of dependencies, and length of code.
 -   There are two relevant scenarios: either the user keeps quadrat locations explicit (best practice) or implicit (bad practice). Getting and storing quadrat locations permanently is mandatory step for a well-managed project, so it should divide the funtions in two groups: those to get locations vs. those using locations.
--   We cannot avoid the fundamental problem of guessing location from quadrat ID. For this to be general and usable outside ForestGEO's CCRR convention, we need powerful / detailed ways of handling naming or IDing conventions. This would be new complexity. It must be easy to understand and expand.
+-   We cannot avoid the fundamental problem of guessing location from quadrat ID. For this to be general and usable outside ForestGEO's CCRR convention, we need powerful / detailed ways of handling naming or IDing conventions. This would be new complexity. Ideally, it should be easy to adapt and expand.
 -   Splitting can be general and easy. But it is also the key to recovering quadrat IDs: it must handle naming conventions and order of quadrats with care.
 -   Things should try to make global sense. Any time a function splits a set of coordinates into pieces, it must return piecel-level ID, coordinates within pieces, piece locations, and, probably, the corresponding naming convention as an attribute.
 -   Neighboring quadrats: not key, not in `fgeo`. Probably can be substituted by a tutorial on k-NN applied to quadrats, which is more general, with the tasks of the CTFS functions as examples: abundances, proportion of presences, ...

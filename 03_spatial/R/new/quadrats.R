@@ -142,10 +142,115 @@ make_quadrats_non_overlapping <- function(quadrats, k = 8)
 }
 
 
+# THE CORE FUNCTION TO SPLIT INTO QUADRATS (FAST, no IDs complications)
+make_quadrats_fast <- function(
+    outer.xmin = NA,
+    outer.ymin = NA,
+    outer.xmax = NA,
+    outer.ymax = NA,
+    quadrat.side.x = NA,
+    quadrat.side.y = NA
+)
+{
+  something_missing <- function(x) {
+    is.null(x) || length(x) == 0 || all(is.na(x))
+  }
+  
+  # Required dimensions
+  if(something_missing(outer.xmax) || something_missing(outer.ymax))
+    stop("specify dimensions through outer.xmax and outer.ymax")
+  
+  if(something_missing(quadrat.side.x) && something_missing(quadrat.side.y))
+    stop("specify quadrat size through quadrat.side.x and/or quadrat.side.y")
+  
+  # Defaults
+  if(something_missing(outer.xmin))
+  {
+    outer.xmin <- 0
+    warning("outer.xmin = 0 assumed by default")
+  }
+  
+  if(something_missing(outer.ymin))
+  {
+    outer.ymin <- 0
+    warning("outer.ymin = 0 assumed by default")
+  }
+  
+  if(something_missing(quadrat.side.x))
+  {
+    quadrat.side.x <- quadrat.side.y
+    warning("quadrat.side.x assumed equal to quadrat.side.y")
+  }
+  
+  if(something_missing(quadrat.side.y))
+  {
+    quadrat.side.y <- quadrat.side.x
+    warning("quadrat.side.y assumed equal to quadrat.side.x")
+  }
+  
+  # Basic checks
+  if(length(outer.xmin) != 1 || !is.numeric(outer.xmin) || !is.finite(outer.xmin))
+    stop("outer.xmin must be one finite numeric value")
+  
+  if(length(outer.ymin) != 1 || !is.numeric(outer.ymin) || !is.finite(outer.ymin))
+    stop("outer.ymin must be one finite numeric value")
+  
+  if(length(outer.xmax) != 1 || !is.numeric(outer.xmax) || !is.finite(outer.xmax))
+    stop("outer.xmax must be one finite numeric value")
+  
+  if(length(outer.ymax) != 1 || !is.numeric(outer.ymax) || !is.finite(outer.ymax))
+    stop("outer.ymax must be one finite numeric value")
+  
+  if(length(quadrat.side.x) != 1 || !is.numeric(quadrat.side.x) || !is.finite(quadrat.side.x))
+    stop("quadrat.side.x must be one finite numeric value")
+  
+  if(length(quadrat.side.y) != 1 || !is.numeric(quadrat.side.y) || !is.finite(quadrat.side.y))
+    stop("quadrat.side.y must be one finite numeric value")
+  
+  if(outer.xmax <= outer.xmin)
+    stop("outer.xmax must be greater than outer.xmin")
+  
+  if(outer.ymax <= outer.ymin)
+    stop("outer.ymax must be greater than outer.ymin")
+  
+  if(quadrat.side.x <= 0 || quadrat.side.y <= 0)
+    stop("quadrat sides must be greater than zero")
+  
+  # Split the outer extent. Small leftovers remain at the right and top edges.
+  xmins <- seq(from = outer.xmin, to = outer.xmax, by = quadrat.side.x)
+  xmins <- xmins[xmins < outer.xmax]
+  
+  ymins <- seq(from = outer.ymin, to = outer.ymax, by = quadrat.side.y)
+  ymins <- ymins[ymins < outer.ymax]
+  
+  grid <- expand.grid(
+    xmin = xmins,
+    ymin = ymins,
+    KEEP.OUT.ATTRS = FALSE
+  )
+  
+  grid$xmax <- pmin(outer.xmax, grid$xmin + quadrat.side.x)
+  grid$ymax <- pmin(outer.ymax, grid$ymin + quadrat.side.y)
+  
+  
+  # Sort consistently by x first, then y.
+  o <- order(grid$xmin, grid$ymin)
+  grid <- grid[o, , drop = FALSE]
+  rownames(grid) <- NULL
+  
+  # Add very simple IDs
+  grid <- data.frame(
+    quadrat_id = as.character(seq_len(nrow(grid))),
+    grid,
+    stringsAsFactors = FALSE
+  )
+  
+  grid
+}
+
 
 # USING PLOT & QUADRAT DIMENSIONS, AND DESCRIPTORS OF CONVENTION
-get_quadrat_locations_from_id_convention <- function(
-  # PARAMETERS
+make_quadrats <- function(
   # Dimensions of the large unit
   outer.xmin = NA,
   outer.ymin = NA,
@@ -158,17 +263,17 @@ get_quadrat_locations_from_id_convention <- function(
   
   # How the ID is built
   built = c("col+row", "row+col", "sequence"),
-  example.part.for.col = "1", # c("A", "1", "01", "000001")
-  example.part.for.row = "1", # c("A", "1", "01", "000001")
-  example.part.for.sequence = "1", # c("0001", "1", "A")
+  example.part.for.col = "1",
+  example.part.for.row = "1",
+  example.part.for.sequence = "1",
   prefix = "",
   suffix = "",
-  separator = "", # c("-", ",", " ")
+  separator = "",
   
-  # Even more flexibility, overwriting:
-  seq.of.row.parts.along.one.col = NA, # seq()
-  seq.of.col.parts.along.one.row = NA, # seq()
-  entire.sequence   = NA, # seq()
+  # Explicit sequences, if supplied
+  seq.of.row.parts.along.one.col = NA,
+  seq.of.col.parts.along.one.row = NA,
+  entire.sequence = NA,
   
   # How the sequences will run
   start.col.at = NA,
@@ -176,109 +281,106 @@ get_quadrat_locations_from_id_convention <- function(
   start.sequence.at = 1,
   along.columns.first.then.next.column = TRUE,
   along.rows.first.then.next.row = FALSE,
-  changing.directions = FALSE # south to north in first column, north to south in second, etc
-  )
-
+  changing.directions = FALSE
+)
 {
-  
-  # Checks, stops, warnings, and defaults
-  
-  if(is.na(quadrat.side.x) | is.null(quadrat.side.x))
-    if(is.na(quadrat.side.y) | is.null(quadrat.side.y))
-      stop("specify quadrat size through quadrat.side.x and quadrat.side.y")
-  
-  if(is.na(outer.xmax) | is.null(outer.xmax) | is.na(outer.ymax) | is.null(outer.ymax))
-    stop("specify dimensions through outer.xmax and outer.ymax")
-  
-  if(is.na(outer.xmin) | is.null(outer.xmin))
-  {
-    outer.xmin = 0
-    warning("outer.xmin = 0 assumed by default")
-  }
-    
-  if(is.na(outer.ymin) | is.null(outer.ymin))
-  {
-    outer.ymin = 0
-    warning("outer.ymin = 0 assumed by default")
+  something_missing <- function(x) {
+    is.null(x) || length(x) == 0 || all(is.na(x))
   }
   
-  if(length(built) != 1)
+  # Check ID convention
+  if(length(built) != 1 || !built %in% c("col+row", "row+col", "sequence"))
   {
-    built = "sequence"
+    built <- "sequence"
     warning("built = 'sequence' assumed by default")
   }
   
-  if(is.na(quadrat.side.x) | is.null(quadrat.side.x))
+  # Resolve quadrat sides here because they are also used below.
+  if(something_missing(quadrat.side.x) && something_missing(quadrat.side.y))
+    stop("specify quadrat size through quadrat.side.x and/or quadrat.side.y")
+  
+  if(something_missing(quadrat.side.x))
   {
     quadrat.side.x <- quadrat.side.y
     warning("quadrat.side.x assumed equal to quadrat.side.y")
   }
   
-  if(is.na(quadrat.side.y) | is.null(quadrat.side.y))
+  if(something_missing(quadrat.side.y))
   {
     quadrat.side.y <- quadrat.side.x
     warning("quadrat.side.y assumed equal to quadrat.side.x")
   }
   
-  if(is.na(start.col.at) | is.null(start.col.at))
+  # Create the grid geometry.
+  grid <- make_quadrats_fast(
+    outer.xmin = outer.xmin,
+    outer.ymin = outer.ymin,
+    outer.xmax = outer.xmax,
+    outer.ymax = outer.ymax,
+    quadrat.side.x = quadrat.side.x,
+    quadrat.side.y = quadrat.side.y
+  )
+  
+  # The primitive IDs are replaced below.
+  grid$quadrat_id <- NULL
+  
+  # Column and row positions within the grid.
+  grid$col <- match(grid$xmin, sort(unique(grid$xmin)))
+  grid$row <- match(grid$ymin, sort(unique(grid$ymin)))
+  
+  # Defaults for starting values.
+  if(built %in% c("col+row", "row+col"))
   {
-    start.col.at = as.numeric(example.part.for.col)
-    warning("start.col.at taken from example.part.for.col by default")
+    if(something_missing(start.col.at))
+    {
+      start.col.at <- example.part.for.col
+      warning("start.col.at taken from example.part.for.col by default")
+    }
+    
+    if(something_missing(start.row.at))
+    {
+      start.row.at <- example.part.for.row
+      warning("start.row.at taken from example.part.for.row by default")
+    }
   }
   
-  if(is.na(start.row.at) | is.null(start.row.at))
-  {
-    start.row.at = as.numeric(example.part.for.row)
-    warning("start.row.at taken from example.part.for.row by default")
-  }
-  
-  
-  # Generating sub-units within units:
-  # (Small leftovers preferred over unusually large quadrats)
-  xmins <- seq(from = outer.xmin, to = outer.xmax, by = quadrat.side.x)
-  xmins <- xmins[xmins < outer.xmax]
-  ymins <- seq(from = outer.ymin, to = outer.ymax, by = quadrat.side.y)
-  ymins <- ymins[ymins < outer.ymax]
-  
-  # Add corner coordinates and col+row indexes
-  grid.exact  <- expand.grid(xmin = xmins, ymin = ymins)
-  grid.exact$xmax <- pmin(outer.xmax, grid.exact$xmin + quadrat.side.x)
-  grid.exact$ymax <- pmin(outer.ymax, grid.exact$ymin + quadrat.side.y)
-  grid.colrow <- expand.grid(col = 1:length(xmins), row =  1:length(ymins))
-  grid <- data.frame(grid.exact, grid.colrow)
-  head(grid)
-  
-  # Reorder the table if we are going to add
-  # one single simple sequence for all sub-units:
+  # Reorder before assigning one sequence to all quadrats.
   if(built == "sequence")
   {
-    # avoid conflicts
-    miss1 = is.na(along.columns.first.then.next.column) | is.null(along.columns.first.then.next.column)
-    miss2 = is.na(along.rows.first.then.next.row) | is.null(along.rows.first.then.next.row)
-    if(miss1 & miss2) "clarify whether labelling is along columns first, or along rows first"
+    if(length(along.columns.first.then.next.column) != 1 ||
+       is.na(along.columns.first.then.next.column) ||
+       !is.logical(along.columns.first.then.next.column))
+      stop("along.columns.first.then.next.column must be TRUE or FALSE")
+    
+    if(length(along.rows.first.then.next.row) != 1 ||
+       is.na(along.rows.first.then.next.row) ||
+       !is.logical(along.rows.first.then.next.row))
+      stop("along.rows.first.then.next.row must be TRUE or FALSE")
     
     if(along.columns.first.then.next.column == along.rows.first.then.next.row)
       stop("clarify whether labelling is along columns first, or along rows first")
     
-    # re-order
+    if(length(changing.directions) != 1 ||
+       is.na(changing.directions) ||
+       !is.logical(changing.directions))
+      stop("changing.directions must be TRUE or FALSE")
+    
     if(along.columns.first.then.next.column)
       o <- order(grid$col, grid$row)
     
     if(along.rows.first.then.next.row)
       o <- order(grid$row, grid$col)
     
-    grid <- grid[o,]
+    grid <- grid[o, , drop = FALSE]
     
-    # change directions if necessary, for even columns or rows
     if(changing.directions)
     {
-      
       if(along.columns.first.then.next.column)
       {
         for(i in seq(from = 2, to = max(grid$col), by = 2))
         {
           chunk <- which(grid$col == i)
-          grid[chunk,] <- grid[rev(chunk),]
+          grid[chunk, ] <- grid[rev(chunk), ]
         }
       }
       
@@ -287,365 +389,448 @@ get_quadrat_locations_from_id_convention <- function(
         for(i in seq(from = 2, to = max(grid$row), by = 2))
         {
           chunk <- which(grid$row == i)
-          grid[chunk,] <- grid[rev(chunk),]
+          grid[chunk, ] <- grid[rev(chunk), ]
         }
       }
-      
-    } # end of if changing directions
-  } # done reordering the table if we are going to add sequence
+    }
+  }
   
-  # Identify whether the sequences are numbers or letters:
+  # Identify whether column and row parts use numbers or letters.
   if(built %in% c("col+row", "row+col"))
   {
-    #use.numbers.for.col1 = is.numeric(as.numeric(example.part.for.col)) # would fail: is.numeric(as.numeric("a")) = TRUE
-    #use.numbers.for.col2 = is.numeric(as.numeric(start.col.at))         # would fail: is.numeric(as.numeric("a")) = TRUE
-    use.numbers.for.col1 = !is.na(suppressWarnings(as.numeric(example.part.for.col)))
-    use.numbers.for.col2 = !is.na(suppressWarnings(as.numeric(start.col.at)))
+    use.numbers.for.col1 <- !is.na(suppressWarnings(as.numeric(example.part.for.col)))
+    use.numbers.for.col2 <- !is.na(suppressWarnings(as.numeric(start.col.at)))
     
     if(use.numbers.for.col1 != use.numbers.for.col2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for 'col' part")
     
-    #use.numbers.for.row1 = is.numeric(as.numeric(example.part.for.row))  # would fail: is.numeric(as.numeric("a")) = TRUE
-    #use.numbers.for.row2 = is.numeric(as.numeric(start.row.at))          # would fail: is.numeric(as.numeric("a")) = TRUE
-    use.numbers.for.row1 = !is.na(suppressWarnings(as.numeric(example.part.for.row)))
-    use.numbers.for.row2 = !is.na(suppressWarnings(as.numeric(start.col.row)))
+    use.numbers.for.row1 <- !is.na(suppressWarnings(as.numeric(example.part.for.row)))
+    use.numbers.for.row2 <- !is.na(suppressWarnings(as.numeric(start.row.at)))
     
     if(use.numbers.for.row1 != use.numbers.for.row2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for 'row' part")
     
-    use.numbers.for.col = use.numbers.for.col1
-    use.numbers.for.row = use.numbers.for.row1
+    use.numbers.for.col <- use.numbers.for.col1
+    use.numbers.for.row <- use.numbers.for.row1
     
-    use.letters.for.col1 = grepl('([a-zA-Z])', example.part.for.col)
-    use.letters.for.col2 = grepl('([a-zA-Z])', start.col.at)
+    use.letters.for.col1 <- grepl("([a-zA-Z])", example.part.for.col)
+    use.letters.for.col2 <- grepl("([a-zA-Z])", start.col.at)
+    
     if(use.letters.for.col1 != use.letters.for.col2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for 'col' part")
     
-    use.letters.for.row1 = grepl('([a-zA-Z])', example.part.for.row)
-    use.letters.for.row2 = grepl('([a-zA-Z])', start.row.at)
+    use.letters.for.row1 <- grepl("([a-zA-Z])", example.part.for.row)
+    use.letters.for.row2 <- grepl("([a-zA-Z])", start.row.at)
+    
     if(use.letters.for.row1 != use.letters.for.row2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for 'row' part")
     
-    use.letters.for.col = use.letters.for.col1
-    use.letters.for.row = use.letters.for.row1
+    use.letters.for.col <- use.letters.for.col1
+    use.letters.for.row <- use.letters.for.row1
     
     if(use.numbers.for.col == use.letters.for.col)
       stop("clarify between numbers and letters for 'col' part")
+    
     if(use.numbers.for.row == use.letters.for.row)
       stop("clarify between numbers and letters for 'row' part")
   }
   
+  # Identify whether a single sequence uses numbers or letters.
   if(built == "sequence")
   {
-    #use.numbers.for.sequence1 = is.numeric(as.numeric(example.part.for.sequence)) # would fail: is.numeric(as.numeric("a")) = TRUE
-    #use.numbers.for.sequence2 = is.numeric(as.numeric(start.sequence.at))         # would fail: is.numeric(as.numeric("a")) = TRUE
-    use.numbers.for.sequence1 = !is.na(suppressWarnings(as.numeric(example.part.for.sequence)))
-    use.numbers.for.sequence2 = !is.na(suppressWarnings(as.numeric(start.sequence.at)))
+    use.numbers.for.sequence1 <- !is.na(suppressWarnings(as.numeric(example.part.for.sequence)))
+    use.numbers.for.sequence2 <- !is.na(suppressWarnings(as.numeric(start.sequence.at)))
     
     if(use.numbers.for.sequence1 != use.numbers.for.sequence2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for the sequence")
     
-    use.numbers.for.sequence = use.numbers.for.sequence1
+    use.numbers.for.sequence <- use.numbers.for.sequence1
     
-    use.letters.for.sequence1 = grepl('([a-zA-Z])', example.part.for.sequence)
-    use.letters.for.sequence2 = grepl('([a-zA-Z])', start.sequence.at)
+    use.letters.for.sequence1 <- grepl("([a-zA-Z])", example.part.for.sequence)
+    use.letters.for.sequence2 <- grepl("([a-zA-Z])", start.sequence.at)
+    
     if(use.letters.for.sequence1 != use.letters.for.sequence2)
       stop("numbers vs. letters conflict between 'example' and 'start at' for the sequence")
     
-    use.letters.for.sequence = use.letters.for.sequence1
+    use.letters.for.sequence <- use.letters.for.sequence1
     
     if(use.numbers.for.sequence == use.letters.for.sequence)
       stop("clarify between numbers and letters for the sequence")
   }
   
-  # Build the sequences for the col and row parts:
+  # Build column and row sequences.
   if(built %in% c("col+row", "row+col"))
   {
-    # Get the basic sequences first, then expand
     if(use.numbers.for.col)
     {
-      # checks
-      if(as.numeric(example.part.for.col) == 0 & start.col.at > 0)
-        warning(paste0("start.col.at = ", start.col.at, " takes priority, although example suggests start = 0"))
+      if(as.numeric(example.part.for.col) == 0 && as.numeric(start.col.at) > 0)
+        warning(
+          "start.col.at = ", start.col.at,
+          " takes priority, although example suggests start = 0"
+        )
       
-      # initialize
-      basic.col.seq <- seq(from = as.numeric(start.col.at), length.out = length(unique(grid$col)), by = 1)
+      basic.col.seq <- seq(
+        from = as.numeric(start.col.at),
+        length.out = length(unique(grid$col)),
+        by = 1
+      )
       
-      # add zeros if needed
       add <- pmax(0, nchar(example.part.for.col) - nchar(basic.col.seq))
       basic.col.seq <- paste0(strrep("0", add), basic.col.seq)
-    } # end of basic sequence to build col parts with numbers
+    }
     
     if(use.numbers.for.row)
     {
-      # checks
-      if(as.numeric(example.part.for.row) == 0 & start.row.at > 0)
-        warning(paste0("start.row.at = ", start.row.at, " takes priority, although example suggests start = 0"))
+      if(as.numeric(example.part.for.row) == 0 && as.numeric(start.row.at) > 0)
+        warning(
+          "start.row.at = ", start.row.at,
+          " takes priority, although example suggests start = 0"
+        )
       
-      # initialize
-      basic.row.seq <- seq(from = as.numeric(start.row.at), length.out = length(unique(grid$row)), by = 1)
+      basic.row.seq <- seq(
+        from = as.numeric(start.row.at),
+        length.out = length(unique(grid$row)),
+        by = 1
+      )
       
-      # add zeros if needed
       add <- pmax(0, nchar(example.part.for.row) - nchar(basic.row.seq))
       basic.row.seq <- paste0(strrep("0", add), basic.row.seq)
-    } # end of basic sequence to build row parts with numbers
+    }
     
     if(use.letters.for.col)
     {
-      l = FALSE
-      u = FALSE
-      if(substr(example.part.for.col, 1, 1) %in% letters) l = TRUE
-      if(substr(example.part.for.col, 1, 1) %in% LETTERS) u = TRUE
-      if(!l & !u) stop("the letter in 'example.part.for.col' cannot be recognized")
-      n = length(unique(grid$col))
+      lower <- substr(example.part.for.col, 1, 1) %in% letters
+      upper <- substr(example.part.for.col, 1, 1) %in% LETTERS
+      
+      if(!lower && !upper)
+        stop("the letter in 'example.part.for.col' cannot be recognized")
+      
+      n <- length(unique(grid$col))
       
       if(nchar(example.part.for.col) == 1)
         basic.col.seq <- letter_seq(n)
       
-      if(nchar(example.part.for.col) >  1)
+      if(nchar(example.part.for.col) > 1)
       {
-        k = ceiling(log(n, base = 26))
+        k <- ceiling(log(n, base = 26))
+        
         if(nchar(example.part.for.col) != k)
           stop("unclear example part for 'col': you need a different number of characters")
         
         basic.col.seq <- letter_seq_fixed(n = n, k = k)
       }
       
-      if(u) basic.col.seq <- toupper(basic.col.seq)  
-    } # end of basic sequence to build col parts with letters
+      if(upper)
+        basic.col.seq <- toupper(basic.col.seq)
+    }
     
     if(use.letters.for.row)
     {
-      l = FALSE
-      u = FALSE
-      if(substr(example.part.for.row, 1, 1) %in% letters) l = TRUE
-      if(substr(example.part.for.row, 1, 1) %in% LETTERS) u = TRUE
-      if(!l & !u) stop("the letter in 'example.part.for.row' cannot be recognized")
-      n = length(unique(grid$row))
+      lower <- substr(example.part.for.row, 1, 1) %in% letters
+      upper <- substr(example.part.for.row, 1, 1) %in% LETTERS
+      
+      if(!lower && !upper)
+        stop("the letter in 'example.part.for.row' cannot be recognized")
+      
+      n <- length(unique(grid$row))
       
       if(nchar(example.part.for.row) == 1)
         basic.row.seq <- letter_seq(n)
       
-      if(nchar(example.part.for.row) >  1)
+      if(nchar(example.part.for.row) > 1)
       {
-        k = ceiling(log(n, base = 26))
+        k <- ceiling(log(n, base = 26))
+        
         if(nchar(example.part.for.row) != k)
           stop("unclear example part for 'row': you need a different number of characters")
         
         basic.row.seq <- letter_seq_fixed(n = n, k = k)
       }
       
-      if(u) basic.row.seq <- toupper(basic.row.seq)  
-    } # end of basic sequence to build row parts with letters
+      if(upper)
+        basic.row.seq <- toupper(basic.row.seq)
+    }
     
-    # Expand and align with the grid object:
     grid$col.part <- basic.col.seq[grid$col]
     grid$row.part <- basic.row.seq[grid$row]
   }
   
-  # Build the entire sequence, if that's the convention:
+  # Build one sequence for all quadrats.
   if(built == "sequence")
   {
     if(use.numbers.for.sequence)
     {
-      # initialize, then add zeros if needed
-      s <- seq(from = as.numeric(start.sequence.at), length.out = nrow(grid), by = 1)
+      s <- seq(
+        from = as.numeric(start.sequence.at),
+        length.out = nrow(grid),
+        by = 1
+      )
+      
       add <- pmax(0, nchar(example.part.for.sequence) - nchar(s))
       grid$entire <- paste0(strrep("0", add), s)
     }
     
     if(use.letters.for.sequence)
     {
-      l = FALSE
-      u = FALSE
-      if(substr(example.part.for.sequence, 1, 1) %in% letters) l = TRUE
-      if(substr(example.part.for.sequence, 1, 1) %in% LETTERS) u = TRUE
-      if(!l & !u) stop("the letter in 'example.part.for.sequence' cannot be recognized")
-      n = nrow(grid)
+      lower <- substr(example.part.for.sequence, 1, 1) %in% letters
+      upper <- substr(example.part.for.sequence, 1, 1) %in% LETTERS
+      
+      if(!lower && !upper)
+        stop("the letter in 'example.part.for.sequence' cannot be recognized")
+      
+      n <- nrow(grid)
       
       if(nchar(example.part.for.sequence) == 1)
         s <- letter_seq(n)
       
-      if(nchar(example.part.for.sequence) >  1)
+      if(nchar(example.part.for.sequence) > 1)
       {
-        k = ceiling(log(n, base = 26))
+        k <- ceiling(log(n, base = 26))
+        
         if(nchar(example.part.for.sequence) != k)
           stop("unclear example.part.for.sequence: you need a different number of characters")
         
         s <- letter_seq_fixed(n = n, k = k)
       }
       
-      if(u) s <- toupper(s)  
-      grid$entire <- s
+      if(upper)
+        s <- toupper(s)
       
+      grid$entire <- s
     }
-    
   }
   
-  
-  # If sequences for the col parts or row parts are provided, use them:
-  if(!is.na(seq.of.col.parts.along.one.row) & !is.null(seq.of.col.parts.along.one.row))
+  # Explicit column and row sequences take priority.
+  if(!something_missing(seq.of.col.parts.along.one.row))
   {
     if(length(seq.of.col.parts.along.one.row) != length(unique(grid$col)))
-      stop("the sequence provided for 'col' parts does not match number of columns -- perhaps it's our 'leftover' convention")
+      stop(
+        "the sequence provided for 'col' parts does not match number of columns -- ",
+        "perhaps it's our 'leftover' convention"
+      )
     
     grid$col.part <- seq.of.col.parts.along.one.row[grid$col]
   }
   
-  if(!is.na(seq.of.row.parts.along.one.col) & !is.null(seq.of.row.parts.along.one.col))
+  if(!something_missing(seq.of.row.parts.along.one.col))
   {
     if(length(seq.of.row.parts.along.one.col) != length(unique(grid$row)))
-      stop("the sequence provided for 'row' parts does not match number of rows -- perhaps it's our 'leftover' convention")
+      stop(
+        "the sequence provided for 'row' parts does not match number of rows -- ",
+        "perhaps it's our 'leftover' convention"
+      )
     
     grid$row.part <- seq.of.row.parts.along.one.col[grid$row]
   }
   
-  
-  # Combine col parts and row parts:
+  # Combine column and row parts.
   if(built == "col+row")
     grid$entire <- paste0(grid$col.part, separator, grid$row.part)
   
   if(built == "row+col")
     grid$entire <- paste0(grid$row.part, separator, grid$col.part)
   
-  
-  # Add prefix and suffix, if there are any:
-  if(!is.na(prefix) & !is.null(prefix))
+  # Add prefix and suffix.
+  if(!something_missing(prefix))
     grid$entire <- paste0(prefix, grid$entire)
   
-  if(!is.na(suffix) & !is.null(suffix))
-    grid$entire <- paste0(suffix, grid$entire)
+  if(!something_missing(suffix))
+    grid$entire <- paste0(grid$entire, suffix)
   
-  
-  # If an entire sequence was provided, then use it as it is!
-  if(!is.na(entire.sequence) & !is.null(entire.sequence))
+  # A complete supplied sequence has final priority.
+  if(!something_missing(entire.sequence))
   {
-    warning("you provided the entire sequence, so that is being used")
-    grid$entire <- entire.sequence
+    if(length(entire.sequence) != nrow(grid))
+      stop("entire.sequence must have one value per quadrat")
+    
+    grid$entire <- as.character(entire.sequence)
   }
   
-  
-  # Other warnings:
+  # Warn about smaller leftover quadrats.
   if(any(grid$xmax - grid$xmin != quadrat.side.x))
     warning("the quadrats don't fit perfectly along x: quadrats at the end are smaller")
   
   if(any(grid$ymax - grid$ymin != quadrat.side.y))
     warning("the quadrats don't fit perfectly along y: quadrats at the end are smaller")
   
+  # Trim, rename, and sort output.
+  out <- grid[, c("entire", "xmin", "ymin", "xmax", "ymax"), drop = FALSE]
+  names(out)[1] <- "quadrat_id"
+  out$quadrat_id <- as.character(out$quadrat_id)
   
-  # Trim and rename the output:
-  out <- grid[,c("entire", "xmin", "ymin", "xmax", "ymax"), drop = FALSE]
-  colnames(out)[1] <- "quadrat_id"
-  rownames(out) <- out$quadrat_id
-
-  # Sort in the same way, for consistency:
+  if(anyNA(out$quadrat_id))
+    stop("generated quadrat IDs contain NA")
+  
+  if(anyDuplicated(out$quadrat_id))
+    stop("generated quadrat IDs are not unique")
+  
   o <- order(out$xmin, out$ymin)
-  out <- out[o,,drop = FALSE]
+  out <- out[o, , drop = FALSE]
+  
+  rownames(out) <- out$quadrat_id
+  
   out
 }
-  
 
 
 
 # USING A SET OF POINTS WITH COORDINATES
 get_quadrat_locations_from_outer_coordinates <- function(
-    quadrat.id = NA, # the sequence of quadrat membership of a set of points
-    outer.x = NA, # the x coordinates of a set of points
-    outer.y = NA, # the y coordinates of a set of points
-    outer.xmin = NA, # the xmin of the area in which the points are located, usually 0
-    outer.ymin = NA, # the ymin of the area in which the points are located, usually 0
-    outer.xmax = NA, # the xmax of the area in which the points are located, ~ plot dimension along x
-    outer.ymax = NA,  # the ymax of the area in which the points are located, ~ plot dimension along y
-    regular = TRUE # will assume standard regular grids, complete and non-overlapping
+    quadrat.id = NA,
+    outer.x = NA,
+    outer.y = NA,
+    outer.xmin = NA,
+    outer.ymin = NA,
+    outer.xmax = NA,
+    outer.ymax = NA,
+    regular = TRUE
 )
 {
+  something_missing <- function(x) {
+    is.null(x) || length(x) == 0 || all(is.na(x))
+  }
+  
+  # Checks
+  if(something_missing(quadrat.id))
+    stop("quadrat.id must be supplied")
+  
+  if(something_missing(outer.x))
+    stop("outer.x must be supplied")
+  
+  if(something_missing(outer.y))
+    stop("outer.y must be supplied")
+  
+  if(length(quadrat.id) != length(outer.x) ||
+     length(quadrat.id) != length(outer.y))
+    stop("quadrat.id, outer.x, and outer.y must have the same length")
+  
+  if(!is.numeric(outer.x) || !is.numeric(outer.y))
+    stop("outer.x and outer.y must be numeric")
+  
+  if(length(regular) != 1 || is.na(regular) || !is.logical(regular))
+    stop("regular must be TRUE or FALSE")
+  
+  complete <- !is.na(quadrat.id) & !is.na(outer.x) & !is.na(outer.y)
+  
+  if(!any(complete))
+    stop("no complete quadrat.id, outer.x, and outer.y observations were supplied")
+  
   # Defaults for outer dimensions
-  if(is.na(outer.xmin) | is.null(outer.xmin)) outer.xmin = floor(min(outer.x, na.rm = TRUE))
-  if(is.na(outer.ymin) | is.null(outer.ymin)) outer.ymin = floor(min(outer.y, na.rm = TRUE))
-  if(is.na(outer.xmax) | is.null(outer.xmax)) outer.xmax = ceiling(max(outer.x, na.rm = TRUE))
-  if(is.na(outer.ymax) | is.null(outer.ymax)) outer.ymax = ceiling(max(outer.y, na.rm = TRUE))
+  if(something_missing(outer.xmin))
+    outer.xmin <- floor(min(outer.x, na.rm = TRUE))
   
-  # Estimate the locations of the quadrats based on the locations of the points
-  xmins <- aggregate(outer.x, by = list(quadrat.id), FUN = min, na.rm = TRUE)
-  ymins <- aggregate(outer.y, by = list(quadrat.id), FUN = min, na.rm = TRUE)
-  xmaxs <- aggregate(outer.x, by = list(quadrat.id), FUN = max, na.rm = TRUE)
-  ymaxs <- aggregate(outer.y, by = list(quadrat.id), FUN = max, na.rm = TRUE)
+  if(something_missing(outer.ymin))
+    outer.ymin <- floor(min(outer.y, na.rm = TRUE))
   
-  colnames(xmins) <- c("quadrat_id", "xmin")
-  colnames(xmaxs) <- c("quadrat_id", "xmax")
-  colnames(ymins) <- c("quadrat_id", "ymin")
-  colnames(ymaxs) <- c("quadrat_id", "ymax")
+  if(something_missing(outer.xmax))
+    outer.xmax <- ceiling(max(outer.x, na.rm = TRUE))
   
-  locations <- purrr::reduce(.x = list(xmins, ymins, xmaxs, ymaxs),
-                             merge, by = c("quadrat_id"), all = TRUE)
+  if(something_missing(outer.ymax))
+    outer.ymax <- ceiling(max(outer.y, na.rm = TRUE))
   
-  rownames(locations) <- locations$quadrat_id
+  if(length(outer.xmin) != 1 || !is.numeric(outer.xmin) || !is.finite(outer.xmin))
+    stop("outer.xmin must be one finite numeric value")
   
-  # The quadrats estimated from the locations, as they 
-  # adjust exactly to the observations, will be smaller
-  # than the true quadrats in general. This is an adjustment
-  # to increase quadrat dimensions, under the assumption
-  # of random distribution of points. 
-  nq <- table(na.omit(data.frame(quadrat.id, outer.x, outer.y))[, 1])
-  adj <- (nq[as.character(locations$quadrat_id)] + 1) / (nq[as.character(locations$quadrat_id)] - 1)
-  adj[adj > 2] <- 2 # capped  
+  if(length(outer.ymin) != 1 || !is.numeric(outer.ymin) || !is.finite(outer.ymin))
+    stop("outer.ymin must be one finite numeric value")
+  
+  if(length(outer.xmax) != 1 || !is.numeric(outer.xmax) || !is.finite(outer.xmax))
+    stop("outer.xmax must be one finite numeric value")
+  
+  if(length(outer.ymax) != 1 || !is.numeric(outer.ymax) || !is.finite(outer.ymax))
+    stop("outer.ymax must be one finite numeric value")
+  
+  if(outer.xmax <= outer.xmin)
+    stop("outer.xmax must be greater than outer.xmin")
+  
+  if(outer.ymax <= outer.ymin)
+    stop("outer.ymax must be greater than outer.ymin")
+  
+  # Use complete observations to estimate quadrat locations.
+  dat <- data.frame(
+    quadrat_id = as.character(quadrat.id[complete]),
+    outer.x = outer.x[complete],
+    outer.y = outer.y[complete],
+    stringsAsFactors = FALSE
+  )
+  
+  xmins <- aggregate(outer.x ~ quadrat_id, data = dat, FUN = min)
+  ymins <- aggregate(outer.y ~ quadrat_id, data = dat, FUN = min)
+  xmaxs <- aggregate(outer.x ~ quadrat_id, data = dat, FUN = max)
+  ymaxs <- aggregate(outer.y ~ quadrat_id, data = dat, FUN = max)
+  
+  names(xmins)[2] <- "xmin"
+  names(ymins)[2] <- "ymin"
+  names(xmaxs)[2] <- "xmax"
+  names(ymaxs)[2] <- "ymax"
+  
+  locations <- Reduce(
+    function(x, y) merge(x, y, by = "quadrat_id", all = TRUE, sort = FALSE),
+    list(xmins, ymins, xmaxs, ymaxs)
+  )
+  
+  # Observed ranges underestimate true quadrat dimensions.
+  # Increase them under the assumption of randomly distributed points.
+  nq <- table(dat$quadrat_id)
+  
+  adj <- (nq[locations$quadrat_id] + 1) /
+    (nq[locations$quadrat_id] - 1)
+  
+  adj[adj > 2] <- 2
+  
   buf.x <- (locations$xmax - locations$xmin) * (adj - 1) / 2
   buf.y <- (locations$ymax - locations$ymin) * (adj - 1) / 2
+  
   locations$xmin <- locations$xmin - buf.x
   locations$ymin <- locations$ymin - buf.y
   locations$xmax <- locations$xmax + buf.x
   locations$ymax <- locations$ymax + buf.y
   
-  # The previous step reduces bias in quadrat size
-  # at the cost of generating some overlapping quadrats.
-  # This is mostly theoretical and won't affect in almost
-  # any application, but it can be an issue in certain
-  # non-standard cases. If this step causes problems, cancel these lines.
-  # Note that this won't run if regular = TRUE, because in that 
-  # case the quadrats will be non-overlapping by definition.
-  if(!regular) 
-  {
+  # For non-regular cases, remove local overlaps caused by the adjustment.
+  if(!regular)
     locations <- make_quadrats_non_overlapping(locations, k = 8)
-    rownames(locations) <- locations$quadrat_id
-  }
   
-  # Estimate a standard, regular, complete grid,
-  # but possibly rectangular quadrats.
+  # Estimate a standard regular and complete grid.
   if(regular)
   {
-    # Estimate grid steps in x and y dimensions
-    quadrat.side.x = median((locations$xmax - locations$xmin), na.rm = TRUE)
-    quadrat.side.y = median((locations$ymax - locations$ymin), na.rm = TRUE)
+    quadrat.side.x <- median(locations$xmax - locations$xmin, na.rm = TRUE)
+    quadrat.side.y <- median(locations$ymax - locations$ymin, na.rm = TRUE)
     
-    quadrat.side.x = (outer.xmax - outer.xmin) /
+    if(!is.finite(quadrat.side.x) || quadrat.side.x <= 0)
+      stop("could not infer a positive quadrat side along x")
+    
+    if(!is.finite(quadrat.side.y) || quadrat.side.y <= 0)
+      stop("could not infer a positive quadrat side along y")
+    
+    ncol.grid <- max(
+      1,
       round((outer.xmax - outer.xmin) / quadrat.side.x)
+    )
     
-    quadrat.side.y = (outer.ymax - outer.ymin) /
+    nrow.grid <- max(
+      1,
       round((outer.ymax - outer.ymin) / quadrat.side.y)
+    )
     
-    # Build a regular grid from scratch.
-    # For coherence with other functions: small leftovers preferred.
-    xmins <- seq(from = outer.xmin, to = outer.xmax, by = quadrat.side.x)
-    xmins <- xmins[xmins < outer.xmax]
+    quadrat.side.x <- (outer.xmax - outer.xmin) / ncol.grid
+    quadrat.side.y <- (outer.ymax - outer.ymin) / nrow.grid
     
-    ymins <- seq(from = outer.ymin, to = outer.ymax, by = quadrat.side.y)
-    ymins <- ymins[ymins < outer.ymax]
+    grid <- make_quadrats_fast(
+      outer.xmin = outer.xmin,
+      outer.ymin = outer.ymin,
+      outer.xmax = outer.xmax,
+      outer.ymax = outer.ymax,
+      quadrat.side.x = quadrat.side.x,
+      quadrat.side.y = quadrat.side.y
+    )
     
-    grid <- expand.grid(xmin = xmins, ymin = ymins)
-    grid$xmax <- pmin(outer.xmax, grid$xmin + quadrat.side.x)
-    grid$ymax <- pmin(outer.ymax, grid$ymin + quadrat.side.y)
-    
-    # Then, compare the regular grid with the input data,
-    # to figure out which ID corresponds to each grid cell.
-    look.at <- which(!is.na(outer.x) & !is.na(outer.y) & !is.na(quadrat.id))
-    
-    ncol.grid <- length(xmins)
-    nrow.grid <- length(ymins)
+    # Compare the regular grid with the input data to identify each grid cell.
+    look.at <- which(complete)
     
     col <- floor((outer.x[look.at] - outer.xmin) / quadrat.side.x) + 1
     row <- floor((outer.y[look.at] - outer.ymin) / quadrat.side.y) + 1
     
-    # Include points that fall exactly on the ultimate right/top boundary.
+    # Include points exactly on the ultimate right and top boundaries.
     col[outer.x[look.at] == outer.xmax] <- ncol.grid
     row[outer.y[look.at] == outer.ymax] <- nrow.grid
     
@@ -653,41 +838,55 @@ get_quadrat_locations_from_outer_coordinates <- function(
       col >= 1 & col <= ncol.grid &
       row >= 1 & row <= nrow.grid
     
-    grid.i <- col[inside] + (row[inside] - 1) * ncol.grid
-    
-    pairs <- data.frame(
-      grid.i = grid.i,
-      quadrat_id = as.character(quadrat.id[look.at][inside])
-    )
-    
-    # Count observed quadrat IDs within each generated grid cell.
-    counts <- aggregate(
-      x = list(n = rep(1, nrow(pairs))),
-      by = list(grid.i = pairs$grid.i, quadrat_id = pairs$quadrat_id),
-      FUN = length
-    )
-    
-    # For each grid cell, keep the most frequent observed quadrat ID.
-    counts <- counts[order(counts$grid.i, -counts$n), ]
-    best <- counts[!duplicated(counts$grid.i), ]
-    
     most.likely.quadrat.ids <- rep(NA_character_, nrow(grid))
-    most.likely.quadrat.ids[best$grid.i] <- best$quadrat_id
     
-    if(any(is.na(most.likely.quadrat.ids)))
+    if(any(inside))
+    {
+      grid.i <- col[inside] + (row[inside] - 1) * ncol.grid
+      
+      pairs <- data.frame(
+        grid.i = grid.i,
+        quadrat_id = as.character(quadrat.id[look.at][inside]),
+        stringsAsFactors = FALSE
+      )
+      
+      # Count observed quadrat IDs within each generated grid cell.
+      counts <- aggregate(
+        x = list(n = rep(1, nrow(pairs))),
+        by = list(
+          grid.i = pairs$grid.i,
+          quadrat_id = pairs$quadrat_id
+        ),
+        FUN = length
+      )
+      
+      # For each grid cell, keep the most frequent observed quadrat ID.
+      counts <- counts[order(counts$grid.i, -counts$n), ]
+      best <- counts[!duplicated(counts$grid.i), ]
+      
+      most.likely.quadrat.ids[best$grid.i] <- best$quadrat_id
+    }
+    
+    if(anyNA(most.likely.quadrat.ids))
       warning("some grid cells had no observed points with non-NA quadrat IDs")
     
-    # Add likely quadrat ID to the grid:
-    grid <- data.frame(quadrat_id = most.likely.quadrat.ids, grid)
+    grid$quadrat_id <- most.likely.quadrat.ids
   }
   
+  # Organize output.
+  if(regular)
+    out <- grid
   
-  # Organize output, order in consistent way:
-  if(regular)  out <- grid
-  if(!regular) out <- locations
+  if(!regular)
+    out <- locations
+  
+  out <- out[, c("quadrat_id", "xmin", "ymin", "xmax", "ymax"), drop = FALSE]
   
   o <- order(out$xmin, out$ymin)
   out <- out[o, , drop = FALSE]
+  
+  if(anyDuplicated(out$quadrat_id[!is.na(out$quadrat_id)]))
+    warning("some quadrat IDs occur in more than one inferred grid cell")
   
   if(!anyNA(out$quadrat_id) && !anyDuplicated(out$quadrat_id))
     rownames(out) <- out$quadrat_id
@@ -711,6 +910,7 @@ get_quadrat_locations_from_outer_coordinates <- function(
 assign_points_to_quadrats <- function(
     outer.x = NA,
     outer.y = NA,
+    point.id = NA,
     quadrat.locations = NA,
     boundary.rule = "left_bottom"
 )
@@ -720,101 +920,104 @@ assign_points_to_quadrats <- function(
     is.null(x) || length(x) == 0 || all(is.na(x))
   }
   
-  # Check for boundary rule
-  if(length(boundary.rule) != 1)
+  # Check boundary rule.
+  if(length(boundary.rule) != 1 ||
+     !boundary.rule %in% c("left_bottom", "right_top"))
   {
-    boundary.rule = "left_bottom"
+    boundary.rule <- "left_bottom"
     warning("'boundary.rule' assumed 'left_bottom' by default; only valid alternative is 'right_top'")
   }
   
-  if(!boundary.rule %in% c("left_bottom", "right_top"))
-  {
-    boundary.rule = "left_bottom"
-    warning("'boundary.rule' assumed 'left_bottom' by default; only valid alternative is 'right_top'")
-  }
-  
-  # Checks: point coordinates
-  if (missing(outer.x) || is.null(outer.x) || length(outer.x) == 0)
+  # Check point coordinates.
+  if(missing(outer.x) || is.null(outer.x) || length(outer.x) == 0)
     stop("outer.x must be supplied")
   
-  if (missing(outer.y) || is.null(outer.y) || length(outer.y) == 0)
+  if(missing(outer.y) || is.null(outer.y) || length(outer.y) == 0)
     stop("outer.y must be supplied")
   
-  if (length(outer.x) != length(outer.y))
+  if(length(outer.x) != length(outer.y))
     stop("outer.x and outer.y must have the same length")
   
   # All-NA vectors are allowed, even if R stored them as logical.
-  if (all(is.na(outer.x)))
+  if(all(is.na(outer.x)))
     outer.x <- as.numeric(outer.x)
   
-  if (all(is.na(outer.y)))
+  if(all(is.na(outer.y)))
     outer.y <- as.numeric(outer.y)
   
-  if (!is.numeric(outer.x) || !is.numeric(outer.y))
+  if(!is.numeric(outer.x) || !is.numeric(outer.y))
     stop("outer.x and outer.y must be numeric")
   
-  # Checks: quadrat locations
-  if (something_missing(quadrat.locations))
+  # Use sequential point IDs by default.
+  if(something_missing(point.id))
+    point.id <- as.character(seq_along(outer.x))
+  
+  if(length(point.id) != length(outer.x))
+    stop("point.id, outer.x, and outer.y must have the same length")
+  
+  if(any(is.na(point.id)))
+    stop("point.id cannot contain NA")
+  
+  if(anyDuplicated(point.id))
+    stop("point.id must be unique")
+  
+  point.id <- as.character(point.id)
+  
+  # Check quadrat locations.
+  if(something_missing(quadrat.locations))
     stop("quadrat.locations must be supplied")
   
   needed <- c("quadrat_id", "xmin", "ymin", "xmax", "ymax")
   missing <- setdiff(needed, names(quadrat.locations))
   
-  if (length(missing) > 0)
+  if(length(missing) > 0)
     stop("quadrat.locations is missing: ", paste(missing, collapse = ", "))
   
-  if (nrow(quadrat.locations) == 0)
+  if(nrow(quadrat.locations) == 0)
     stop("quadrat.locations has no rows")
   
-  if (any(is.na(quadrat.locations$quadrat_id)))
+  if(any(is.na(quadrat.locations$quadrat_id)))
     stop("quadrat_id cannot contain NA")
   
-  if (anyDuplicated(quadrat.locations$quadrat_id))
+  if(anyDuplicated(quadrat.locations$quadrat_id))
     stop("quadrat_id must be unique in quadrat.locations")
   
   coord.cols <- c("xmin", "ymin", "xmax", "ymax")
   
-  if (!all(sapply(quadrat.locations[coord.cols], is.numeric)))
+  if(!all(sapply(quadrat.locations[coord.cols], is.numeric)))
     stop("xmin, ymin, xmax, and ymax must be numeric")
   
-  if (any(is.na(quadrat.locations[coord.cols])))
+  if(any(is.na(quadrat.locations[coord.cols])))
     stop("quadrat locations cannot contain NA")
   
-  if (any(quadrat.locations$xmax <= quadrat.locations$xmin))
+  if(any(quadrat.locations$xmax <= quadrat.locations$xmin))
     stop("all quadrats must have xmax > xmin")
   
-  if (any(quadrat.locations$ymax <= quadrat.locations$ymin))
+  if(any(quadrat.locations$ymax <= quadrat.locations$ymin))
     stop("all quadrats must have ymax > ymin")
   
   quadrat.locations$quadrat_id <- as.character(quadrat.locations$quadrat_id)
   
-  # Original input positions
-  original.i <- seq_along(outer.x)
-  
   # Work only with complete coordinates.
-  # These working copies are used only to determine quadrat assignment.
-  keep <- !is.na(outer.x) & !is.na(outer.y)
-  i <- original.i[keep]
-  x <- outer.x[keep]
-  y <- outer.y[keep]
+  # x and y are used only to determine quadrat assignment.
+  point.i <- which(!is.na(outer.x) & !is.na(outer.y))
+  x <- outer.x[point.i]
+  y <- outer.y[point.i]
   
-  if (!any(keep))
+  if(length(point.i) == 0)
     warning("no x-y coordinates were supplied: all points will receive NA quadrat assignments")
   
-  # Outer extent represented by the quadrat-location table
+  # Outer extent represented by the quadrat-location table.
   outer.xmin <- min(quadrat.locations$xmin)
   outer.ymin <- min(quadrat.locations$ymin)
   outer.xmax <- max(quadrat.locations$xmax)
   outer.ymax <- max(quadrat.locations$ymax)
   
-  # Points exactly on the ultimate outer boundary may be excluded by the
-  # half-open boundary rule. Move only those working coordinates slightly
-  # inside, only for assignment. Final coordinates are taken from the
-  # original input vectors: outer.x[assigned$i] and outer.y[assigned$i].
-  quadrat.side.x <- min(quadrat.locations$xmax - quadrat.locations$xmin)
-  quadrat.side.y <- min(quadrat.locations$ymax - quadrat.locations$ymin)
-  small.adjustment.x <- quadrat.side.x / 1000
-  small.adjustment.y <- quadrat.side.y / 1000
+  # Points exactly on the ultimate excluded boundary are moved slightly
+  # inward only to achieve complete assignment. Final coordinates always
+  # come directly from the original outer.x and outer.y input vectors.
+  small.adjustment.x <- min(quadrat.locations$xmax - quadrat.locations$xmin) / 1000
+  small.adjustment.y <- min(quadrat.locations$ymax - quadrat.locations$ymin) / 1000
   
   if(boundary.rule == "left_bottom")
   {
@@ -828,35 +1031,34 @@ assign_points_to_quadrats <- function(
     y[y == outer.ymin] <- outer.ymin + small.adjustment.y
   }
   
-  # Empty assignment table. Coordinates are added after quadrat assignment.
+  # Empty assignment table.
   assigned <- data.frame(
-    i = integer(),
+    point.i = integer(),
     quadrat_id = character(),
     stringsAsFactors = FALSE
   )
   
   pieces <- list(assigned)
   
-  # ---------------------------------------------------------------------------
-  # Assignment
-  # ---------------------------------------------------------------------------
-  
-  for (q in seq_len(nrow(quadrat.locations)))
+  # Assign points to quadrats.
+  for(q in seq_len(nrow(quadrat.locations)))
   {
     quad <- quadrat.locations[q, ]
     
-    if (boundary.rule == "left_bottom")
-      inside <- x >= quad$xmin & x < quad$xmax & y >= quad$ymin & y < quad$ymax
+    if(boundary.rule == "left_bottom")
+      inside <- x >= quad$xmin & x < quad$xmax &
+        y >= quad$ymin & y < quad$ymax
     
-    if (boundary.rule == "right_top")
-      inside <- x > quad$xmin & x <= quad$xmax & y > quad$ymin & y <= quad$ymax
+    if(boundary.rule == "right_top")
+      inside <- x > quad$xmin & x <= quad$xmax &
+        y > quad$ymin & y <= quad$ymax
     
     j <- which(inside)
     
-    if (length(j) > 0)
+    if(length(j) > 0)
     {
       pieces[[length(pieces) + 1]] <- data.frame(
-        i = i[j],
+        point.i = point.i[j],
         quadrat_id = quad$quadrat_id,
         stringsAsFactors = FALSE
       )
@@ -865,17 +1067,14 @@ assign_points_to_quadrats <- function(
   
   assigned <- do.call(rbind, pieces)
   
-  # ---------------------------------------------------------------------------
-  # Keep all unassigned original points as NA quadrat assignments
-  # ---------------------------------------------------------------------------
+  # Keep unassigned points as NA quadrat assignments.
+  assigned.i <- unique(assigned$point.i)
+  outside.i <- setdiff(seq_along(outer.x), assigned.i)
   
-  assigned.i <- unique(assigned$i)
-  outside.i <- setdiff(original.i, assigned.i)
-  
-  if (length(outside.i) > 0)
+  if(length(outside.i) > 0)
   {
     outside <- data.frame(
-      i = outside.i,
+      point.i = outside.i,
       quadrat_id = NA_character_,
       stringsAsFactors = FALSE
     )
@@ -883,28 +1082,31 @@ assign_points_to_quadrats <- function(
     assigned <- rbind(assigned, outside)
   }
   
-  # ---------------------------------------------------------------------------
-  # Add coordinates and inner coordinates
-  # ---------------------------------------------------------------------------
-  
-  assigned <- assigned[order(assigned$i), , drop = FALSE]
+  # Sort by original point order.
+  assigned <- assigned[order(assigned$point.i), , drop = FALSE]
   rownames(assigned) <- NULL
   
-  assigned$outer.x <- outer.x[assigned$i]
-  assigned$outer.y <- outer.y[assigned$i]
+  # Add IDs and coordinates from the original input.
+  assigned$point_id <- point.id[assigned$point.i]
+  assigned$outer.x <- outer.x[assigned$point.i]
+  assigned$outer.y <- outer.y[assigned$point.i]
   
   q <- match(assigned$quadrat_id, quadrat.locations$quadrat_id)
   
   assigned$inner.x <- assigned$outer.x - quadrat.locations$xmin[q]
   assigned$inner.y <- assigned$outer.y - quadrat.locations$ymin[q]
   
-  assigned <- assigned[, c("i", "outer.x", "outer.y", "quadrat_id", "inner.x", "inner.y")]
+  assigned <- assigned[, c(
+    "point_id",
+    "outer.x",
+    "outer.y",
+    "quadrat_id",
+    "inner.x",
+    "inner.y"
+  )]
   
-  # ---------------------------------------------------------------------------
-  # Warnings
-  # ---------------------------------------------------------------------------
-  
-  if (length(outside.i) > 0)
+  # Warnings.
+  if(length(outside.i) > 0)
   {
     warning(
       length(outside.i),
@@ -913,13 +1115,13 @@ assign_points_to_quadrats <- function(
     )
   }
   
-  n.per.point <- table(assigned$i[!is.na(assigned$quadrat_id)])
-  multiple.i <- names(n.per.point)[n.per.point > 1]
+  n.per.point <- table(assigned$point_id[!is.na(assigned$quadrat_id)])
+  multiple.points <- names(n.per.point)[n.per.point > 1]
   
-  if (length(multiple.i) > 0)
+  if(length(multiple.points) > 0)
   {
     warning(
-      length(multiple.i),
+      length(multiple.points),
       " point(s) were assigned to more than one quadrat; ",
       "this is expected if quadrats overlap"
     )
@@ -929,19 +1131,180 @@ assign_points_to_quadrats <- function(
 }
 
 
-
 # This function does the opposite: takes membership into quadrats, inner coordinates
 # within those quadrats, and quadrat location, and compiles all those coordinates
 # into outer coordinates, where all points are located relative to the coordinate
 # system that describes the quadrat locations. 
 # For example: to compile full-plot datasets from quadrat-level datasets.
+# Because overlapping quadrats are allowed, in general, it checks for consistency
+# of the possibly multiple locations for the same point. That consistency is
+# evaluated within a given tolerance. 
+
+compile_points_from_quadrats <- function(
+    inner.x = NA,
+    inner.y = NA,
+    point.id = NA,
+    quadrat.id = NA,
+    quadrat.locations = NA,
+    tolerance = 1e-8
+)
+{
+  
+  something_missing <- function(x) {
+    is.null(x) || length(x) == 0 || all(is.na(x))
+  }
+  
+  # Checks: coordinates and quadrat membership
+  if(missing(inner.x) || is.null(inner.x) || length(inner.x) == 0)
+    stop("inner.x must be supplied")
+  
+  if(missing(inner.y) || is.null(inner.y) || length(inner.y) == 0)
+    stop("inner.y must be supplied")
+  
+  if(missing(quadrat.id) || is.null(quadrat.id) || length(quadrat.id) == 0)
+    stop("quadrat.id must be supplied")
+  
+  if(length(inner.x) != length(inner.y) ||
+     length(inner.x) != length(quadrat.id))
+    stop("inner.x, inner.y, and quadrat.id must have the same length")
+  
+  # All-NA vectors are allowed, even if R stored them as logical.
+  if(all(is.na(inner.x)))
+    inner.x <- as.numeric(inner.x)
+  
+  if(all(is.na(inner.y)))
+    inner.y <- as.numeric(inner.y)
+  
+  if(!is.numeric(inner.x) || !is.numeric(inner.y))
+    stop("inner.x and inner.y must be numeric")
+  
+  quadrat.id <- as.character(quadrat.id)
+  
+  # Use sequential point IDs by default.
+  # Without explicit point IDs, each input row is treated as a separate point.
+  if(something_missing(point.id))
+    point.id <- as.character(seq_along(inner.x))
+  
+  if(length(point.id) != length(inner.x))
+    stop("point.id, inner.x, inner.y, and quadrat.id must have the same length")
+  
+  if(any(is.na(point.id)))
+    stop("point.id cannot contain NA")
+  
+  point.id <- as.character(point.id)
+  
+  # Check tolerance.
+  if(length(tolerance) != 1 ||
+     !is.numeric(tolerance) ||
+     is.na(tolerance) ||
+     tolerance <= 0)
+    stop("tolerance must be one positive numeric value")
+  
+  # Checks: quadrat locations
+  if(something_missing(quadrat.locations))
+    stop("quadrat.locations must be supplied")
+  
+  needed <- c("quadrat_id", "xmin", "ymin", "xmax", "ymax")
+  missing <- setdiff(needed, names(quadrat.locations))
+  
+  if(length(missing) > 0)
+    stop("quadrat.locations is missing: ", paste(missing, collapse = ", "))
+  
+  if(nrow(quadrat.locations) == 0)
+    stop("quadrat.locations has no rows")
+  
+  if(any(is.na(quadrat.locations$quadrat_id)))
+    stop("quadrat_id cannot contain NA")
+  
+  if(anyDuplicated(quadrat.locations$quadrat_id))
+    stop("quadrat_id must be unique in quadrat.locations")
+  
+  coord.cols <- c("xmin", "ymin", "xmax", "ymax")
+  
+  if(!all(sapply(quadrat.locations[coord.cols], is.numeric)))
+    stop("xmin, ymin, xmax, and ymax must be numeric")
+  
+  if(any(is.na(quadrat.locations[coord.cols])))
+    stop("quadrat locations cannot contain NA")
+  
+  if(any(quadrat.locations$xmax <= quadrat.locations$xmin))
+    stop("all quadrats must have xmax > xmin")
+  
+  if(any(quadrat.locations$ymax <= quadrat.locations$ymin))
+    stop("all quadrats must have ymax > ymin")
+  
+  quadrat.locations$quadrat_id <- as.character(quadrat.locations$quadrat_id)
+  
+  # Match each input row to its quadrat.
+  q <- match(quadrat.id, quadrat.locations$quadrat_id)
+  
+  missing.quadrats <- unique(quadrat.id[!is.na(quadrat.id) & is.na(q)])
+  
+  if(length(missing.quadrats) > 0)
+  {
+    warning(
+      length(missing.quadrats),
+      " quadrat ID(s) were not found in quadrat.locations; ",
+      "their outer coordinates will be NA"
+    )
+  }
+  
+  # Reconstruct outer coordinates for every [point x quadrat] combination.
+  outer.x <- inner.x + quadrat.locations$xmin[q]
+  outer.y <- inner.y + quadrat.locations$ymin[q]
+  
+  # Use only complete reconstructed locations.
+  complete <- !is.na(outer.x) & !is.na(outer.y)
+  
+  reconstructed <- data.frame(
+    point_id = point.id[complete],
+    outer.x = outer.x[complete],
+    outer.y = outer.y[complete],
+    rounded.x = round(outer.x[complete] / tolerance),
+    rounded.y = round(outer.y[complete] / tolerance),
+    stringsAsFactors = FALSE
+  )
+  
+  # Check whether repeated reconstructions of each point agree.
+  rounded.locations <- unique(
+    reconstructed[, c("point_id", "rounded.x", "rounded.y")]
+  )
+  
+  n.locations <- table(rounded.locations$point_id)
+  inconsistent.ids <- names(n.locations[n.locations > 1])
+  
+  if(length(inconsistent.ids) > 0)
+    stop(
+      "inconsistent outer coordinates for point_id: ",
+      paste(inconsistent.ids, collapse = ", ")
+    )
+  
+  # Use the centroid of all reconstructed locations for each point.
+  centroids <- aggregate(
+    cbind(outer.x, outer.y) ~ point_id,
+    data = reconstructed,
+    FUN = mean
+  )
+  
+  # Return one row per point, preserving first-appearance order.
+  out <- data.frame(
+    point_id = unique(point.id),
+    stringsAsFactors = FALSE
+  )
+  
+  j <- match(out$point_id, centroids$point_id)
+  out$outer.x <- centroids$outer.x[j]
+  out$outer.y <- centroids$outer.y[j]
+  
+  out
+}
 
 
 
 
 
-#########################################################################
-####### FUNCTIONS THAT HANDLE QUADRATS: 1-to-n and n-to-1
-#########################################################################
+
+
+
 
 
