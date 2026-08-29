@@ -1230,6 +1230,9 @@ compile_points_from_quadrats <- function(
   
   if(!is.numeric(inner.x) || !is.numeric(inner.y))
     stop("inner.x and inner.y must be numeric")
+
+  if(any(is.infinite(inner.x)) || any(is.infinite(inner.y)))
+    stop("inner.x and inner.y cannot contain Inf or -Inf")
   
   quadrat.id <- as.character(quadrat.id)
   
@@ -1249,9 +1252,9 @@ compile_points_from_quadrats <- function(
   # Check tolerance.
   if(length(tolerance) != 1 ||
      !is.numeric(tolerance) ||
-     is.na(tolerance) ||
+     !is.finite(tolerance) ||
      tolerance <= 0)
-    stop("tolerance must be one positive numeric value")
+    stop("tolerance must be one positive finite numeric value")
   
   # Checks: quadrat locations
   if(something_missing(quadrat.locations))
@@ -1279,6 +1282,9 @@ compile_points_from_quadrats <- function(
   
   if(any(is.na(quadrat.locations[coord.cols])))
     stop("quadrat locations cannot contain NA")
+
+  if(any(is.infinite(as.matrix(quadrat.locations[coord.cols]))))
+    stop("quadrat locations cannot contain Inf or -Inf")
   
   if(any(quadrat.locations$xmax <= quadrat.locations$xmin))
     stop("all quadrats must have xmax > xmin")
@@ -1301,6 +1307,25 @@ compile_points_from_quadrats <- function(
       "their outer coordinates will be NA"
     )
   }
+
+  # Check whether inner coordinates fall within their quadrats.
+  quadrat.width <- quadrat.locations$xmax[q] - quadrat.locations$xmin[q]
+  quadrat.height <- quadrat.locations$ymax[q] - quadrat.locations$ymin[q]
+
+  known <- !is.na(q) & !is.na(inner.x) & !is.na(inner.y)
+
+  outside <- known & (
+    inner.x < -tolerance |
+    inner.x > quadrat.width + tolerance |
+    inner.y < -tolerance |
+    inner.y > quadrat.height + tolerance
+  )
+
+  if(any(outside))
+    warning(
+      sum(outside),
+      " row(s) contained inner coordinates outside their quadrat"
+    )
   
   # Reconstruct outer coordinates for every [point x quadrat] combination.
   outer.x <- inner.x + quadrat.locations$xmin[q]
@@ -1308,23 +1333,37 @@ compile_points_from_quadrats <- function(
   
   # Use only complete reconstructed locations.
   complete <- !is.na(outer.x) & !is.na(outer.y)
+
+  if(!any(complete))
+  {
+    out <- data.frame(
+      point_id = unique(point.id),
+      outer.x = NA_real_,
+      outer.y = NA_real_,
+      stringsAsFactors = FALSE
+    )
+
+    return(out)
+  }
   
   reconstructed <- data.frame(
     point_id = point.id[complete],
     outer.x = outer.x[complete],
     outer.y = outer.y[complete],
-    rounded.x = round(outer.x[complete] / tolerance),
-    rounded.y = round(outer.y[complete] / tolerance),
     stringsAsFactors = FALSE
   )
   
   # Check whether repeated reconstructions of each point agree.
-  rounded.locations <- unique(
-    reconstructed[, c("point_id", "rounded.x", "rounded.y")]
+  ranges <- aggregate(
+    cbind(outer.x, outer.y) ~ point_id,
+    data = reconstructed,
+    FUN = function(x) max(x) - min(x)
   )
   
-  n.locations <- table(rounded.locations$point_id)
-  inconsistent.ids <- names(n.locations[n.locations > 1])
+  inconsistent.ids <- ranges$point_id[
+    ranges$outer.x > tolerance |
+    ranges$outer.y > tolerance
+  ]
   
   if(length(inconsistent.ids) > 0)
     stop(
@@ -1351,7 +1390,6 @@ compile_points_from_quadrats <- function(
   
   out
 }
-
 
 
 
