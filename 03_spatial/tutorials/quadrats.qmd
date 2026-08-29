@@ -164,7 +164,142 @@ If your quadrat IDing convention cannot be fully described with the paramaters a
 
 There are three blocks of use cases presented here. The first block shows how to get the quadrat-level table with {quadrat id, xmin, ymin, xmax, ymax} in different ways. The second block shows how to apply the code once the user has the quadrat-level table with the quadrat ID + locations. The third block shows how to implement other useful tasks, such as identifying neighboring quadrats, etc.
 
+```{r}
+
+# This is my local path. You may have to adapt this.
+g <- regexpr("fgeo2", getwd())
+path <- substr(getwd(), 1, g + attr(g, "match.length"))
+
+# Source functionality:
+source(paste0(path, "evaluation/0-code-to-source.r")) # auxiliary
+f = paste0(path, "03_spatial/R/new/quadrats.R")
+source(f)
+
+# Check the functions
+functions_in_script(f)
+
+# Load data from the Luquillo forest plot, public domain, as an example
+load(paste0(path, "data_examples/luquillo.full2.rdata"))
+data <- luquillo.full2
+dim(data)
+head(data)
+colnames(data)
+summary(data)
+
+```
+
 ## Make simple quadrats from scratch
+
+Any given plot can be split into quadrats or subplots of any size. This is an example of how to do so, using fast code, without the extra complications of assigning ID to those quadrats. Splitting into quadrats of arbitrary resolution won't be useful, in general, to cross tree data with other existing datasets (like quadrat-level soil properties, or a habitat "map", for example). But it can be useful for many ecological analyses.
+
+This example, in particular, splits the data into quadrats of varying sizes and then calculates the number of species per quadrat.
+
+```{r}
+
+
+
+
+
+
+# Plot extent
+xmax = ceiling(max(data$gx, na.rm = TRUE))
+ymax = ceiling(max(data$gy, na.rm = TRUE))
+
+# Scales of interest (defined as quadrat sizes)
+scales <- seq(from = 5, to = round(min(c(xmax, ymax))), by = 5)
+
+# Run a loop through quadrat resolutions
+richness.per.scale <- list()
+for(i in 1:length(scales))
+{
+  # create the quadrat-level table with quadrat locations
+  side.i = scales[i]
+  quadrats.i <- make_quadrats_fast(
+    outer.xmin = 0,
+    outer.ymin = 0,
+    outer.xmax = xmax,
+    outer.ymax = ymax,
+    quadrat.side.x = side.i,
+    quadrat.side.y = side.i)
+  
+  
+library(data.table)
+
+# Points
+p <- data.table(
+  point_id = seq_len(nrow(data)),
+  outer.x = data$gx,
+  outer.y = data$gy
+)
+
+# Working coordinates used only for assignment
+p[, x.assign := outer.x]
+p[, y.assign := outer.y]
+
+# Quadrats
+q <- as.data.table(quadrats.i)
+q[, quadrat_id := as.character(quadrat_id)]
+
+# Boundary adjustment for left_bottom rule:
+# xmin <= x < xmax, ymin <= y < ymax
+outer.xmax <- max(q$xmax)
+outer.ymax <- max(q$ymax)
+
+small.x <- min(q$xmax - q$xmin) / 1000
+small.y <- min(q$ymax - q$ymin) / 1000
+
+p[x.assign == outer.xmax, x.assign := outer.xmax - small.x]
+p[y.assign == outer.ymax, y.assign := outer.ymax - small.y]
+
+# Non-equi join: one row per [point x quadrat] match
+membership <- q[
+  p,
+  on = .(
+    xmin <= x.assign,
+    xmax >  x.assign,
+    ymin <= y.assign,
+    ymax >  y.assign
+  ),
+  nomatch = 0,
+  allow.cartesian = TRUE
+]
+
+# After non-equi joins, recover original point coordinates explicitly
+membership <- membership[, .(
+  point_id,
+  quadrat_id,
+  outer.x,
+  outer.y,
+  inner.x = outer.x - xmin,
+  inner.y = outer.y - ymin
+)]
+
+
+  
+  
+  
+  # assign the trees to quadrats
+  membership <- assign_points_to_quadrats(
+    outer.x = data$gx,
+    outer.y = data$gy,
+    point.id = 1:nrow(data),
+    quadrat.locations = quadrats.i
+  )
+  
+  # get the number of species per quadrat
+  m <- membership[!is.na(membership$quadrat_id), c("quadrat_id", "point_id")]
+  m$sp <- data$sp[as.integer(m$point_id)]
+  m <- unique(m[, c("quadrat_id", "sp")])
+  richness.per.quadrat <- table(m$quadrat_id)
+  
+  # store and track
+  richness.per.scale[i] <- list(richness.per.quadrat)
+  print(paste0("finished scale ", i, " out of ", length(scales)))
+}
+
+boxplot(richness.per.scale)
+
+```
 
 ## Create quadrats from tree-level locations and quadrat membership
 

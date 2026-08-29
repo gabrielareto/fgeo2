@@ -233,7 +233,8 @@ make_quadrats_fast <- function(
   grid$ymax <- pmin(outer.ymax, grid$ymin + quadrat.side.y)
   
   
-  # Sort consistently by x first, then y.
+  # Sort by columns: move along y first, then to the next x.
+  # This matches the historical CTFS sequential quadrat indexes.
   o <- order(grid$xmin, grid$ymin)
   grid <- grid[o, , drop = FALSE]
   rownames(grid) <- NULL
@@ -842,7 +843,7 @@ get_quadrat_locations_from_outer_coordinates <- function(
     
     if(any(inside))
     {
-      grid.i <- col[inside] + (row[inside] - 1) * ncol.grid
+      grid.i <- row[inside] + (col[inside] - 1) * nrow.grid
       
       pairs <- data.frame(
         grid.i = grid.i,
