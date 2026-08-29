@@ -208,65 +208,41 @@ head(luquillo.quadrats)
 
 ### Make simple quadrats from scratch
 
-`make_quadrats_fast()` creates temporary quadrats with simple sequential IDs. Here the same living trees are grouped at three resolutions, and species richness is calculated for every quadrat.
-
-Small remainders are retained. At the 40 m resolution, the top row is 20 m high because the plot is 500 m long.
+`make_quadrats_fast()` creates temporary quadrats with simple sequential IDs. Small remainders at the right or top edges are retained.
 
 ```{r}
-# Keep living trees with complete coordinates and species names.
-tree.i <- which(
-  data$status == "A" &
-  !is.na(data$gx) &
-  !is.na(data$gy) &
-  !is.na(data$sp)
+#| fig-width: 6
+#| fig-height: 3.5
+
+simple.quadrats <- make_quadrats_fast(
+  outer.xmin = 0,
+  outer.ymin = 0,
+  outer.xmax = 100,
+  outer.ymax = 60,
+  quadrat.side.x = 20,
+  quadrat.side.y = 20
 )
 
-# Quadrat sizes to compare.
-scales <- c(10, 20, 40)
-richness.per.scale <- list()
+simple.quadrats
 
-for(i in seq_along(scales))
-{
-  side.i <- scales[i]
-
-  quadrats.i <- make_quadrats_fast(
-    outer.xmin = 0,
-    outer.ymin = 0,
-    outer.xmax = 320,
-    outer.ymax = 500,
-    quadrat.side.x = side.i,
-    quadrat.side.y = side.i
-  )
-
-  membership <- assign_points_to_quadrats(
-    outer.x = data$gx[tree.i],
-    outer.y = data$gy[tree.i],
-    point.id = as.character(tree.i),
-    quadrat.locations = quadrats.i
-  )
-
-  species.quadrat <- data.frame(
-    quadrat_id = membership$quadrat_id,
-    sp = data$sp[as.integer(membership$point_id)]
-  )
-  species.quadrat <- unique(species.quadrat)
-
-  nsp <- table(species.quadrat$quadrat_id)
-  richness <- integer(nrow(quadrats.i))
-  names(richness) <- quadrats.i$quadrat_id
-  richness[names(nsp)] <- as.integer(nsp)
-
-  richness.per.scale[[as.character(side.i)]] <- richness
-}
-
-sapply(richness.per.scale, mean)
-
-boxplot(
-  richness.per.scale,
-  names = paste0(names(richness.per.scale), " m"),
-  xlab = "quadrat side",
-  ylab = "species per quadrat",
+plot(
+  c(0, 100),
+  c(0, 60),
+  type = "n",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
   las = 1
+)
+
+with(
+  simple.quadrats,
+  rect(xmin, ymin, xmax, ymax, border = "grey40")
+)
+
+with(
+  simple.quadrats,
+  text((xmin + xmax) / 2, (ymin + ymax) / 2, quadrat_id)
 )
 ```
 
@@ -275,6 +251,9 @@ boxplot(
 `get_quadrat_locations_from_outer_coordinates()` accepts missing values. Rows with missing quadrat membership, x, or y are not used to infer locations. This is important for the `prior` stems in the Luquillo data.
 
 ```{r}
+#| fig-width: 4.5
+#| fig-height: 6
+
 complete.for.inference <-
   !is.na(data$quadrat_id) &
   !is.na(data$gx) &
@@ -295,6 +274,22 @@ inferred.quadrats <- get_quadrat_locations_from_outer_coordinates(
 
 dim(inferred.quadrats)
 head(inferred.quadrats)
+
+plot(
+  data$gx[complete.for.inference],
+  data$gy[complete.for.inference],
+  pch = ".",
+  col = "grey55",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  las = 1
+)
+
+with(
+  inferred.quadrats,
+  rect(xmin, ymin, xmax, ymax, border = "black")
+)
 ```
 
 The output should be checked and stored once, rather than inferred again within later analyses.
@@ -347,9 +342,12 @@ head(sequence.quadrats)
 
 Some IDs inherit the ID of a larger unit. In Amacayacu, for example, hectares are identified by letters and the 20 x 20 m quadrats within each hectare are numbered `01`, `02`, ..., `25`. This requires two steps.
 
-First, obtain the hectare table. Here two adjacent hectares are used only to keep the example small. If hectare locations cannot be inferred safely from their letters, this first table must be supplied explicitly.
+First, obtain the hectare table. Here two adjacent hectares are used only to keep the example small. If hectare locations cannot be inferred safely from their letters, this first table must be supplied explicitly. Then split each hectare separately and add the hectare ID as a prefix.
 
 ```{r}
+#| fig-width: 7
+#| fig-height: 3.5
+
 hectares <- make_quadrats(
   outer.xmin = 0,
   outer.ymin = 0,
@@ -363,11 +361,6 @@ hectares <- make_quadrats(
 )
 
 hectares
-```
-
-Then split each hectare separately and add the hectare ID as a prefix.
-
-```{r}
 amacayacu.quadrats <- vector("list", nrow(hectares))
 
 for(i in seq_len(nrow(hectares)))
@@ -399,6 +392,37 @@ rownames(amacayacu.quadrats) <- NULL
 
 head(amacayacu.quadrats)
 tail(amacayacu.quadrats)
+
+plot(
+  c(0, 200),
+  c(0, 100),
+  type = "n",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  las = 1
+)
+
+with(
+  amacayacu.quadrats,
+  rect(xmin, ymin, xmax, ymax, border = "grey65")
+)
+
+with(
+  hectares,
+  rect(xmin, ymin, xmax, ymax, border = "black", lwd = 2)
+)
+
+with(
+  hectares,
+  text(
+    (xmin + xmax) / 2,
+    (ymin + ymax) / 2,
+    quadrat_id,
+    cex = 1.5,
+    font = 2
+  )
+)
 ```
 
 The order of `01` to `25` must be adapted if the field convention runs in another direction. For arbitrary or irregular arrangements, construct the same five-column table directly from the project maps or field records.
@@ -408,6 +432,34 @@ The order of `01` to `25` must be adapted if the field convention runs in anothe
 The inferred table, the convention-derived table, and the stored table agree for Luquillo.
 
 ```{r}
+# Recover quadrat locations from the trees.
+inferred.quadrats <- get_quadrat_locations_from_outer_coordinates(
+  quadrat.id = data$quadrat_id,
+  outer.x = data$gx,
+  outer.y = data$gy,
+  outer.xmin = 0,
+  outer.ymin = 0,
+  outer.xmax = 320,
+  outer.ymax = 500,
+  regular = TRUE
+)
+
+# Recover the same locations from the ID convention.
+ccrr.quadrats <- make_quadrats(
+  outer.xmin = 0,
+  outer.ymin = 0,
+  outer.xmax = 320,
+  outer.ymax = 500,
+  quadrat.side.x = 20,
+  quadrat.side.y = 20,
+  built = "col+row",
+  example.part.for.col = "01",
+  example.part.for.row = "01",
+  start.col.at = 1,
+  start.row.at = 1,
+  separator = ""
+)
+
 rownames(inferred.quadrats) <- NULL
 rownames(ccrr.quadrats) <- NULL
 
@@ -432,7 +484,7 @@ checks <- c(
     ),
     c(0, 0, 320, 500)
   ),
-  complete_area = sum(
+  expected_total_area = sum(
     (luquillo.quadrats$xmax - luquillo.quadrats$xmin) *
     (luquillo.quadrats$ymax - luquillo.quadrats$ymin)
   ) == 320 * 500
@@ -470,7 +522,11 @@ stopifnot(
 The final check is to recalculate tree membership from coordinates. The Luquillo table uses the `left_bottom` boundary rule: left and bottom limits are included; right and top limits are excluded, except at the outer plot boundary.
 
 ```{r}
-check.i <- which(complete.for.inference)
+check.i <- which(
+  !is.na(data$quadrat_id) &
+  !is.na(data$gx) &
+  !is.na(data$gy)
+)
 
 checked.membership <- assign_points_to_quadrats(
   outer.x = data$gx[check.i],
@@ -528,20 +584,28 @@ assigned.points
 `compile_points_from_quadrats()` reverses the previous calculation. Rows without a quadrat assignment are omitted here because there is no location to reconstruct.
 
 ```{r}
-use <- !is.na(assigned.points$quadrat_id)
+# Recreate the preceding assignment so this example can run by itself.
+mapped.i <- which(!is.na(data$gx) & !is.na(data$gy))[1:6]
+
+assigned.points <- assign_points_to_quadrats(
+  outer.x = data$gx[mapped.i],
+  outer.y = data$gy[mapped.i],
+  point.id = data$treeID[mapped.i],
+  quadrat.locations = luquillo.quadrats,
+  boundary.rule = "left_bottom"
+)
 
 compiled.points <- compile_points_from_quadrats(
-  inner.x = assigned.points$inner.x[use],
-  inner.y = assigned.points$inner.y[use],
-  point.id = assigned.points$point_id[use],
-  quadrat.id = assigned.points$quadrat_id[use],
+  inner.x = assigned.points$inner.x,
+  inner.y = assigned.points$inner.y,
+  point.id = assigned.points$point_id,
+  quadrat.id = assigned.points$quadrat_id,
   quadrat.locations = luquillo.quadrats
 )
 
-original.points <- assigned.points[
-  use,
-  c("point_id", "outer.x", "outer.y")
-]
+original.points <- assigned.points[, c(
+  "point_id", "outer.x", "outer.y"
+)]
 
 compiled.points
 all.equal(compiled.points, original.points, check.attributes = FALSE)
@@ -629,9 +693,15 @@ head(subquadrats)
 
 ## Quadrat-level ecological tasks
 
-Prepare one table of living, mapped trees. The quadrat membership below is recalculated from the stored quadrat locations.
+### Species richness at different scales
+
+The same trees can be summarized within a regular grid or within randomly located quadrats. The random quadrats below have fixed sizes but independent locations, so they can overlap. Fifty are sampled at each scale.
 
 ```{r}
+#| fig-width: 8
+#| fig-height: 5
+
+# Prepare the point data used in this example.
 living.i <- which(
   data$status == "A" &
   !is.na(data$gx) &
@@ -639,25 +709,124 @@ living.i <- which(
   !is.na(data$sp)
 )
 
-tree.membership <- assign_points_to_quadrats(
-  outer.x = data$gx[living.i],
-  outer.y = data$gy[living.i],
-  point.id = as.character(living.i),
-  quadrat.locations = luquillo.quadrats
+trees <- data[living.i, c("sp", "gx", "gy")]
+
+# Count species in any supplied quadrat table.
+get_richness <- function(quadrats, trees)
+{
+  membership <- assign_points_to_quadrats(
+    outer.x = trees$gx,
+    outer.y = trees$gy,
+    point.id = seq_len(nrow(trees)),
+    quadrat.locations = quadrats
+  )
+
+  membership <- membership[!is.na(membership$quadrat_id), ]
+
+  species.quadrat <- data.frame(
+    quadrat_id = membership$quadrat_id,
+    sp = trees$sp[as.integer(membership$point_id)]
+  )
+  species.quadrat <- unique(species.quadrat)
+
+  nsp <- table(species.quadrat$quadrat_id)
+  richness <- integer(nrow(quadrats))
+  names(richness) <- quadrats$quadrat_id
+  richness[names(nsp)] <- as.integer(nsp)
+
+  richness
+}
+
+set.seed(87283)
+scales <- c(10, 20, 40)
+n.random <- 50
+richness <- list()
+
+for(i in seq_along(scales))
+{
+  side.i <- scales[i]
+
+  regular.quadrats <- make_quadrats_fast(
+    outer.xmin = 0,
+    outer.ymin = 0,
+    outer.xmax = 320,
+    outer.ymax = 500,
+    quadrat.side.x = side.i,
+    quadrat.side.y = side.i
+  )
+
+  complete.size <-
+    regular.quadrats$xmax - regular.quadrats$xmin == side.i &
+    regular.quadrats$ymax - regular.quadrats$ymin == side.i
+
+  regular.richness <- get_richness(regular.quadrats, trees)
+
+  random.quadrats <- data.frame(
+    quadrat_id = paste0("random_", side.i, "_", seq_len(n.random)),
+    xmin = runif(n.random, 0, 320 - side.i),
+    ymin = runif(n.random, 0, 500 - side.i)
+  )
+  random.quadrats$xmax <- random.quadrats$xmin + side.i
+  random.quadrats$ymax <- random.quadrats$ymin + side.i
+
+  richness[[paste0("regular ", side.i, " m")]] <-
+    regular.richness[complete.size]
+
+  # Overlap and incomplete coverage are intentional here.
+  richness[[paste0("random ", side.i, " m")]] <- suppressWarnings(
+    get_richness(random.quadrats, trees)
+  )
+
+  if(side.i == max(scales))
+    random.to.plot <- random.quadrats
+}
+
+round(sapply(richness, mean), 1)
+
+# Plot one set of random quadrats and the richness distributions.
+old.par <- par(no.readonly = TRUE)
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+
+plot(
+  trees$gx,
+  trees$gy,
+  pch = ".",
+  col = "grey65",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  main = "Random 40 m quadrats",
+  las = 1
 )
 
-trees <- data[living.i, c("treeID", "sp", "dbh")]
-trees$quadrat_id <- tree.membership$quadrat_id
-trees <- trees[, c("quadrat_id", "treeID", "sp", "dbh")]
+with(
+  random.to.plot,
+  rect(xmin, ymin, xmax, ymax, border = "tomato")
+)
 
-head(trees)
+boxplot(
+  richness,
+  names = c("R10", "X10", "R20", "X20", "R40", "X40"),
+  col = rep(c("grey80", "tomato"), 3),
+  xlab = "R: regular; X: random/overlapping",
+  ylab = "species per quadrat",
+  main = "Species richness",
+  las = 1
+)
+
+par(old.par)
 ```
+
+Incomplete quadrats along the outer plot edge are removed from the regular-grid summaries. The randomly located quadrats always retain their complete nominal size.
 
 ### Distances and neighboring quadrats
 
-The distance matrix below uses quadrat centroids. For 400 quadrats it is small enough to calculate directly with base R.
+The distance matrix below uses quadrat centroids. For 400 quadrats it is small enough to calculate directly with base R. The same chunk gets the four nearest quadrats and identifies those sharing an edge.
 
 ```{r}
+#| fig-width: 4.5
+#| fig-height: 6
+
 centroids <- cbind(
   x = (luquillo.quadrats$xmin + luquillo.quadrats$xmax) / 2,
   y = (luquillo.quadrats$ymin + luquillo.quadrats$ymax) / 2
@@ -666,11 +835,7 @@ rownames(centroids) <- luquillo.quadrats$quadrat_id
 
 quadrat.distances <- as.matrix(dist(centroids))
 quadrat.distances[1:5, 1:5]
-```
 
-The following gets the four nearest quadrats. Edge quadrats still receive four neighbors. For this regular grid, filtering to distance 20 m keeps only quadrats that share an edge.
-
-```{r}
 diag(quadrat.distances) <- Inf
 k <- 4
 nearest <- vector("list", nrow(quadrat.distances))
@@ -678,7 +843,7 @@ nearest <- vector("list", nrow(quadrat.distances))
 for(i in seq_len(nrow(quadrat.distances)))
 {
   j <- order(quadrat.distances[i, ])[seq_len(k)]
-  
+
   nearest[[i]] <- data.frame(
     quadrat_id = rownames(quadrat.distances)[i],
     neighbor_id = colnames(quadrat.distances)[j],
@@ -688,18 +853,66 @@ for(i in seq_len(nrow(quadrat.distances)))
 
 nearest <- do.call(rbind, nearest)
 rownames(nearest) <- NULL
-
 shared.edge <- nearest[nearest$distance == 20, ]
+
 head(shared.edge)
+
+# Show the shared-edge neighbors of one central quadrat.
+focus.quadrat <- "0813"
+focus.neighbors <- shared.edge$neighbor_id[
+  shared.edge$quadrat_id == focus.quadrat
+]
+
+i <- match(focus.quadrat, rownames(centroids))
+j <- match(focus.neighbors, rownames(centroids))
+
+xlim <- range(centroids[c(i, j), 1]) + c(-30, 30)
+ylim <- range(centroids[c(i, j), 2]) + c(-30, 30)
+
+plot(
+  xlim,
+  ylim,
+  type = "n",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  las = 1
+)
+
+with(
+  luquillo.quadrats,
+  rect(xmin, ymin, xmax, ymax, border = "grey80")
+)
+
+segments(
+  centroids[i, 1],
+  centroids[i, 2],
+  centroids[j, 1],
+  centroids[j, 2],
+  col = "tomato",
+  lwd = 2
+)
+
+points(centroids[i, 1], centroids[i, 2], pch = 16, cex = 1.2)
+points(centroids[j, 1], centroids[j, 2], pch = 16, col = "tomato")
 ```
 
-For much larger quadrat tables, use `FNN::get.knn()` on the centroid coordinates instead of constructing the complete distance matrix.
+Edge quadrats still receive four nearest neighbors, but have only two or three shared-edge neighbors. For much larger quadrat tables, use `FNN::get.knn()` on the centroid coordinates instead of constructing the complete distance matrix.
 
 ### Abundance, presence, and basal area
 
-Keep a sparse abundance table for ordinary grouped operations. A quadrat x species matrix is convenient when zeros or community comparisons are needed.
+Keep a sparse abundance table for ordinary grouped operations. A quadrat x species matrix is convenient when zeros or community comparisons are needed. The `dbh` values are in millimetres; missing diameters are omitted from the basal-area summary.
 
 ```{r}
+# Prepare the tree data used in this subsection.
+living.i <- which(
+  data$status == "A" &
+  !is.na(data$quadrat_id) &
+  !is.na(data$sp)
+)
+
+trees <- data[living.i, c("quadrat_id", "treeID", "sp", "dbh")]
+
 abundance <- aggregate(
   treeID ~ quadrat_id + sp,
   data = trees,
@@ -716,13 +929,6 @@ trees$sp <- factor(trees$sp, levels = sort(unique(trees$sp)))
 abundance.matrix <- xtabs(~ quadrat_id + sp, data = trees)
 presence.matrix <- abundance.matrix > 0
 
-head(abundance)
-dim(abundance.matrix)
-```
-
-The `dbh` values are in millimetres. Missing diameters are omitted from the basal-area summary.
-
-```{r}
 trees$basal_area <- pi * (trees$dbh / 2000)^2
 has.dbh <- !is.na(trees$dbh)
 
@@ -732,6 +938,8 @@ basal.area <- aggregate(
   FUN = sum
 )
 
+head(abundance)
+dim(abundance.matrix)
 head(basal.area)
 ```
 
@@ -739,9 +947,30 @@ The same grouped sum can be applied to a biomass column if biomass has already b
 
 ### Compare communities between quadrats
 
-For two quadrats, Bray-Curtis dissimilarity can be calculated directly from their abundance vectors.
+For two quadrats, Bray-Curtis dissimilarity can be calculated directly from their abundance vectors. This subsection rebuilds the required community matrix from the original data.
 
 ```{r}
+living.i <- which(
+  data$status == "A" &
+  !is.na(data$quadrat_id) &
+  !is.na(data$sp)
+)
+
+community.data <- data[living.i, c("quadrat_id", "sp")]
+community.data$quadrat_id <- factor(
+  community.data$quadrat_id,
+  levels = luquillo.quadrats$quadrat_id
+)
+community.data$sp <- factor(
+  community.data$sp,
+  levels = sort(unique(community.data$sp))
+)
+
+abundance.matrix <- xtabs(
+  ~ quadrat_id + sp,
+  data = community.data
+)
+
 community.1 <- abundance.matrix["0101", ]
 community.2 <- abundance.matrix["0102", ]
 
@@ -755,9 +984,48 @@ For all quadrat pairs, `vegan::vegdist(abundance.matrix, method = "bray")` retur
 
 ### Summarize neighboring communities
 
-This replaces narrow routines such as `findneighborabund()` and `neighbors()`. Select a species, attach its abundance and presence in each neighboring quadrat, and then summarize.
+This replaces narrow routines such as `findneighborabund()` and `neighbors()`. The required community matrix and shared-edge pairs are rebuilt here, so the example can run independently.
 
 ```{r}
+# Species abundance per quadrat.
+living.i <- which(
+  data$status == "A" &
+  !is.na(data$quadrat_id) &
+  !is.na(data$sp)
+)
+
+community.data <- data[living.i, c("quadrat_id", "sp")]
+community.data$quadrat_id <- factor(
+  community.data$quadrat_id,
+  levels = luquillo.quadrats$quadrat_id
+)
+community.data$sp <- factor(
+  community.data$sp,
+  levels = sort(unique(community.data$sp))
+)
+
+abundance.matrix <- xtabs(
+  ~ quadrat_id + sp,
+  data = community.data
+)
+presence.matrix <- abundance.matrix > 0
+
+# Pairs of quadrats that share an edge.
+centroids <- cbind(
+  x = (luquillo.quadrats$xmin + luquillo.quadrats$xmax) / 2,
+  y = (luquillo.quadrats$ymin + luquillo.quadrats$ymax) / 2
+)
+rownames(centroids) <- luquillo.quadrats$quadrat_id
+
+quadrat.distances <- as.matrix(dist(centroids))
+ij <- which(quadrat.distances == 20, arr.ind = TRUE)
+
+shared.edge <- data.frame(
+  quadrat_id = rownames(quadrat.distances)[ij[, 1]],
+  neighbor_id = colnames(quadrat.distances)[ij[, 2]]
+)
+
+# Summarize one species among neighboring quadrats.
 focus.sp <- names(which.max(colSums(abundance.matrix)))
 focus.abundance <- abundance.matrix[, focus.sp]
 focus.presence <- presence.matrix[, focus.sp]
