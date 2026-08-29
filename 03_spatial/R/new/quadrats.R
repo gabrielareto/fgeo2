@@ -971,11 +971,9 @@ assign_points_to_quadrats <- function(
   
   # Check boundary rule.
   if(length(boundary.rule) != 1 ||
+     is.na(boundary.rule) ||
      !boundary.rule %in% c("left_bottom", "right_top"))
-  {
-    boundary.rule <- "left_bottom"
-    warning("'boundary.rule' assumed 'left_bottom' by default; only valid alternative is 'right_top'")
-  }
+    stop("boundary.rule must be 'left_bottom' or 'right_top'")
   
   # Check point coordinates.
   if(missing(outer.x) || is.null(outer.x) || length(outer.x) == 0)
@@ -996,6 +994,9 @@ assign_points_to_quadrats <- function(
   
   if(!is.numeric(outer.x) || !is.numeric(outer.y))
     stop("outer.x and outer.y must be numeric")
+  
+  if(any(is.infinite(outer.x)) || any(is.infinite(outer.y)))
+    stop("outer.x and outer.y cannot contain Inf or -Inf")
   
   # Use sequential point IDs by default.
   if(something_missing(point.id))
@@ -1038,6 +1039,9 @@ assign_points_to_quadrats <- function(
   
   if(any(is.na(quadrat.locations[coord.cols])))
     stop("quadrat locations cannot contain NA")
+  
+  if(any(is.infinite(as.matrix(quadrat.locations[coord.cols]))))
+    stop("quadrat locations cannot contain Inf or -Inf")
   
   if(any(quadrat.locations$xmax <= quadrat.locations$xmin))
     stop("all quadrats must have xmax > xmin")
