@@ -710,6 +710,9 @@ get_quadrat_locations_from_outer_coordinates <- function(
   if(!is.numeric(outer.x) || !is.numeric(outer.y))
     stop("outer.x and outer.y must be numeric")
   
+  if(any(is.infinite(outer.x)) || any(is.infinite(outer.y)))
+    stop("outer.x and outer.y cannot contain Inf or -Inf")
+  
   if(length(regular) != 1 || is.na(regular) || !is.logical(regular))
     stop("regular must be TRUE or FALSE")
   
@@ -719,17 +722,30 @@ get_quadrat_locations_from_outer_coordinates <- function(
     stop("no complete quadrat.id, outer.x, and outer.y observations were supplied")
   
   # Defaults for outer dimensions
-  if(something_missing(outer.xmin))
+  inferred.bounds <- c(
+    outer.xmin = something_missing(outer.xmin),
+    outer.ymin = something_missing(outer.ymin),
+    outer.xmax = something_missing(outer.xmax),
+    outer.ymax = something_missing(outer.ymax)
+  )
+  
+  if(inferred.bounds[["outer.xmin"]])
     outer.xmin <- floor(min(outer.x, na.rm = TRUE))
   
-  if(something_missing(outer.ymin))
+  if(inferred.bounds[["outer.ymin"]])
     outer.ymin <- floor(min(outer.y, na.rm = TRUE))
   
-  if(something_missing(outer.xmax))
+  if(inferred.bounds[["outer.xmax"]])
     outer.xmax <- ceiling(max(outer.x, na.rm = TRUE))
   
-  if(something_missing(outer.ymax))
+  if(inferred.bounds[["outer.ymax"]])
     outer.ymax <- ceiling(max(outer.y, na.rm = TRUE))
+  
+  if(any(inferred.bounds))
+    warning(
+      "outer bounds inferred from observed coordinates: ",
+      paste(names(inferred.bounds)[inferred.bounds], collapse = ", ")
+    )
   
   if(length(outer.xmin) != 1 || !is.numeric(outer.xmin) || !is.finite(outer.xmin))
     stop("outer.xmin must be one finite numeric value")
@@ -791,7 +807,21 @@ get_quadrat_locations_from_outer_coordinates <- function(
   
   # For non-regular cases, remove local overlaps caused by the adjustment.
   if(!regular)
+  {
+    bad <- locations$xmax <= locations$xmin |
+      locations$ymax <= locations$ymin
+    
+    if(any(bad))
+      stop("could not infer positive dimensions for all quadrats")
+    
     locations <- make_quadrats_non_overlapping(locations, k = 8)
+    
+    bad <- locations$xmax <= locations$xmin |
+      locations$ymax <= locations$ymin
+    
+    if(any(bad))
+      stop("some quadrats ended with invalid dimensions after overlap adjustment")
+  }
   
   # Estimate a standard regular and complete grid.
   if(regular)
@@ -841,6 +871,12 @@ get_quadrat_locations_from_outer_coordinates <- function(
       col >= 1 & col <= ncol.grid &
       row >= 1 & row <= nrow.grid
     
+    if(any(!inside))
+      warning(
+        sum(!inside),
+        " complete observation(s) fell outside the outer extent and were ignored"
+      )
+    
     most.likely.quadrat.ids <- rep(NA_character_, nrow(grid))
     
     if(any(inside))
@@ -862,6 +898,16 @@ get_quadrat_locations_from_outer_coordinates <- function(
         ),
         FUN = length
       )
+      
+      ids.per.cell <- table(counts$grid.i)
+      conflicting.cells <- sum(ids.per.cell > 1)
+      
+      if(conflicting.cells > 0)
+        warning(
+          conflicting.cells,
+          " grid cell(s) contained more than one quadrat ID; ",
+          "the most frequent ID was retained"
+        )
       
       # For each grid cell, keep the most frequent observed quadrat ID.
       counts <- counts[order(counts$grid.i, -counts$n), ]
