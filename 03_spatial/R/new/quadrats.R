@@ -263,7 +263,7 @@ make_quadrats <- function(
   quadrat.side.y = NA,
   
   # How the ID is built
-  built = c("col+row", "row+col", "sequence"),
+  built = "sequence",
   example.part.for.col = "1",
   example.part.for.row = "1",
   example.part.for.sequence = "1",
@@ -290,11 +290,10 @@ make_quadrats <- function(
   }
   
   # Check ID convention
-  if(length(built) != 1 || !built %in% c("col+row", "row+col", "sequence"))
-  {
-    built <- "sequence"
-    warning("built = 'sequence' assumed by default")
-  }
+  if(length(built) != 1 ||
+     is.na(built) ||
+     !built %in% c("col+row", "row+col", "sequence"))
+    stop("built must be 'col+row', 'row+col', or 'sequence'")
   
   # Resolve quadrat sides here because they are also used below.
   if(something_missing(quadrat.side.x) && something_missing(quadrat.side.y))
@@ -376,7 +375,7 @@ make_quadrats <- function(
     
     if(changing.directions)
     {
-      if(along.columns.first.then.next.column)
+      if(along.columns.first.then.next.column && max(grid$col) >= 2)
       {
         for(i in seq(from = 2, to = max(grid$col), by = 2))
         {
@@ -385,7 +384,7 @@ make_quadrats <- function(
         }
       }
       
-      if(along.rows.first.then.next.row)
+      if(along.rows.first.then.next.row && max(grid$row) >= 2)
       {
         for(i in seq(from = 2, to = max(grid$row), by = 2))
         {
@@ -513,10 +512,10 @@ make_quadrats <- function(
       
       if(nchar(example.part.for.col) > 1)
       {
-        k <- ceiling(log(n, base = 26))
+        k <- nchar(example.part.for.col)
         
-        if(nchar(example.part.for.col) != k)
-          stop("unclear example part for 'col': you need a different number of characters")
+        if(n > 26^k)
+          stop("the column labels need more characters")
         
         basic.col.seq <- letter_seq_fixed(n = n, k = k)
       }
@@ -540,10 +539,10 @@ make_quadrats <- function(
       
       if(nchar(example.part.for.row) > 1)
       {
-        k <- ceiling(log(n, base = 26))
+        k <- nchar(example.part.for.row)
         
-        if(nchar(example.part.for.row) != k)
-          stop("unclear example part for 'row': you need a different number of characters")
+        if(n > 26^k)
+          stop("the row labels need more characters")
         
         basic.row.seq <- letter_seq_fixed(n = n, k = k)
       }
@@ -586,10 +585,10 @@ make_quadrats <- function(
       
       if(nchar(example.part.for.sequence) > 1)
       {
-        k <- ceiling(log(n, base = 26))
+        k <- nchar(example.part.for.sequence)
         
-        if(nchar(example.part.for.sequence) != k)
-          stop("unclear example.part.for.sequence: you need a different number of characters")
+        if(n > 26^k)
+          stop("the sequence labels need more characters")
         
         s <- letter_seq_fixed(n = n, k = k)
       }
@@ -648,10 +647,13 @@ make_quadrats <- function(
   }
   
   # Warn about smaller leftover quadrats.
-  if(any(grid$xmax - grid$xmin != quadrat.side.x))
+  widths <- grid$xmax - grid$xmin
+  heights <- grid$ymax - grid$ymin
+  
+  if(!isTRUE(all.equal(widths, rep(quadrat.side.x, length(widths)))))
     warning("the quadrats don't fit perfectly along x: quadrats at the end are smaller")
   
-  if(any(grid$ymax - grid$ymin != quadrat.side.y))
+  if(!isTRUE(all.equal(heights, rep(quadrat.side.y, length(heights)))))
     warning("the quadrats don't fit perfectly along y: quadrats at the end are smaller")
   
   # Trim, rename, and sort output.
