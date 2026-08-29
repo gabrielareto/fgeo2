@@ -31,7 +31,7 @@ letter_seq_fixed <- function(n, k) {
 }
 
 
-# AUXILIARY TO ENSURE NON-OVERLAPPING QUADRATS
+# AUXILIARY TO REDUCE LOCAL OVERLAPS AMONG NEARBY QUADRATS
  
 make_quadrats_non_overlapping <- function(quadrats, k = 8)
 {
@@ -41,12 +41,45 @@ make_quadrats_non_overlapping <- function(quadrats, k = 8)
   
   if(length(missing) > 0)
     stop("quadrats is missing: ", paste(missing, collapse = ", "))
+
+  if(nrow(quadrats) == 0)
+    return(quadrats)
+
+  if(any(is.na(quadrats$quadrat_id)))
+    stop("quadrat_id cannot contain NA")
+
+  if(anyDuplicated(quadrats$quadrat_id))
+    stop("quadrat_id must be unique")
+
+  coord.cols <- c("xmin", "ymin", "xmax", "ymax")
+
+  if(!all(sapply(quadrats[coord.cols], is.numeric)))
+    stop("xmin, ymin, xmax, and ymax must be numeric")
+
+  if(any(is.na(quadrats[coord.cols])))
+    stop("quadrat locations cannot contain NA")
+
+  if(any(is.infinite(as.matrix(quadrats[coord.cols]))))
+    stop("quadrat locations cannot contain Inf or -Inf")
+
+  if(any(quadrats$xmax <= quadrats$xmin))
+    stop("all quadrats must have xmax > xmin")
+
+  if(any(quadrats$ymax <= quadrats$ymin))
+    stop("all quadrats must have ymax > ymin")
+
+  if(nrow(quadrats) < 2)
+    return(quadrats)
+
+  if(length(k) != 1 ||
+     !is.numeric(k) ||
+     !is.finite(k) ||
+     k < 1 ||
+     k != floor(k))
+    stop("k must be one positive finite integer")
   
   if(!requireNamespace("FNN", quietly = TRUE))
     stop("install package 'FNN' to use make_quadrats_non_overlapping()")
-  
-  if(nrow(quadrats) < 2)
-    return(quadrats)
   
   # Original centroids define relative quadrat positions.
   cx <- (quadrats$xmin + quadrats$xmax) / 2
@@ -1390,7 +1423,6 @@ compile_points_from_quadrats <- function(
   
   out
 }
-
 
 
 
