@@ -615,45 +615,79 @@ all.equal(compiled.points, original.points, check.attributes = FALSE)
 
 ### Use two or more quadrat ID conventions
 
-The same grid can be labelled with row + column IDs. Match explicit locations to construct the crosswalk; do not translate the strings directly.
+ForestGEO tables may identify the same quadrats in different ways. A common combination is a CCRR code and a consecutive numerical index. The old CTFS / `fgeo` workflow converts between them indirectly, through functions such as `quad.to.gxgy()`, `gxgy.to.index()`, `index.to.gxgy()`, and their dependencies.
+
+For Luquillo, the historical index runs along the 25 rows of one column before moving to the next column: `0101` is 1, `0102` is 2, `0125` is 25, and `0201` is 26. The same correspondence can be obtained by building both quadrat tables and matching their explicit locations.
 
 ```{r}
-rrcc.quadrats <- make_quadrats(
+index.quadrats <- make_quadrats(
   outer.xmin = 0,
   outer.ymin = 0,
   outer.xmax = 320,
   outer.ymax = 500,
   quadrat.side.x = 20,
   quadrat.side.y = 20,
-  built = "row+col",
-  example.part.for.col = "01",
-  example.part.for.row = "01",
-  start.col.at = 1,
-  start.row.at = 1,
-  separator = ""
+  built = "sequence",
+  example.part.for.sequence = "1",
+  start.sequence.at = 1,
+  along.columns.first.then.next.column = TRUE,
+  along.rows.first.then.next.row = FALSE
+)
+
+names(index.quadrats)[1] <- "quadrat_index"
+index.quadrats$quadrat_index <- as.integer(
+  index.quadrats$quadrat_index
 )
 
 id.crosswalk <- merge(
   luquillo.quadrats,
-  rrcc.quadrats,
+  index.quadrats,
   by = c("xmin", "ymin", "xmax", "ymax"),
   all = TRUE,
-  suffixes = c("_CCRR", "_RRCC"),
   sort = FALSE
 )
 
+names(id.crosswalk)[names(id.crosswalk) == "quadrat_id"] <-
+  "quadrat_id_CCRR"
+
 id.crosswalk <- id.crosswalk[, c(
-  "quadrat_id_CCRR", "quadrat_id_RRCC",
+  "quadrat_id_CCRR", "quadrat_index",
   "xmin", "ymin", "xmax", "ymax"
 )]
+id.crosswalk <- id.crosswalk[order(id.crosswalk$quadrat_index), ]
+rownames(id.crosswalk) <- NULL
 
-stopifnot(!anyNA(id.crosswalk))
-head(id.crosswalk)
+stopifnot(
+  !anyNA(id.crosswalk),
+  !anyDuplicated(id.crosswalk$quadrat_id_CCRR),
+  !anyDuplicated(id.crosswalk$quadrat_index)
+)
+
+id.crosswalk[c(1, 2, 25, 26, 400), ]
+
+# Translate one quadrat-level table while preserving its row order.
+habitat.example <- data.frame(
+  quadrat_id_CCRR = c("0101", "0102", "0201"),
+  habitat = c("low", "slope", "high")
+)
+
+i <- match(
+  habitat.example$quadrat_id_CCRR,
+  id.crosswalk$quadrat_id_CCRR
+)
+
+habitat.example$quadrat_index <- id.crosswalk$quadrat_index[i]
+habitat.example
 ```
+
+The same crosswalk works in reverse by matching `quadrat_index`. It can also relate CCRR with RRCC, coordinate-based labels, or any other convention for which a quadrat-location table can be built. The location columns, rather than the strings themselves, define the correspondence.
 
 ### Nested quadrats within other quadrats
 
-This example splits every 20 x 20 m Luquillo quadrat into sixteen 5 x 5 m quadrats. The smaller IDs inherit the parent ID, for example `0101-11`.
+This example splits every 20 x 20 m Luquillo quadrat into sixteen 5 x 5 m quadrats. It keeps two identifiers for the smaller quadrats:
+
+-   `quadrat_id` inherits the parent ID, producing globally unique values such as `0101-11`. This is the recommended identifier.
+-   `subquadrat_id` follows the traditional ForestGEO convention `11`, `12`, ..., `44`. These values repeat within every parent quadrat and have only local meaning.
 
 ```{r}
 subquadrats <- vector("list", nrow(luquillo.quadrats))
@@ -673,13 +707,19 @@ for(i in seq_len(nrow(luquillo.quadrats)))
     example.part.for.col = "1",
     example.part.for.row = "1",
     start.col.at = 1,
-    start.row.at = 1,
-    prefix = paste0(parent$quadrat_id, "-")
+    start.row.at = 1
   )
 
+  q$subquadrat_id <- q$quadrat_id
   q$parent_quadrat_id <- parent$quadrat_id
+  q$quadrat_id <- paste0(
+    q$parent_quadrat_id,
+    "-",
+    q$subquadrat_id
+  )
+
   q <- q[, c(
-    "quadrat_id", "parent_quadrat_id",
+    "quadrat_id", "parent_quadrat_id", "subquadrat_id",
     "xmin", "ymin", "xmax", "ymax"
   )]
 
@@ -689,9 +729,37 @@ for(i in seq_len(nrow(luquillo.quadrats)))
 subquadrats <- do.call(rbind, subquadrats)
 rownames(subquadrats) <- NULL
 
-dim(subquadrats)
-head(subquadrats)
+inherited.ids <- subquadrats[, c(
+  "quadrat_id", "parent_quadrat_id",
+  "xmin", "ymin", "xmax", "ymax"
+)]
+
+local.ids <- subquadrats[, c(
+  "parent_quadrat_id", "subquadrat_id",
+  "xmin", "ymin", "xmax", "ymax"
+)]
+
+head(inherited.ids)
+head(local.ids)
+
+# The local ID 11 occurs once within every parent quadrat.
+local.ids[
+  local.ids$subquadrat_id == "11" &
+  local.ids$parent_quadrat_id %in% c("0101", "0102"),
+]
+
+id.checks <- c(
+  inherited_ids_are_unique = !anyDuplicated(inherited.ids$quadrat_id),
+  local_ids_are_unique = !anyDuplicated(local.ids$subquadrat_id),
+  parent_plus_local_is_unique = !anyDuplicated(
+    local.ids[, c("parent_quadrat_id", "subquadrat_id")]
+  )
+)
+
+id.checks
 ```
+
+For the traditional structure, `{parent_quadrat_id, subquadrat_id}` is a compound key. Joining tables by `subquadrat_id` alone would mix locations from different parent quadrats. Whole-plot operations with the new functions require the unique inherited `quadrat_id`; the original `subquadrat_id` can still be retained as a separate field. This replaces the fixed `lxly.to.p5()` / `add_subquad()` case with the general splitting procedure.
 
 ## Quadrat-level ecological tasks
 
@@ -821,86 +889,6 @@ par(old.par)
 
 Incomplete quadrats along the outer plot edge are removed from the regular-grid summaries. The randomly located quadrats always retain their complete nominal size.
 
-### Distances and neighboring quadrats
-
-The distance matrix below uses quadrat centroids. For 400 quadrats it is small enough to calculate directly with base R. The same chunk gets the four nearest quadrats and identifies those sharing an edge.
-
-```{r}
-#| fig-width: 4.5
-#| fig-height: 6
-
-centroids <- cbind(
-  x = (luquillo.quadrats$xmin + luquillo.quadrats$xmax) / 2,
-  y = (luquillo.quadrats$ymin + luquillo.quadrats$ymax) / 2
-)
-rownames(centroids) <- luquillo.quadrats$quadrat_id
-
-quadrat.distances <- as.matrix(dist(centroids))
-quadrat.distances[1:5, 1:5]
-
-diag(quadrat.distances) <- Inf
-k <- 4
-nearest <- vector("list", nrow(quadrat.distances))
-
-for(i in seq_len(nrow(quadrat.distances)))
-{
-  j <- order(quadrat.distances[i, ])[seq_len(k)]
-
-  nearest[[i]] <- data.frame(
-    quadrat_id = rownames(quadrat.distances)[i],
-    neighbor_id = colnames(quadrat.distances)[j],
-    distance = quadrat.distances[i, j]
-  )
-}
-
-nearest <- do.call(rbind, nearest)
-rownames(nearest) <- NULL
-shared.edge <- nearest[nearest$distance == 20, ]
-
-head(shared.edge)
-
-# Show the shared-edge neighbors of one central quadrat.
-focus.quadrat <- "0813"
-focus.neighbors <- shared.edge$neighbor_id[
-  shared.edge$quadrat_id == focus.quadrat
-]
-
-i <- match(focus.quadrat, rownames(centroids))
-j <- match(focus.neighbors, rownames(centroids))
-
-xlim <- range(centroids[c(i, j), 1]) + c(-30, 30)
-ylim <- range(centroids[c(i, j), 2]) + c(-30, 30)
-
-plot(
-  xlim,
-  ylim,
-  type = "n",
-  asp = 1,
-  xlab = "outer x",
-  ylab = "outer y",
-  las = 1
-)
-
-with(
-  luquillo.quadrats,
-  rect(xmin, ymin, xmax, ymax, border = "grey80")
-)
-
-segments(
-  centroids[i, 1],
-  centroids[i, 2],
-  centroids[j, 1],
-  centroids[j, 2],
-  col = "tomato",
-  lwd = 2
-)
-
-points(centroids[i, 1], centroids[i, 2], pch = 16, cex = 1.2)
-points(centroids[j, 1], centroids[j, 2], pch = 16, col = "tomato")
-```
-
-Edge quadrats still receive four nearest neighbors, but have only two or three shared-edge neighbors. For much larger quadrat tables, use `FNN::get.knn()` on the centroid coordinates instead of constructing the complete distance matrix.
-
 ### Abundance, presence, and basal area
 
 Keep a sparse abundance table for ordinary grouped operations. A quadrat x species matrix is convenient when zeros or community comparisons are needed. The `dbh` values are in millimetres; missing diameters are omitted from the basal-area summary.
@@ -947,105 +935,266 @@ head(basal.area)
 
 The same grouped sum can be applied to a biomass column if biomass has already been estimated for each tree.
 
-### Compare communities between quadrats
+### Find neighboring quadrats
 
-For two quadrats, Bray-Curtis dissimilarity can be calculated directly from their abundance vectors. This subsection rebuilds the required community matrix from the original data.
-
-```{r}
-living.i <- which(
-  data$status == "A" &
-  !is.na(data$quadrat_id) &
-  !is.na(data$sp)
-)
-
-community.data <- data[living.i, c("quadrat_id", "sp")]
-community.data$quadrat_id <- factor(
-  community.data$quadrat_id,
-  levels = luquillo.quadrats$quadrat_id
-)
-community.data$sp <- factor(
-  community.data$sp,
-  levels = sort(unique(community.data$sp))
-)
-
-abundance.matrix <- xtabs(
-  ~ quadrat_id + sp,
-  data = community.data
-)
-
-community.1 <- abundance.matrix["0101", ]
-community.2 <- abundance.matrix["0102", ]
-
-bray.curtis <- sum(abs(community.1 - community.2)) /
-  sum(community.1 + community.2)
-
-bray.curtis
-```
-
-For all quadrat pairs, `vegan::vegdist(abundance.matrix, method = "bray")` returns the corresponding distance object.
-
-### Summarize neighboring communities
-
-This replaces narrow routines such as `findneighborabund()` and `neighbors()`. The required community matrix and shared-edge pairs are rebuilt here, so the example can run independently.
+The old `findborderquads()` function returned the surrounding 3 x 3 neighborhood: up to eight quadrats sharing an edge or a corner with the target quadrat. The same result can be obtained from quadrat centroids with `FNN::get.knn()`. Eight candidates are requested and then filtered to the diagonal distance of one 20 x 20 m quadrat.
 
 ```{r}
-# Species abundance per quadrat.
-living.i <- which(
-  data$status == "A" &
-  !is.na(data$quadrat_id) &
-  !is.na(data$sp)
-)
+#| fig-width: 4.5
+#| fig-height: 6
 
-community.data <- data[living.i, c("quadrat_id", "sp")]
-community.data$quadrat_id <- factor(
-  community.data$quadrat_id,
-  levels = luquillo.quadrats$quadrat_id
-)
-community.data$sp <- factor(
-  community.data$sp,
-  levels = sort(unique(community.data$sp))
-)
+if(!requireNamespace("FNN", quietly = TRUE))
+  stop("install package 'FNN' to run this example")
 
-abundance.matrix <- xtabs(
-  ~ quadrat_id + sp,
-  data = community.data
-)
-presence.matrix <- abundance.matrix > 0
-
-# Pairs of quadrats that share an edge.
 centroids <- cbind(
   x = (luquillo.quadrats$xmin + luquillo.quadrats$xmax) / 2,
   y = (luquillo.quadrats$ymin + luquillo.quadrats$ymax) / 2
 )
 rownames(centroids) <- luquillo.quadrats$quadrat_id
 
-quadrat.distances <- as.matrix(dist(centroids))
-ij <- which(quadrat.distances == 20, arr.ind = TRUE)
+k <- 8
+knn <- FNN::get.knn(centroids, k = k)
 
-shared.edge <- data.frame(
-  quadrat_id = rownames(quadrat.distances)[ij[, 1]],
-  neighbor_id = colnames(quadrat.distances)[ij[, 2]]
+neighbors <- data.frame(
+  quadrat_id = rep(rownames(centroids), each = k),
+  neighbor_id = rownames(centroids)[as.vector(t(knn$nn.index))],
+  distance = as.vector(t(knn$nn.dist)),
+  stringsAsFactors = FALSE
 )
 
-# Summarize one species among neighboring quadrats.
+maximum.distance <- sqrt(2) * 20
+neighbors <- neighbors[
+  neighbors$distance <= maximum.distance + sqrt(.Machine$double.eps),
+]
+rownames(neighbors) <- NULL
+
+head(neighbors)
+table(table(neighbors$quadrat_id))
+
+# Show the eight neighbors of one central quadrat.
+focus.quadrat <- "0813"
+focus.neighbors <- neighbors$neighbor_id[
+  neighbors$quadrat_id == focus.quadrat
+]
+
+i <- match(focus.quadrat, rownames(centroids))
+j <- match(focus.neighbors, rownames(centroids))
+look.at <- match(
+  c(focus.quadrat, focus.neighbors),
+  luquillo.quadrats$quadrat_id
+)
+
+xlim <- range(
+  luquillo.quadrats$xmin[look.at],
+  luquillo.quadrats$xmax[look.at]
+) + c(-10, 10)
+
+ylim <- range(
+  luquillo.quadrats$ymin[look.at],
+  luquillo.quadrats$ymax[look.at]
+) + c(-10, 10)
+
+plot(
+  xlim,
+  ylim,
+  type = "n",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  las = 1
+)
+
+with(
+  luquillo.quadrats,
+  rect(xmin, ymin, xmax, ymax, border = "grey80")
+)
+
+with(
+  luquillo.quadrats[j, ],
+  rect(
+    xmin, ymin, xmax, ymax,
+    col = adjustcolor("tomato", alpha.f = 0.3),
+    border = "tomato"
+  )
+)
+
+with(
+  luquillo.quadrats[i, ],
+  rect(xmin, ymin, xmax, ymax, col = "grey25", border = "black")
+)
+
+segments(
+  centroids[i, 1],
+  centroids[i, 2],
+  centroids[j, 1],
+  centroids[j, 2],
+  col = "tomato"
+)
+
+points(centroids[i, 1], centroids[i, 2], pch = 16)
+points(centroids[j, 1], centroids[j, 2], pch = 16, col = "tomato")
+```
+
+The distance filter removes extra nearest quadrats at the plot boundary, leaving three neighbors at corners, five along edges, and eight in the interior. For unequal or irregular quadrats, nearest centroids and touching quadrats are not necessarily equivalent; the filtering rule must then be adapted.
+
+### Compare target quadrats with their neighbors
+
+The neighbor table contains one row per directed target-neighbor pair. The next step compares the same quantities for the target quadrat and its surrounding quadrats. For one focal species, this gives target abundance and presence together with mean neighboring abundance and the proportion of neighboring quadrats where the species is present. This directly substitutes `findneighborabund()` and `neighbors()` without requiring a vector ordered by an implicit quadrat index.
+
+The same pairs can be used for whole-community comparisons. Here Bray-Curtis dissimilarity is calculated with `vegan::vegdist()`, and each quadrat is mapped by its mean dissimilarity to the surrounding quadrats.
+
+```{r}
+#| fig-width: 4.5
+#| fig-height: 6
+
+if(!requireNamespace("FNN", quietly = TRUE))
+  stop("install package 'FNN' to run this example")
+
+if(!requireNamespace("vegan", quietly = TRUE))
+  stop("install package 'vegan' to run this example")
+
+# Recreate the neighbor table so this example can run by itself.
+centroids <- cbind(
+  x = (luquillo.quadrats$xmin + luquillo.quadrats$xmax) / 2,
+  y = (luquillo.quadrats$ymin + luquillo.quadrats$ymax) / 2
+)
+rownames(centroids) <- luquillo.quadrats$quadrat_id
+
+k <- 8
+knn <- FNN::get.knn(centroids, k = k)
+
+neighbors <- data.frame(
+  quadrat_id = rep(rownames(centroids), each = k),
+  neighbor_id = rownames(centroids)[as.vector(t(knn$nn.index))],
+  distance = as.vector(t(knn$nn.dist)),
+  stringsAsFactors = FALSE
+)
+
+maximum.distance <- sqrt(2) * 20
+neighbors <- neighbors[
+  neighbors$distance <= maximum.distance + sqrt(.Machine$double.eps),
+]
+rownames(neighbors) <- NULL
+
+# Build one quadrat x species abundance matrix.
+living.i <- which(
+  data$status == "A" &
+  !is.na(data$quadrat_id) &
+  !is.na(data$sp)
+)
+
+community.data <- data[living.i, c("quadrat_id", "sp")]
+community.data$quadrat_id <- factor(
+  community.data$quadrat_id,
+  levels = luquillo.quadrats$quadrat_id
+)
+community.data$sp <- factor(
+  community.data$sp,
+  levels = sort(unique(community.data$sp))
+)
+
+abundance.matrix <- xtabs(
+  ~ quadrat_id + sp,
+  data = community.data
+)
+
+# Compare one species in targets and neighboring quadrats.
 focus.sp <- names(which.max(colSums(abundance.matrix)))
 focus.abundance <- abundance.matrix[, focus.sp]
-focus.presence <- presence.matrix[, focus.sp]
 
-shared.edge$abundance <- focus.abundance[shared.edge$neighbor_id]
-shared.edge$presence <- focus.presence[shared.edge$neighbor_id]
+target.summary <- data.frame(
+  quadrat_id = rownames(abundance.matrix),
+  target_abundance = as.numeric(focus.abundance),
+  target_presence = as.integer(focus.abundance > 0),
+  stringsAsFactors = FALSE
+)
+
+j <- match(neighbors$neighbor_id, target.summary$quadrat_id)
+neighbor.values <- neighbors
+neighbor.values$abundance <- target.summary$target_abundance[j]
+neighbor.values$presence <- target.summary$target_presence[j]
 
 neighbor.summary <- aggregate(
   cbind(abundance, presence) ~ quadrat_id,
-  data = shared.edge,
-  FUN = sum
+  data = neighbor.values,
+  FUN = mean
+)
+names(neighbor.summary)[2:3] <- c(
+  "mean_neighbor_abundance",
+  "proportion_neighbors_present"
 )
 
-n.neighbors <- table(shared.edge$quadrat_id)
-neighbor.summary$proportion_present <-
-  neighbor.summary$presence /
-  as.integer(n.neighbors[neighbor.summary$quadrat_id])
+i <- match(target.summary$quadrat_id, neighbor.summary$quadrat_id)
+quadrat.comparison <- cbind(
+  target.summary,
+  neighbor.summary[i, 2:3, drop = FALSE]
+)
+
+# Compare complete communities among the same pairs.
+bray.curtis <- as.matrix(
+  vegan::vegdist(abundance.matrix, method = "bray")
+)
+
+i <- match(neighbors$quadrat_id, rownames(bray.curtis))
+j <- match(neighbors$neighbor_id, colnames(bray.curtis))
+neighbors$bray_curtis <- bray.curtis[cbind(i, j)]
+
+beta.summary <- aggregate(
+  bray_curtis ~ quadrat_id,
+  data = neighbors,
+  FUN = mean
+)
+names(beta.summary)[2] <- "mean_neighbor_bray_curtis"
+
+i <- match(quadrat.comparison$quadrat_id, beta.summary$quadrat_id)
+quadrat.comparison$mean_neighbor_bray_curtis <-
+  beta.summary$mean_neighbor_bray_curtis[i]
 
 focus.sp
-head(neighbor.summary)
+head(quadrat.comparison)
+
+# Map mean community dissimilarity to neighboring quadrats.
+beta.map <- luquillo.quadrats
+i <- match(beta.map$quadrat_id, quadrat.comparison$quadrat_id)
+beta.map$mean_bray_curtis <-
+  quadrat.comparison$mean_neighbor_bray_curtis[i]
+
+map.colors <- hcl.colors(100, palette = "YlOrRd", rev = TRUE)
+zlim <- range(beta.map$mean_bray_curtis)
+breaks <- seq(zlim[1], zlim[2], length.out = 101)
+color.i <- findInterval(
+  beta.map$mean_bray_curtis,
+  breaks,
+  all.inside = TRUE
+)
+
+plot(
+  c(0, 320),
+  c(0, 500),
+  type = "n",
+  asp = 1,
+  xlab = "outer x",
+  ylab = "outer y",
+  main = "Mean Bray-Curtis to neighbors",
+  las = 1
+)
+
+with(
+  beta.map,
+  rect(
+    xmin, ymin, xmax, ymax,
+    col = map.colors[color.i],
+    border = "white"
+  )
+)
+
+mtext(
+  paste0(
+    "light: ", round(zlim[1], 2),
+    "    dark: ", round(zlim[2], 2)
+  ),
+  side = 3,
+  line = 0.3,
+  cex = 0.8
+)
 ```
