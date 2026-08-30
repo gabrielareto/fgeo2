@@ -53,7 +53,7 @@ If the project has quadrat-level data at different scales (e.g. at the hectare l
 
 As said above, the code developed here does things at *an*y scale, and does *not* track coordinates that refer to an absolute or whole-plot-level scale, beyond of whatever the user inputs. The way to keep track of things relative to a whole-plot-level scale is to always express quadrat-level locations relative to the whole plot, even if the quadrats come from a nested structure. Using coordinates that refer to the whole plot is also the most obvious way in which quadrat-level locations, at any resolution, can be stored permanently.
 
-# Code
+# Functions
 
 The new code targets the same general tasks that CTFS and `fgeo` code did. Most importantly, it goes from outer (global) to inner (local) coordinates and *vice versa*. This new version of the code is articulated around the idea that the user has to arrive, as soon as possible, to the quadrat-level locations. Then those locations must be stored permanently and used from then on, following good practices. The new code also tries to fulfill other general criteria, like reducing the number of functions and dependencies, and make the functions more usable outside "orthodox ForestGEO" tables.
 
@@ -98,7 +98,9 @@ The new code tries to handle a much broader range of quadrat IDing conventions t
 
 Note that the code gets locations + IDs. It will ask for the basic information of unit and sub-unit size.
 
-## Parameters
+## Parameters for `make_quadrats()`
+
+The `make_quadrats()` function accepts complex quadrat ID conventions, through a long list of potential parameters.
 
 -   `outer.xmin`, `outer.ymin`: Minimum x and y coordinates of the outer coordinate extent. These values define the lower-left corner of the coordinate frame in which quadrat locations will be expressed. If missing, both are assumed to be `0`.
 
