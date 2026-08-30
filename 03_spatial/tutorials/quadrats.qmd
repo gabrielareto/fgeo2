@@ -615,7 +615,7 @@ all.equal(compiled.points, original.points, check.attributes = FALSE)
 
 ### Use two or more quadrat ID conventions
 
-ForestGEO tables may identify the same quadrats in different ways. A common combination is a CCRR code and a consecutive numerical index. The old CTFS / `fgeo` workflow converts between them indirectly, through functions such as `quad.to.gxgy()`, `gxgy.to.index()`, `index.to.gxgy()`, and their dependencies.
+ForestGEO tables may identify the same quadrats in different ways. A common combination is a CCRR code and a consecutive numerical index. The old CTFS / `fgeo` workflow converts between them through functions such as `quad.to.gxgy()`, `gxgy.to.index()`, `index.to.gxgy()`, and their dependencies.
 
 For Luquillo, the historical index runs along the 25 rows of one column before moving to the next column: `0101` is 1, `0102` is 2, `0125` is 25, and `0201` is 26. The same correspondence can be obtained by building both quadrat tables and matching their explicit locations.
 
@@ -759,7 +759,7 @@ id.checks <- c(
 id.checks
 ```
 
-For the traditional structure, `{parent_quadrat_id, subquadrat_id}` is a compound key. Joining tables by `subquadrat_id` alone would mix locations from different parent quadrats. Whole-plot operations with the new functions require the unique inherited `quadrat_id`; the original `subquadrat_id` can still be retained as a separate field. This replaces the fixed `lxly.to.p5()` / `add_subquad()` case with the general splitting procedure.
+For the traditional structure, `{parent_quadrat_id, subquadrat_id}` is a compound key. Joining tables by `subquadrat_id` alone would mix locations from different parent quadrats. Whole-plot operations with the new functions require the unique inherited `quadrat_id`; the original `subquadrat_id` can still be retained as a separate field. This replaces the fixed `lxly.to.p5()` and `add_subquad()` functions in `CTFS` and `fgeo` code.
 
 ## Quadrat-level ecological tasks
 
