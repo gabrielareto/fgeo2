@@ -2689,36 +2689,7 @@ asymptote.exp=function(x,param,...)
 # 
 # 
 # 
-# <function>
-# <name>
-# graph.mvnorm
-# </name>
-# <description>
-# Graphs contours for an mvnorm, with parameters submitted as a
-# vector, as described above, for a single 2D Gaussian.
-# The probability has to be calculated on a grid so contours can be drawn.
-# The argument exclude allows parts to be set to zero.
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-graph.mvnorm=function(param,x,y,div=10,add=FALSE,clr="gray",lw=.5,pw=2,exclude=NULL,returnit=FALSE)
-{
- arranged=composeParam.GaussianMap(drop(as.matrix(param)),N=1)
 
- pts=full.xygrid(x,y)
- probdensity=dmvnorm(pts,mean=arranged$center,sigma=arranged$sigma[[1]])
- if(!is.null(exclude)) probdensity[exclude]=0
- 
- breaks=seq(0,max(probdensity),len=div)
-
- contour.quaddata(probdensity,x=x,y=y,breaks=breaks,add=add,clr=clr,lwidth=lw,w=pw)
- if(returnit) return(probdensity)
-}
 # </source>
 # </function>
 # 
