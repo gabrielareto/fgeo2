@@ -4,9 +4,8 @@
 # useful. They simply rearrange various types of data into the correct format.  <br><br> The first, coldata.to.imagemat,
 # converts a vector of response variables and converts it into a matrix of the correct form for use by contour, image, and
 # filled.contour. There must be one value of the response z for every position in a grid overlain on the map. In the case of
-# CTFS Plots, this means a value for z at every quadrat, though quadrat can be any size.  The function abundanceperquad
-# (abundance.r) produces exactly the correct kind of vector for use by coldata.to.imagemat. The function gxgy.to.index
-# (quadfunc.r) produces quadrat numbers that are the correct vector for use by coldata.to.imagemat.  <br><br> For example,
+# CTFS Plots, this means a value for z at every quadrat, though quadrats can be any size. The values can be calculated after
+# assigning records with assign_points_to_quadrats() and summarizing the response for each quadrat.  <br><br> For example,
 # consider a 50 ha plot of 1000 x 500 meters. If gridsize=20, the standard quadrat, then there are 50 columns x 25 rows in the
 # plot.  In that case, the length of vector z must be exactly 1250, length(x) must be exactly 50, and length(y) exactly 25.
 # Alternatively, x and y can be set NULL and it will be calculated from plotmax=c(1000,500) and plotmin=c(0,0). The simplest
@@ -25,10 +24,9 @@
 # calculated using plotmax.  <li> gridsize: Size of quadrats into which the map is divided; must be square quadrats. This
 # cannot be NULL.  <li> plotmin: The minimum plot x and y coordinates; in CTFS plots, these are always 0,0. Ignored if x and y
 # are submitted.  <li> plotmax: Maximum plot x and y coordinates. The default, 1000,500, is typical CTFS 50-ha plot. Ignored if
-# x and y are submitted.  </ul> </arguments> <sample> CTFSplot('bci',6,'full')<br>
-# BA=abundanceperquad(bci.full6,gridsize=20,plotdim=c(1000,500),type='ba')<br> totalBAperquad=colSums(BA$ba)<br>
-# summary(totalBAperquad)<br>
-# matrixdata=coldata.to.imagemat(z=totalBAperquad,x=NULL,y=NULL,gridsize=20,plotmax=c(1000,500))<br> length(totalBAperquad)<br>
+# x and y are submitted.  </ul> </arguments> <sample> quadrat.response <- seq_len(1250)<br>
+# summary(quadrat.response)<br>
+# matrixdata=coldata.to.imagemat(z=quadrat.response,x=NULL,y=NULL,gridsize=20,plotmax=c(1000,500))<br> length(quadrat.response)<br>
 # dim(matrixdata$mat)<br> length(matrixdata$x) </sample> <source>
 coldata.to.imagemat <- function(z, x = NULL, y = NULL, gridsize = 20, plotmin = c(0, 0), plotmax = c(1000, 500)) {
     if (length(gridsize) == 1) 
@@ -68,9 +66,9 @@ coldata.to.imagemat <- function(z, x = NULL, y = NULL, gridsize = 20, plotmin = 
 # inches; ignored if newgraph=FALSE <li> h, w: height and width of graph window in units which depend on the export device
 # chosen (some are pixels, some are inches); ignored if newgraph=FALSE <li> export: if newgraph=TRUE, this defines the graphics
 # device; options include X11, quartz, win.graph, win.metafile, png, bmp, jpeg, pdf (not quoted!)  <li> graphfile: the file
-# name if export is pdf, png, jpeg, win.metafile, etc.  </ul> </arguments> <sample> CTFSplot('bci',6,'full')
-# N=colSums(abundanceperquad(bci.full6,plotdim=c(1000,500),grid=20)$abund)
-# matdata=coldata.to.imagemat(z=N,gridsize=20,plotmax=c(1000,500))
+# name if export is pdf, png, jpeg, win.metafile, etc.  </ul> </arguments> <sample>
+# quadrat.response <- seq(100, 400, length.out = 1250)
+# matdata=coldata.to.imagemat(z=quadrat.response,gridsize=20,plotmax=c(1000,500))
 # imageGraph(matrixdata=matdata,breaks=seq(100,400,by=25),img=TRUE,cntrs=FALSE,newgraph=FALSE,plotsize=6,h=11,w=11)
 # imageGraph(matrixdata=matdata,breaks=seq(100,400,by=25),img=TRUE,cntrs=TRUE,newgraph=FALSE,plotsize=6,h=11,w=11)
 # imageGraph(matrixdata=matdata,breaks=seq(100,400,by=25),img=TRUE,cntrs=FALSE,newgraph=TRUE,export=win.graph,h=11,w=11,plotsize=8)

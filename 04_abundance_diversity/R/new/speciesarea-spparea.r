@@ -8,9 +8,9 @@
 # species vs. individuals in every quadrat is created as the program runs. <br><br> This can also be used to calculate genus-
 # or family-area curves with use of the spcolumn argument. The censdata table must have a new column added, for example the
 # genus for every record, then spcolumn can be set to 'genus'. <br><br> Note: randomly-placed quadrats produce statistically
-# preferable species-area curves than checkerboards of non-overlapping quadrats. If required, though, the function
-# abundanceperquad() in abundance.r offers a fast way to count the number of species in checkerboard-type quadrats of different
-# sizes.  <arguments> <ul> <li> censdata: one R Analytical Table, either full or stem <li> spcolumn: name of the column in the
+# preferable species-area curves than checkerboards of non-overlapping quadrats. Species richness in checkerboard quadrats can
+# instead be calculated after assigning stems with assign_points_to_quadrats().  <arguments> <ul> <li> censdata: one R
+# Analytical Table, either full or stem <li> spcolumn: name of the column in the
 # table having the species; defaults to 'sp', but can be set to 'genus' for 'family' if desired <li> size: a vector of quadrat
 # sizes, referring to the x-dimension of a rectangular quadrat <li> rectdim: the ratio of y to x dimensions of the rectangles;
 # rectdim=1 (the default) for squares <li> mindbh: the minimum dbh included <li> plotdim: the x and y dimensions of the entire
@@ -67,6 +67,7 @@ spparea.sq <- function(censdata, spcolumn = "sp", size, rectdim = 1, mindbh = NU
     return(list(spparea = data.frame(xdim, ydim, area, indiv, SDindiv, taxa, SDtaxa), full = full))
 }
 # </source> </function>
+
 
 
 
@@ -188,6 +189,4 @@ coverage.diag <- function(randomquads, slope = 1, plotdim = c(1000, 500), graphi
     return(covered)
 }
 # </source> </function>
-
-
 
