@@ -31,10 +31,10 @@ fullplot.imageJ <- function(path = "", outfile = "plotLxLy.txt", delim = ",", in
     if (substr(path, lenpath, lenpath + 1) != "/") 
         path <- paste(path, "/", sep = "")
     
-    # Get all the quadrat names
-    allcol <- colrange[1]:colrange[2]
-    allrow <- rowrange[1]:rowrange[2]
-    allquad <- as.vector(t(outer(convert.rowcol(allcol), convert.rowcol(allrow), pst)))
+    # Get all the quadrat names.
+    allcol <- sprintf("%02d", colrange[1]:colrange[2])
+    allrow <- sprintf("%02d", rowrange[1]:rowrange[2])
+    allquad <- as.vector(t(outer(allcol, allrow, paste0)))
     
     # Get all the files specified by the path and subdirectories if included
     filelist <- list.files(recursive = include.subdir, path = path)
