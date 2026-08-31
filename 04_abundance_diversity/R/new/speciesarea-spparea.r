@@ -141,38 +141,6 @@ selectrandomquad3 <- function(size, shape, rep, plotdim = c(1000, 500), graphit 
 
 
 
-# <function> <name> selectrandomquad2 </name> <description> Creates randomly drawn quadrats, using same arguments and producing
-# same return value as selectrandomquad, but using a different algorithm aimed at capturing corners. The result, however, is
-# not to capture corners any better than selectrandomquad() does.<br><br>
-
-# Imagine a line running vertically at x=0 from y=0 to y=plotdim[2]-size, then continues at x=1 from 0 to plotdim[2]-size, etc.
-# It's wrapping analogous to the way quadrat indices wrap (see gxgy.to.index in quadfunc.r).  This line has length
-# (plotdim[1]-size)*(plotdim[2]-size).  Draw a random number on that line, and place the lower left corner of random square at
-# that point. <br><br>
-
-# A position x on the line is converted to plot coordinates gx, gy using function index.to.gxgy with grid=1 </description>
-# <arguments> </arguments> <sample> </sample> <source>
-selectrandomquad2 <- function(size, rep, plotdim = c(1000, 500), graphit = FALSE) {
-    linelen <- (plotdim[1] - size) * (plotdim[2] - size)
-    r <- runif(rep, min = 0, max = linelen)
-    
-    coord <- index.to.gxgy(r, grid = 1, plotdim = plotdim - size)
-    
-    xlo <- coord$gx
-    ylo <- coord$gy
-    xhi <- xlo + size
-    yhi <- ylo + size
-    
-    result <- data.frame(xlo, ylo, xhi, yhi)
-    if (graphit) 
-        graph.quadrats(result)
-    
-    return(data.frame(xlo, ylo, xhi, yhi, area = (size * size)/10000))
-}
-# </source> </function>
-
-
-
 # <function> <name> graph.quadrats </name> <description> Make a graph of a series of quadrats whose corners are given by the
 # rows of coord: xlo, ylo, xhi, yhi. This is used in illustrating randomly selected quadrats.  </description> <arguments>
 # </arguments> <sample>
