@@ -30,7 +30,8 @@ get_all_dependencies <- function(
     include_global = TRUE,
     internal = TRUE,
     resolve_imports = TRUE,
-    resolve_unique_names = FALSE
+    resolve_unique_names = FALSE,
+    envir = .GlobalEnv
 ) {
   make_id <- function(pkg, nm) paste(pkg, nm, sep = "::")
   key <- function(pkg, nm) paste(pkg, nm, sep = "\r")
@@ -56,8 +57,8 @@ get_all_dependencies <- function(
   }
   
   get_global_functions <- function() {
-    nms <- ls(.GlobalEnv, all.names = TRUE)
-    get_env_functions(.GlobalEnv, ".GlobalEnv", nms)
+    nms <- ls(envir, all.names = TRUE)
+    get_env_functions(envir, ".GlobalEnv", nms)
   }
   
   get_package_functions <- function(pkg) {
@@ -338,6 +339,14 @@ commit_from_date <- function(path, date, ref = "HEAD")
   if (!is.null(attr(commit_id, "status"))) {
     stop(paste(commit_id, collapse = "\n"), call. = FALSE)
   }
+
+  if (!length(commit_id) || !nzchar(commit_id[1])) {
+    stop(
+      "No commit was found on or before ", as.Date(date), ". ",
+      "If this is a shallow clone, run 'git fetch --unshallow' first.",
+      call. = FALSE
+    )
+  }
   
   commit_id[1]
 }
@@ -346,6 +355,16 @@ commit_from_date <- function(path, date, ref = "HEAD")
 make_dir_to_point_in_history <- function(path, commit)
 {
   path <- normalizePath(path)
+
+  # Remove registrations left by interrupted evaluations.
+  status <- system2(
+    "git",
+    c("-C", shQuote(path), "worktree", "prune")
+  )
+
+  if (!identical(status, 0L)) {
+    stop("git worktree prune failed.", call. = FALSE)
+  }
   
   # Resolve commit / tag to full commit hash
   commit_id <- system2(
@@ -356,7 +375,11 @@ make_dir_to_point_in_history <- function(path, commit)
   )
   
   if (!is.null(attr(commit_id, "status"))) {
-    stop(paste(commit_id, collapse = "\n"), call. = FALSE)
+    stop(
+      paste(commit_id, collapse = "\n"),
+      "\nIf this is a shallow clone, run 'git fetch --unshallow' first.",
+      call. = FALSE
+    )
   }
   
   commit_id <- commit_id[1]
@@ -440,5 +463,4 @@ remove_dir_to_point_in_history <- function(path, historical_path)
   
   invisible(TRUE)
 }
-
 
