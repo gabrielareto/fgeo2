@@ -724,7 +724,3 @@ The graph uses the same convention as the initial graph: arrows go from a depend
 -   `torus.shift()` was removed. A more general treatment of torus translations remains in GitHub issue #3.
 -   The tutorial uses the new interface for the main use cases. A permanent lookup table with the 400 real 20 x 20 m Luquillo quadrats is stored in `data_examples/luquillo.quadrats.20x20.csv`.
 -   Function-level decisions are recorded in `evaluation/function_inventory.xlsx`.
-
-# Clean up
-
-Each call to `evaluate_snapshot()` removes its temporary Git worktree before returning, including when the evaluation stops with an error. Before creating a worktree, the auxiliary code also prunes registrations left by an interrupted earlier session.
