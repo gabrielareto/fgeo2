@@ -50,9 +50,30 @@ allquadratslopes <- function(elev, gridsize = 20, plotdim = c(1000, 500), edgeco
     rw <- cl <- 0
     on.exit(cat(rw, " ", cl, "\n"))
     
-    columns <- 1 + max(elev$col$x)/gridsize
-    rows <- 1 + max(elev$col$y)/gridsize
-    totalquads <- (columns - 1) * (rows - 1)
+    quadrat.locations <- make_quadrats_fast(
+      outer.xmin = 0,
+      outer.ymin = 0,
+      outer.xmax = plotdim[1],
+      outer.ymax = plotdim[2],
+      quadrat.side.x = gridsize,
+      quadrat.side.y = gridsize
+    )
+    
+    totalquads <- nrow(quadrat.locations)
+    
+    x.breaks <- sort(unique(c(
+      quadrat.locations$xmin,
+      quadrat.locations$xmax
+    )))
+    
+    y.breaks <- sort(unique(c(
+      quadrat.locations$ymin,
+      quadrat.locations$ymax
+    )))
+    
+    columns <- length(x.breaks)
+    rows <- length(y.breaks)
+    
     cat("Calculating topographic indices for ", totalquads, " quadrats\n")
     
     elevdata <- elev$col[elev$col$x%%gridsize == 0 & elev$col$y%%gridsize == 0, ]
@@ -61,48 +82,93 @@ allquadratslopes <- function(elev, gridsize = 20, plotdim = c(1000, 500), edgeco
     meanelev <- convex <- convex2 <- slope <- numeric()
     corner <- sideht <- numeric()
     
-    # Mean elevation of four corners
-    for (c in 1:(columns - 1)) for (r in 1:(rows - 1)) {
-        quad.index <- rowcol.to.index(r, c, gridsize = gridsize, plotdim = plotdim)
-        
-        corner[1] <- elevmat[r, c]
-        corner[2] <- elevmat[r + 1, c]
-        corner[3] <- elevmat[r + 1, c + 1]
-        corner[4] <- elevmat[r, c + 1]
-        
-        meanelev[quad.index] <- mean(corner)
-        slope[quad.index] <- quadslope(corner, gridsize = gridsize)[1]
-        
-        if (c%%33 == 0 & r%%33 == 0) 
-            cat("Finding elevation and slope of quadrat ", quad.index, "\n")
+    # Mean elevation and slope of each quadrat.
+    for(i in seq_len(totalquads))
+    {
+      q <- quadrat.locations[i, ]
+      
+      column.i <- match(q$xmin, x.breaks)
+      row.i <- match(q$ymin, y.breaks)
+      
+      corner[1] <- elevmat[row.i, column.i]
+      corner[2] <- elevmat[row.i + 1, column.i]
+      corner[3] <- elevmat[row.i + 1, column.i + 1]
+      corner[4] <- elevmat[row.i, column.i + 1]
+      
+      meanelev[i] <- mean(corner)
+      slope[i] <- quadslope(corner, gridsize = gridsize)[1]
+      
+      if(i %% 1000 == 0)
+        cat("Finding elevation and slope of quadrat ", i, "\n")
     }
     
-    # Convexity
-    for (i in 1:totalquads) {
-        neighbor.quads <- findborderquads(i, dist = gridsize, gridsize = gridsize, plotdim = plotdim)
-        meanelev.neighbor <- mean(meanelev[neighbor.quads])
-        convex[i] <- meanelev[i] - meanelev.neighbor
-        
-        if (i%%1000 == 0) 
-            cat("Finding convexity of quadrat ", i, "\n")
+    if(!requireNamespace("FNN", quietly = TRUE))
+      stop("install package 'FNN' to calculate neighboring quadrats")
+    
+    if(totalquads < 2)
+      stop("at least two quadrats are required to calculate convexity")
+    
+    centroids <- cbind(
+      x = (quadrat.locations$xmin + quadrat.locations$xmax) / 2,
+      y = (quadrat.locations$ymin + quadrat.locations$ymax) / 2
+    )
+    
+    k <- min(8, totalquads - 1)
+    knn <- FNN::get.knn(centroids, k = k)
+    
+    maximum.distance <- sqrt(2) * gridsize
+    
+    # Convexity relative to quadrats sharing an edge or corner.
+    for(i in seq_len(totalquads))
+    {
+      neighbor.quads <- knn$nn.index[i, ]
+      neighbor.distances <- knn$nn.dist[i, ]
+      
+      neighbor.quads <- neighbor.quads[
+        neighbor.distances <=
+          maximum.distance + sqrt(.Machine$double.eps)
+      ]
+      
+      convex[i] <- meanelev[i] - mean(meanelev[neighbor.quads])
+      
+      if(i %% 1000 == 0)
+        cat("Finding convexity of quadrat ", i, "\n")
     }
     
     # correcting convexity in edge quadrats, based on center of the 20x20 rather than surrounding 20x20s. This requires that the
     # elev$mat has an elevation at the middle of every grid cell.
-    if (edgecorrect) {
-        for (c in 1:(columns - 1)) for (r in 1:(rows - 1)) {
-            if ((c == 1) | (c == (columns - 1)) | (r == 1) | (r == (rows - 1))) {
-                quad.index <- rowcol.to.index(r, c, gridsize = gridsize, plotdim = plotdim)
-                xy <- index.to.gxgy(quad.index, gridsize = gridsize, plotdim = plotdim)
-                
-                midx <- xy$gx + gridsize/2
-                midy <- xy$gy + gridsize/2
-                
-                # browser()
-                midelev <- subset(elev$col, x == midx & y == midy)$elev
-                convex[quad.index] <- midelev - meanelev[quad.index]
-            }
-        }
+    if(edgecorrect)
+    {
+      edge.quadrats <- which(
+        quadrat.locations$xmin == 0 |
+          quadrat.locations$ymin == 0 |
+          quadrat.locations$xmax == plotdim[1] |
+          quadrat.locations$ymax == plotdim[2]
+      )
+      
+      for(i in edge.quadrats)
+      {
+        midx <- (
+          quadrat.locations$xmin[i] +
+            quadrat.locations$xmax[i]
+        ) / 2
+        
+        midy <- (
+          quadrat.locations$ymin[i] +
+            quadrat.locations$ymax[i]
+        ) / 2
+        
+        middle.i <- which(
+          elev$col$x == midx &
+            elev$col$y == midy
+        )
+        
+        if(length(middle.i) != 1)
+          stop("one centre elevation is required for every edge quadrat")
+        
+        midelev <- elev$col$elev[middle.i]
+        convex[i] <- midelev - meanelev[i]
+      }
     }
     
     return(data.frame(meanelev = meanelev, convex = convex, slope = slope))
