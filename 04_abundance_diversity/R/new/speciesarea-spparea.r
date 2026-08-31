@@ -78,8 +78,8 @@ spparea.sq <- function(censdata, spcolumn = "sp", size, rectdim = 1, mindbh = NU
 # Quadrats are chosen simply: a point is chosen by randomly drawing one x and one y coordinates to serve as the lower-left
 # corner.  The x is chosen from a uniform distribution between 0 and plotdim[1]-size; y is chosen similarly. <br><br>
 
-# All 3 algorithms for creating random quadrats under sample the plot corners. See selectrandomquad2() and selectrandomquad3(),
-# alternative intended to overcome the bias (but neither does).  </description> <arguments> <ul> <li> censdata: one R
+# Both algorithms for creating random quadrats undersample the plot corners. See selectrandomquad3(), an alternative intended
+# to overcome the bias (but it does not).  </description> <arguments> <ul> <li> censdata: one R
 # Analytical Table, either full or stem <li> size: a vector of quadrat sizes, referring to the x-dimension of a rectangular
 # quadrat <li> shape: the ratio of y to x dimensions of the rectangles; rectdim=1 (the default) for squares <li> plotdim: the x
 # and y dimensions of the entire plot <li> rep: the number of random quadrats to create, of each size <li> graphit: whether to
