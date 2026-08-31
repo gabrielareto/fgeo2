@@ -57,33 +57,6 @@ abundance <- function(censdata, type = "abund", alivecode = c("A"), mindbh = NUL
 
 
 
-# <function> <name> abundanceperquad </name> <description> Finds abundance, basal area, or agb of every species per square
-# quadrat of any size; plotdim is the x dimension then y dimension of the plot and must be set correctly; gridsize is the
-# quadrat dimension. The plot is divided into a checkerboard of non-overlapping, space-filling squares.  If the plot dimensions
-# is not an exact multiple of the quadrat size, then a strip at the upper edge of the plot (north and east if plot is on
-# cardinal directions) is omitted. For example, if gridsize=40 and plotdim=500, then there are an extra 20 meters at the upper
-# boundary omitted from the calculations. <br><br> See abundance() for description of the other arguments and return value. The
-# array of abundances per quadrat is useful for similarity, counting species and stems per quadrat, etc.  </description>
-# <arguments> </arguments> <sample> Nperquad=abundanceperquad(bci.full6,plotdim=c(1000,500),gridsize=100,type='abund')<br>
-# colSums(Nperquad$abund)<br> apply(Nperquad$abund,2,countspp)<br>
-# plot(colSums(Nperquad$abund),apply(Nperquad$abund,2,countspp)) </sample> <source>
-abundanceperquad <- function(censdata, mindbh = 10, plotdim = c(1000, 500), gridsize = 100, type = "abund", dbhunit = "mm") {
-    sp <- censdata$sp
-    
-    quadno <- gxgy.to.index(censdata$gx, censdata$gy, gridsize = gridsize, plotdim = plotdim)
-    result <- abundance(censdata, type = type, mindbh = mindbh, dbhunit = dbhunit, split1 = sp, split2 = quadno)
-    
-    allspp <- unique(censdata$sp)
-    maxquad <- floor(plotdim[1]/gridsize) * floor(plotdim[2]/gridsize)
-    allquad <- 1:maxquad
-    
-    if (dim(result[[type]])[1] < length(allspp) | dim(result[[type]])[2] < length(allquad)) 
-        result[[type]] <- fill.dimension(result[[type]], class1 = allspp, class2 = allquad, fill = 0)
-    
-    return(result)
-}
-# </source> </function>
-
 # <function> <name> abundance.spp </name> <description> A wrapper to calculate total abundance (or ba or agb) for each species
 # in given dbh categories. The dbh categories are set with dbhbreaks. See abundance() for description of the other arguments
 # and return value.  </description> <arguments> <ul> <li> dbhbreaks: a vector of dbhs to define divisions of categories; the
