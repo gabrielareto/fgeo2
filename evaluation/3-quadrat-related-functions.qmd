@@ -46,7 +46,7 @@ In this document I will often refer to the old script-based distribution of code
 
 # Load code
 
-Older CTFS code is within local scripts. We declare paths to the project (watched by git), load a specific version of the code, and auxiliary functions.
+Older CTFS code is within local scripts. We declare paths to the project (watched by git), load two specific versions of the code, and source auxiliary functions.
 
 ```{r}
 
@@ -65,39 +65,116 @@ library(fgeo, quietly = TRUE)
 # Source useful functionality:
 source(paste0(path, "/evaluation/0-code-to-source.r"))
 
-# Then load CTFS / fgeo2 scripts:
-
-# For reproducibility, this file does code evaluation at a specific
-# point in time. Otherwise it won't make sense as the project
-# moves forward and the code gest updated.
-
-# The following lines create a temporary file and gives its path.
-# You have to clean that at the end of the file, otherwise
-# you will accumulate temporary folders somewhere.
-
-DATE = "2026-05-29"
-commit = commit_from_date(path = path, date = DATE)
-historical_path <- make_dir_to_point_in_history(path = path, commit = commit)
-
-
-```
-
-This will source the necessary scripts; note that I am loading a specific version of them, by using the path to a specific commit (`historical_path`, linked to commit = `{r} commit`).
-
-```{r}
+# Exact points before and after the work described in this document:
+pre_work_commit  <- "8b1c13366dba84a757fb08ebd9cf5d813c0d1668"
+post_work_commit <- "9f3ad4bfc3391ceaf60d2671e2f2e6b3e7e3dfd0"
 
 modules <- c("01_utilities", "02_biomass", "03_spatial", "04_abundance_diversity",
              "05_demography_growth", "06_topography_habitat", "07_mapping_plotting")
 
-scripts <- unique(unlist(lapply(modules, function(m) {
-  list.files(paste0(historical_path, "/", m, "/R/new"),
-             full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-})))
+# Evaluate one commit without mixing its functions with another commit.
+evaluate_snapshot <- function(path, commit, target_script, modules)
+{
+  historical_path <- make_dir_to_point_in_history(path, commit)
+  on.exit({
+    if(dir.exists(historical_path))
+    {
+      cleanup <- try(
+        remove_dir_to_point_in_history(path, historical_path),
+        silent = TRUE
+      )
+      if(inherits(cleanup, "try-error"))
+        warning("Could not remove temporary worktree: ", historical_path)
+    }
+  }, add = TRUE)
 
-# Source scripts, then new:
-for(f in scripts) source(f)
+  scripts <- unique(unlist(lapply(modules, function(m) {
+    list.files(file.path(historical_path, m, "R/new"),
+               full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
+  })))
+
+  target_file <- scripts[
+    tolower(basename(scripts)) == tolower(target_script)
+  ]
+  if(length(target_file) != 1)
+    stop("Could not identify one target script named '", target_script, "'")
+
+  code_env <- new.env(parent = .GlobalEnv)
+  for(f in scripts)
+    sys.source(f, envir = code_env)
+
+  edges <- get_all_dependencies(envir = code_env)
+  edges <- edges[, c("from_function", "to_function")]
+  colnames(edges) <- c("from", "to")
+
+  quadrat_functions <- functions_in_script(target_file)
+  direct_downstream <- unique(edges$to[
+    edges$from %in% quadrat_functions &
+      !(edges$to %in% quadrat_functions)
+  ])
+  downstream <- unique(unlist(lapply(
+    quadrat_functions,
+    downstream_dependents,
+    edges = edges
+  )))
+  downstream <- setdiff(downstream, quadrat_functions)
+  project_dependencies <- unique(edges$from[
+    edges$to %in% quadrat_functions &
+      !(edges$from %in% quadrat_functions)
+  ])
+
+  code_functions <- mget(
+    ls(code_env, all.names = TRUE),
+    envir = code_env,
+    inherits = FALSE
+  )
+  code_functions <- code_functions[
+    vapply(code_functions, is.function, logical(1))
+  ]
+  called_functions <- unique(unlist(lapply(code_functions, function(fun) {
+    tryCatch(
+      codetools::findGlobals(fun, merge = FALSE)$functions,
+      error = function(e) character()
+    )
+  })))
+
+  list(
+    commit = commit,
+    quadrat_functions = quadrat_functions,
+    edges = edges,
+    direct_downstream = direct_downstream,
+    downstream = downstream,
+    project_dependencies = project_dependencies,
+    called_functions = called_functions
+  )
+}
+
+make_dependency_graph <- function(snapshot)
+{
+  target <- unique(c(snapshot$quadrat_functions, snapshot$downstream))
+  keep <- snapshot$edges$from %in% target |
+    snapshot$edges$to %in% target
+  graph_edges <- snapshot$edges[keep,,drop = FALSE]
+  vertex_names <- unique(c(target, graph_edges$from, graph_edges$to))
+  vertices <- data.frame(name = vertex_names)
+
+  graph_from_data_frame(
+    graph_edges,
+    directed = TRUE,
+    vertices = vertices
+  )
+}
+
+before <- evaluate_snapshot(
+  path = path,
+  commit = pre_work_commit,
+  target_script = "spatial-quadfunc.r",
+  modules = modules
+)
 
 ```
+
+The original evaluation date (2026-05-29) is represented here by the exact commit `8b1c133`. The exact hash makes the result independent of later commits on the same date. Each snapshot is sourced into its own environment, and its temporary Git worktree is removed before `evaluate_snapshot()` returns.
 
 # Map dependencies
 
@@ -105,23 +182,10 @@ This maps the mutual dependencies among the CTFS functions:
 
 ```{r}
 
-# All of the dependencies among all functions in the global environment:
-edges <- get_all_dependencies()
-edges <- edges[, c("from_function", "to_function")]
-colnames(edges) <- c("from", "to")
-
-# Indentify the target subset of functions and their dependents:
-where <- grep("quadfunc.r", scripts)
-quadrat_functions <- functions_in_script(scripts[where])
-down <- unique(unlist(lapply(quadrat_functions, function(q) downstream_dependents(q, edges))))
-down <- down[!down %in% quadrat_functions]
-target <- c(quadrat_functions, down)
-
 # Graph representation:
-keep <- edges$from %in% target | edges$to %in% target
-edges <- edges[keep,,drop = FALSE]
-
-g <- graph_from_data_frame(edges, directed = TRUE)
+quadrat_functions <- before$quadrat_functions
+down <- before$downstream
+g <- make_dependency_graph(before)
 g.ctfs <- g # copy, just in case
 
 ```
@@ -132,6 +196,7 @@ g.ctfs <- g # copy, just in case
 #| out-width: "100%"
 
 # Visualize
+set.seed(1)
 V(g)$color <- rep("gray", length(V(g)))
 V(g)$color[V(g)$name %in% quadrat_functions] <- "gold"
 V(g)$color[V(g)$name %in% down] <- "orange"
@@ -224,7 +289,7 @@ plot(g, layout = layout.fruchterman.reingold,
 
 The evaluation of CTFS helps to identify the tasks that these functions are supposed to do, and the potential problems with the ways the task is being solved.
 
-In CTFS old code, this seems a relatively well-defined set of functions with surprisingly few dependents and only one direct dependency (`pst()` function, which is a CTFS version of paste/collapse).
+In CTFS old code, this seems a relatively well-defined set of functions with surprisingly few dependents and only two direct dependencies on other project functions: `pst()` and `xydistvect()`.
 
 ## Goal and structure of most functions
 
@@ -550,15 +615,116 @@ Although not fully developed now, I should modify the following functions so the
 -   Neighboring quadrats: not key, not in `fgeo`. Probably can be substituted by a tutorial on k-NN applied to quadrats, which is more general, with the tasks of the CTFS functions as examples: abundances, proportion of presences, ...
 -   Other dependents: make small modifications to ensure things don't break, and review in more detail when their time arrives.
 
-# Clean up
+# Post-work evaluation
+
+The sections above record the evaluation that guided the work. This section evaluates the resulting code at commit `9f3ad4b`, after completing the new functions, tutorial, example data, and review of dependent functions.
+
+## Overall change
 
 ```{r}
 
-# Remove the temporary folder we created to
-# access the project at a specific point in history:
-knitr::opts_knit$set(root.dir = path)
-if(dir.exists(historical_path))
-  remove_dir_to_point_in_history(path, historical_path)
+after <- evaluate_snapshot(
+  path = path,
+  commit = post_work_commit,
+  target_script = "quadrats.R",
+  modules = modules
+)
 
-dir.exists(historical_path) # should be FALSE now
+count_internal_edges <- function(snapshot)
+{
+  sum(
+    snapshot$edges$from %in% snapshot$quadrat_functions &
+      snapshot$edges$to %in% snapshot$quadrat_functions
+  )
+}
+
+comparison <- data.frame(
+  Measure = c(
+    "Functions in the quadrat script",
+    "Dependencies within the quadrat script",
+    "Direct dependents elsewhere in the project",
+    "All dependents elsewhere in the project",
+    "Dependencies on other project functions"
+  ),
+  `Before work` = c(
+    length(before$quadrat_functions),
+    count_internal_edges(before),
+    length(before$direct_downstream),
+    length(before$downstream),
+    length(before$project_dependencies)
+  ),
+  `After work` = c(
+    length(after$quadrat_functions),
+    count_internal_edges(after),
+    length(after$direct_downstream),
+    length(after$downstream),
+    length(after$project_dependencies)
+  ),
+  check.names = FALSE
+)
+
+remaining_legacy_calls <- intersect(
+  before$quadrat_functions,
+  after$called_functions
+)
+
+# Stop if the evaluated snapshots no longer give the expected result.
+stopifnot(
+  identical(
+    as.integer(comparison[["Before work"]]),
+    c(20L, 18L, 6L, 8L, 2L)
+  ),
+  identical(
+    as.integer(comparison[["After work"]]),
+    c(8L, 5L, 1L, 1L, 0L)
+  ),
+  identical(after$direct_downstream, "allquadratslopes"),
+  length(remaining_legacy_calls) == 0
+)
+
+knitr::kable(comparison, row.names = FALSE)
+
 ```
+
+The quadrat script went from 20 functions to eight. Five form the main interface: `make_quadrats_fast()`, `make_quadrats()`, `get_quadrat_locations_from_outer_coordinates()`, `assign_points_to_quadrats()`, and `compile_points_from_quadrats()`. The other three are short helpers. None of the eight functions depends on a project function outside `quadrats.R`. One helper uses `FNN::get.knn()` explicitly when adjusting local overlaps.
+
+There is one remaining dependent elsewhere in the project: `allquadratslopes()`, through `make_quadrats_fast()`. The scan found no executable calls to any of the 20 removed CTFS quadrat functions.
+
+## Dependencies after work
+
+```{r}
+#| fig-width: 11
+#| fig-height: 7
+#| out-width: "100%"
+
+quadrat_functions <- after$quadrat_functions
+down <- after$downstream
+g <- make_dependency_graph(after)
+g.after <- g
+
+set.seed(1)
+V(g)$color <- rep("gray", length(V(g)))
+V(g)$color[V(g)$name %in% quadrat_functions] <- "gold"
+V(g)$color[V(g)$name %in% down] <- "orange"
+
+plot(g, layout = layout.fruchterman.reingold,
+     vertex.label = V(g)$name,
+     vertex.color = V(g)$color,
+     vertex.frame.color = "white",
+     vertex.label.color = "black",
+     edge.color = "black")
+```
+
+The graph uses the same convention as the initial graph: arrows go from a dependency to the function that uses it; quadrat functions are gold and dependents outside `quadrats.R` are orange. Isolated quadrat functions are shown too.
+
+## Closing status
+
+-   `fullplot.imageJ()`, `allquadratslopes()`, and `rasterize()` were retained and adapted where necessary.
+-   `selectrandomquad2()`, `abundanceperquad()`, and `graph.mvnorm()` were removed. Their relevant tasks are covered directly in the tutorial or by standard R operations.
+-   `torus.shift()` was removed. A more general treatment of torus translations remains in GitHub issue #3.
+-   The tutorial uses the new interface for the main use cases. A permanent lookup table with the 400 real 20 x 20 m Luquillo quadrats is stored in `data_examples/luquillo.quadrats.20x20.csv`.
+-   Function-level decisions are recorded in `evaluation/function_inventory.xlsx`.
+
+# Clean up
+
+Each call to `evaluate_snapshot()` removes its temporary Git worktree before returning, including when the evaluation stops with an error. Before creating a worktree, the auxiliary code also prunes registrations left by an interrupted earlier session.
