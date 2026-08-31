@@ -100,8 +100,22 @@ rasterize <- function(x, y, z = NULL, gridsize = 20, plotdim = c(1000, 500), FUN
     K <- length(XI) - 1
     J <- length(YI) - 1
     
-    quad.indices <- gxgy.to.index(x, y, gridsize = gridsize, plotdim = plotdim)
-    quad.indices <- factor(quad.indices, levels = 1:(K * J))
+    inside <-
+      !is.na(x) & !is.na(y) &
+      x >= 0 & x < plotdim[1] &
+      y >= 0 & y < plotdim[2]
+    
+    column <- 1 + floor(x / gridsize)
+    row <- 1 + floor(y / gridsize)
+    
+    quad.indices <- rep(NA_integer_, length(x))
+    quad.indices[inside] <-
+      row[inside] + (column[inside] - 1) * J
+    
+    quad.indices <- factor(
+      quad.indices,
+      levels = seq_len(K * J)
+    )
     
     ## count of individuals in each block
     if (is.null(z)) 
