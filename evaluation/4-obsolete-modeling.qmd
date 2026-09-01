@@ -176,11 +176,7 @@ This due diligence has two main goals:
 1.  identify any function outside the candidate set that would break if a candidate were removed; and
 2.  identify non-candidate functions that may no longer be necessary if all candidates are removed.
 
-This is a static analysis of calls among top-level fgeo2 functions. It does not detect calls constructed with mechanisms such as `get()`, `do.call()`, or `match.fun()`, or uses from tutorials, tests, and external user code. Any apparent absence of dependents therefore remains a prompt for final source and test checks, not automatic authorization to remove code.
-
-## Pre-work snapshot
-
-The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e). Git reads the files directly from that commit, so later changes in the working tree are not mixed into the evaluation.
+The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e).
 
 ```{r}
 
