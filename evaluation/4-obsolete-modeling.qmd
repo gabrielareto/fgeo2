@@ -1,0 +1,452 @@
+---
+title: "Evaluation of obsolete modeling functions"
+author: "Gabriel Arellano"
+date: today
+format:
+  pdf:
+    code-overflow: wrap
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
+    include-in-header:
+      text: |
+        \usepackage{enumitem}
+        \setlist{itemsep=2pt, topsep=2pt}
+editor: visual
+---
+
+# Goal
+
+The goal is to make the fgeo2 body of code lighter and easier to maintain by removing obsolete modeling functions. fgeo2 will focus on metrics, descriptors, and other reusable analytical primitives. Statistical modeling requires flexibility and is better handled with maintained, dedicated tools rather than project-specific model-fitting and MCMC infrastructure. This evaluation focuses on:
+
+-   primarily, removal of modeling functions;
+-   minimum edits to the remaining ones; and
+-   identifying dependents somewhere else, so all code remains working.
+
+# Candidate functions for removal
+
+The initial scope includes hand-written Bayesian and MCMC infrastructure, specialized demographic and growth models, and functions dedicated to fitting or displaying those models.
+
+```{r}
+#| results: asis
+
+# Candidate means "evaluate for removal", not "approved for deletion".
+candidate_groups <- list(
+  `lmerBayes framework` = c(
+    "lmerBayes", "lmerBayes.hyperllike.sigma",
+    "lmerBayes.hyperllike.mean", "full.likelihood.lmerBayes",
+    "llike.fixef.lmer", "llike.model.lmer",
+    "residual.llike.lmerBayes", "badSD", "arrangeParam.llike.2D",
+    "arrangeParam.Gibbs.2D", "saveParamFile", "restoreParamFile",
+    "resetParam", "summaryMCMC", "recalculate.lmerBayesllike",
+    "covTocorr"
+  ),
+  `modelBayes framework` = c(
+    "modelBayes", "residual.llike.modelBayes", "summaryModelMCMC"
+  ),
+  `Generic hand-written MCMC functions` = c(
+    "regression.Bayes", "Gibbs.regslope", "Gibbs.regsigma",
+    "Gibbs.normalmean", "Gibbs.normalvar", "model.xy",
+    "arrangeParam.llike", "arrangeParam.Gibbs", "llike.GaussModel",
+    "llike.GaussModelSD", "BadParam", "graph.modeldiag",
+    "metrop1step", "metrop1step.discrete", "testmcmcfunc"
+  ),
+  `Paper-specific demographic abundance model` = c(
+    "model.littleR.Gibbs", "full.abundmodel.llike", "prob.N1",
+    "spmean.mort.abundGibbs", "hyper.abundGibbs", "hyper.mortGibbs",
+    "bad.asympower.param", "bad.asymexp.param", "fitSeveralAbundModel",
+    "graph.abundmodel", "find.xaxis.hist", "abundmodel.fit"
+  ),
+  `Mortality model functions` = c(
+    "lmerMortLinear", "lmerMortFixedTime"
+  ),
+  `Growth-bin modeling` = c(
+    "extract.growthdata", "run.growthbin.manyspp", "run.growthfit.bin",
+    "growth.flexbin", "llike.linearbin.optim", "defineBinBreaks",
+    "defineSDpar", "enoughSamplePerBin", "wideEnoughBins",
+    "bad.binparam", "bad.binsdpar", "calculateBinModel.BIC",
+    "calculateBinModel.DIC", "calculateBinModel.AIC",
+    "calculateBinModel.bestpred", "assembleBinOutput"
+  ),
+  `Growth-bin model graphics` = c(
+    "graph.growthmodel.spp", "graph.growthmodel",
+    "overlay.growthbinmodel", "compare.growthbinmodel",
+    "graph.outliers.spp", "graph.outliers", "binGraphSampleSpecies",
+    "binGraphManySpecies.Panel", "binGraphManySpecies"
+  )
+)
+
+candidate_functions <- unique(unlist(candidate_groups, use.names = FALSE))
+candidate_interfaces <- c(
+  "lmerBayes", "modelBayes", "regression.Bayes", "model.xy",
+  "model.littleR.Gibbs", "fitSeveralAbundModel",
+  "lmerMortLinear", "lmerMortFixedTime", "growth.flexbin",
+  "run.growthfit.bin", "run.growthbin.manyspp",
+  "compare.growthbinmodel"
+)
+
+for(group in names(candidate_groups))
+{
+  cat("### ", group, "\n\n", sep = "")
+  cat(paste0("-   `", candidate_groups[[group]], "()`", collapse = "\n"))
+  cat("\n\n")
+}
+```
+
+## Earlier CTFS evaluation
+
+The earlier [CTFS function-decision table](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/data-raw/iss32_fun_table_edited.csv) was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. It records the following judgments:
+
+-   deprecate the complete `lmerBayes()` and `modelBayes()` blocks;
+
+-   deprecate the demographic abundance model because it was developed for one paper;
+
+-   try to deprecate the growth-bin modeling block;
+
+-   classify `lmerMortLinear()` and `lmerMortFixedTime()` as low-priority model functions;
+
+-   treat much of `utilities-statistics.r` as overly specific, while recognizing that its functions require individual review because some may have broader uses. How useful these functions are for other uses requires evaluation of the downstream dependents.
+
+## Earlier tests (ctfs+fgeo development)
+
+-   The [CTFS development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md) record that `modelBayes()` still entered debugging and failed after an attempted maintenance fix.
+-   `growth.flexbin()`, `run.growthfit.bin()`, and `run.growthbin.manyspp()` failed in the growth tutorial. Their attempted calls remain commented out in [test-growth_vs_dbh.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-growth_vs_dbh.R).
+-   The `lmerBayes()` regression test was disabled because its required data were no longer available. Even when enabled, it checked only the names of the returned components, not the fitted result; see [test-replace_subset.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-replace_subset.R).
+-   The development notes report that one test of `model.littleR.Gibbs()` and `fitSeveralAbundModel()` took approximately 20 minutes. No active automated test for that model remains in the CTFS test suite.
+
+# Whole-package dependencies before work
+
+## Load code
+
+The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e). Git reads the files directly from that commit, so later changes in the working tree are not mixed into the evaluation.
+
+```{r}
+
+path <- normalizePath(system2("git", c("rev-parse", "--show-toplevel"),
+                              stdout = TRUE)[1])
+knitr::opts_knit$set(root.dir = path)
+
+library(igraph, quietly = TRUE)
+source(file.path(path, "evaluation/0-code-to-source.r"))
+
+pre_work_commit <- "040b73e0cd9a0d55d64c1639b22159d5c6cbd20e"
+pre_work_date   <- as.Date("2026-09-01")
+
+# Fill these two values after completing the work.
+post_work_commit <- NA_character_
+post_work_date   <- as.Date(NA_character_)
+
+modules <- c(
+  "01_utilities", "02_biomass", "03_spatial",
+  "04_abundance_diversity", "05_demography_growth",
+  "06_topography_habitat", "07_mapping_plotting"
+)
+
+git_output <- function(path, args)
+{
+  out <- system2(
+    "git",
+    c("-C", shQuote(path), args),
+    stdout = TRUE,
+    stderr = TRUE
+  )
+
+  if(!is.null(attr(out, "status")))
+    stop(paste(out, collapse = "\n"), call. = FALSE)
+
+  out
+}
+
+read_snapshot_file <- function(path, commit, file)
+{
+  out <- git_output(
+    path,
+    c("show", shQuote(paste0(commit, ":", file)))
+  )
+
+  paste(out, collapse = "\n")
+}
+
+evaluate_snapshot <- function(path, commit, modules, candidates)
+{
+  files <- git_output(
+    path,
+    c("ls-tree", "-r", "--name-only", shQuote(commit))
+  )
+
+  module_pattern <- paste(modules, collapse = "|")
+  scripts <- files[
+    grepl(
+      paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"),
+      files
+    )
+  ]
+
+  code_env <- new.env(parent = .GlobalEnv)
+
+  for(file in scripts)
+  {
+    code <- read_snapshot_file(path, commit, file)
+    eval(parse(text = code), envir = code_env)
+  }
+
+  objects <- mget(
+    ls(code_env, all.names = TRUE),
+    envir = code_env,
+    inherits = FALSE
+  )
+  functions <- names(objects)[
+    vapply(objects, is.function, logical(1))
+  ]
+
+  edges <- get_all_dependencies(envir = code_env)
+  edges <- edges[, c("from_function", "to_function"), drop = FALSE]
+  colnames(edges) <- c("from", "to")
+
+  list(
+    commit = commit,
+    scripts = scripts,
+    functions = functions,
+    edges = edges,
+    candidates = intersect(candidates, functions)
+  )
+}
+
+make_dependency_graph <- function(snapshot)
+{
+  connected <- unique(c(snapshot$edges$from, snapshot$edges$to))
+  vertex_names <- unique(c(connected, snapshot$candidates))
+  vertices <- data.frame(name = vertex_names)
+
+  graph_from_data_frame(
+    snapshot$edges,
+    directed = TRUE,
+    vertices = vertices
+  )
+}
+
+dependency_pdf_file <- function(path, commit, date)
+{
+  file.path(
+    path,
+    "evaluation/results",
+    paste0(
+      "fgeo2-dependencies-", substr(commit, 1, 7), "-",
+      format(date, "%Y-%m-%d"), ".pdf"
+    )
+  )
+}
+
+
+write_dependency_pdf <- function(snapshot, file)
+{
+  dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
+
+  g <- make_dependency_graph(snapshot)
+
+  # Follow dependency arrows: dependency -> function using it.
+  downstream <- unique(unlist(lapply(
+    snapshot$candidates,
+    downstream_dependents,
+    edges = snapshot$edges
+  )))
+
+  # Candidate status takes precedence over downstream status.
+  downstream <- setdiff(downstream, snapshot$candidates)
+
+  V(g)$color <- "gray80"
+  V(g)$color[V(g)$name %in% downstream] <- "yellow"
+  V(g)$color[V(g)$name %in% snapshot$candidates] <- "orange"
+
+  set.seed(1)
+
+  pdf(file, height = 33, width = 33)
+  on.exit(dev.off(), add = TRUE)
+
+  par(mar = c(0, 0, 2, 0))
+
+  plot(
+    g,
+    layout = layout.fruchterman.reingold,
+    vertex.label = V(g)$name,
+    vertex.size = 6,
+    vertex.color = V(g)$color,
+    vertex.frame.color = "white",
+    vertex.label.color = "black",
+    vertex.label.cex = 2,
+    edge.color = "gray45",
+    edge.width = 0.7,
+    edge.arrow.size = 0.3
+  )
+
+  legend(
+    "topleft",
+    legend = c(
+      "Candidate for removal",
+      "Downstream dependent",
+      "Other function"
+    ),
+    pt.bg = c("orange", "yellow", "gray80"),
+    pch = 21,
+    pt.cex = 2,
+    bty = "n"
+  )
+
+  invisible(g)
+}
+
+
+before <- evaluate_snapshot(
+  path = path,
+  commit = pre_work_commit,
+  modules = modules,
+  candidates = candidate_functions
+)
+
+missing_candidates <- setdiff(candidate_functions, before$functions)
+if(length(missing_candidates))
+  stop("Candidate functions not found: ", paste(missing_candidates, collapse = ", "))
+
+pre_work_pdf <- dependency_pdf_file(
+  path = path,
+  commit = pre_work_commit,
+  date = pre_work_date
+)
+
+g.before <- write_dependency_pdf(before, pre_work_pdf)
+
+```
+
+## Dependency map
+
+Arrows point from a dependency to the function that uses it. Candidate functions are highlighted in gold. Gray vertices are other functions in the current fgeo2 body of code. All candidates are included, even when isolated. Other isolated functions are omitted from the graph to retain legibility, but they remain included in the numerical summary of the complete body of code. Labels are limited to the main modeling interfaces and functions with at least four direct connections; the complete candidate names are listed in the previous section.
+
+```{r}
+#| echo: false
+#| out-width: "100%"
+
+knitr::include_graphics(pre_work_pdf, rel_path = FALSE)
+
+```
+
+The same graph is stored separately as `evaluation/results/fgeo2-dependencies-040b73e-2026-09-01.pdf` so it can be inspected at full size.
+
+```{r}
+
+candidate_dependencies <- unique(before$edges$from[
+  !(before$edges$from %in% before$candidates) &
+    before$edges$to %in% before$candidates
+])
+
+candidate_dependents <- unique(before$edges$to[
+  before$edges$from %in% before$candidates &
+    !(before$edges$to %in% before$candidates)
+])
+
+dependency_summary <- data.frame(
+  Measure = c(
+    "R/new scripts",
+    "Functions",
+    "Functions shown in the dependency graph",
+    "Inter-function dependencies",
+    "Candidate functions",
+    "Dependencies among candidate functions",
+    "Other functions used directly by candidates",
+    "Other functions depending directly on candidates"
+  ),
+  Value = c(
+    length(before$scripts),
+    length(before$functions),
+    length(V(g.before)),
+    nrow(before$edges),
+    length(before$candidates),
+    sum(
+      before$edges$from %in% before$candidates &
+        before$edges$to %in% before$candidates
+    ),
+    length(candidate_dependencies),
+    length(candidate_dependents)
+  )
+)
+
+knitr::kable(dependency_summary, row.names = FALSE)
+
+```
+
+# Detailed evaluation and decisions
+
+This section is intentionally left open for the function-by-function or cluster-by-cluster evaluation. For each candidate, the evaluation should record at least:
+
+-   its analytical purpose;
+-   current dependencies and dependents;
+-   available tests and known failures;
+-   whether it is a metric/descriptor or part of model fitting;
+-   the maintained external tools that cover the modeling task, when relevant;
+-   the decision to retain, replace, adapt, or remove it, with concise reasoning;
+-   any downstream changes required before removal.
+
+## Evaluation placeholder
+
+*To be completed before any functions are removed.*
+
+# Whole-package dependencies after work
+
+This is the placeholder for the post-work evaluation. After the work is complete, set `post_work_commit` and `post_work_date` in the setup section. The code will evaluate the same seven `R/new` directories, generate a second dated dependency PDF, and compare the pre-work and post-work structures.
+
+```{r}
+#| results: asis
+
+post_work_ready <- !is.na(post_work_commit) && !is.na(post_work_date)
+
+if(post_work_ready)
+{
+  after <- evaluate_snapshot(
+    path = path,
+    commit = post_work_commit,
+    modules = modules,
+    candidates = candidate_functions
+  )
+
+  post_work_pdf <- dependency_pdf_file(
+    path = path,
+    commit = post_work_commit,
+    date = post_work_date
+  )
+
+  g.after <- write_dependency_pdf(after, post_work_pdf)
+
+  comparison <- data.frame(
+    Measure = c(
+      "R/new scripts",
+      "Functions",
+      "Inter-function dependencies",
+      "Candidate functions remaining"
+    ),
+    `Before work` = c(
+      length(before$scripts),
+      length(before$functions),
+      nrow(before$edges),
+      length(before$candidates)
+    ),
+    `After work` = c(
+      length(after$scripts),
+      length(after$functions),
+      nrow(after$edges),
+      length(after$candidates)
+    ),
+    check.names = FALSE
+  )
+
+  print(knitr::kable(comparison, row.names = FALSE))
+  
+  knitr::include_graphics(post_work_pdf, rel_path = FALSE)
+  
+} else {
+  cat("Post-work commit and date not set. This section is intentionally a placeholder.")
+}
+
+```
