@@ -27,89 +27,129 @@ The goal is to make the fgeo2 body of code lighter and easier to maintain by rem
 -   minimum edits to the remaining ones; and
 -   identifying dependents somewhere else, so all code remains working.
 
-# Candidate functions for removal
+# Previous evaluation and candidates for removal
 
-The initial scope includes hand-written Bayesian and MCMC infrastructure, specialized demographic and growth models, and functions dedicated to fitting or displaying those models.
+An earlier function-by-function evaluation was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. The table was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. The complete record is preserved in [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
+
+The table below combines its `decision` and `notes` fields into three practical categories:
+
+-   **Strong:** explicit recommendation to deprecate the complete block, or an explicitly paper-specific implementation marked for deprecation.
+-   **Weak:** “try to deprecate” or low priority, without a firm recommendation.
+-   **After checks:** removal appeared appropriate, but the old review suspected that other functions might depend on the code.
+
+The candidates are ordered by module and script so the source is easy to locate. Module `01` means `01_utilities/R/new`; module `05` means `05_demography_growth/R/new`.
 
 ```{r}
+#| echo: false
 #| results: asis
 
-# Candidate means "evaluate for removal", not "approved for deletion".
-candidate_groups <- list(
-  `lmerBayes framework` = c(
-    "lmerBayes", "lmerBayes.hyperllike.sigma",
-    "lmerBayes.hyperllike.mean", "full.likelihood.lmerBayes",
-    "llike.fixef.lmer", "llike.model.lmer",
-    "residual.llike.lmerBayes", "badSD", "arrangeParam.llike.2D",
-    "arrangeParam.Gibbs.2D", "saveParamFile", "restoreParamFile",
-    "resetParam", "summaryMCMC", "recalculate.lmerBayesllike",
-    "covTocorr"
-  ),
-  `modelBayes framework` = c(
-    "modelBayes", "residual.llike.modelBayes", "summaryModelMCMC"
-  ),
-  `Generic hand-written MCMC functions` = c(
-    "regression.Bayes", "Gibbs.regslope", "Gibbs.regsigma",
-    "Gibbs.normalmean", "Gibbs.normalvar", "model.xy",
-    "arrangeParam.llike", "arrangeParam.Gibbs", "llike.GaussModel",
-    "llike.GaussModelSD", "BadParam", "graph.modeldiag",
-    "metrop1step", "metrop1step.discrete", "testmcmcfunc"
-  ),
-  `Paper-specific demographic abundance model` = c(
-    "model.littleR.Gibbs", "full.abundmodel.llike", "prob.N1",
-    "spmean.mort.abundGibbs", "hyper.abundGibbs", "hyper.mortGibbs",
-    "bad.asympower.param", "bad.asymexp.param", "fitSeveralAbundModel",
-    "graph.abundmodel", "find.xaxis.hist", "abundmodel.fit"
-  ),
-  `Mortality model functions` = c(
-    "lmerMortLinear", "lmerMortFixedTime"
-  ),
-  `Growth-bin modeling` = c(
-    "extract.growthdata", "run.growthbin.manyspp", "run.growthfit.bin",
-    "growth.flexbin", "llike.linearbin.optim", "defineBinBreaks",
-    "defineSDpar", "enoughSamplePerBin", "wideEnoughBins",
-    "bad.binparam", "bad.binsdpar", "calculateBinModel.BIC",
-    "calculateBinModel.DIC", "calculateBinModel.AIC",
-    "calculateBinModel.bestpred", "assembleBinOutput"
-  ),
-  `Growth-bin model graphics` = c(
-    "graph.growthmodel.spp", "graph.growthmodel",
-    "overlay.growthbinmodel", "compare.growthbinmodel",
-    "graph.outliers.spp", "graph.outliers", "binGraphSampleSpecies",
-    "binGraphManySpecies.Panel", "binGraphManySpecies"
-  )
+candidate_table <- read.delim(
+  text = "Module|Script|Function|Old recommendation|Summary of old decision and notes
+01|utilities-lmerBayes.r|lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.sigma|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.mean|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|full.likelihood.lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|llike.fixef.lmer|Strong|Not listed individually; inherits the explicit lmerBayes block recommendation.
+01|utilities-lmerBayes.r|llike.model.lmer|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|residual.llike.lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|badSD|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|arrangeParam.llike.2D|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|arrangeParam.Gibbs.2D|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|saveParamFile|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|restoreParamFile|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|resetParam|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|summaryMCMC|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|recalculate.lmerBayesllike|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-lmerBayes.r|covTocorr|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
+01|utilities-modelBayes.r|modelBayes|Strong|Explicit recommendation to deprecate the complete modelBayes block.
+01|utilities-modelBayes.r|residual.llike.modelBayes|Strong|Explicit recommendation to deprecate the complete modelBayes block.
+01|utilities-modelBayes.r|summaryModelMCMC|Strong|Explicit recommendation to deprecate the complete modelBayes block.
+01|utilities-statistics.r|regression.Bayes|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|Gibbs.regslope|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|Gibbs.regsigma|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|Gibbs.normalmean|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|Gibbs.normalvar|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|model.xy|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|arrangeParam.llike|After checks|Considered overly specific; check other uses before removal.
+01|utilities-statistics.r|arrangeParam.Gibbs|After checks|Considered overly specific; check other uses before removal.
+01|utilities-statistics.r|llike.GaussModel|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|llike.GaussModelSD|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|BadParam|After checks|Considered overly specific; check other uses before removal.
+01|utilities-statistics.r|graph.modeldiag|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|metrop1step|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|metrop1step.discrete|After checks|The old review suspected other functions might depend on it.
+01|utilities-statistics.r|testmcmcfunc|After checks|The old review suspected other functions might depend on it.
+05|demogchange-abund.fit.CTFS.r|model.littleR.Gibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|full.abundmodel.llike|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|prob.N1|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|spmean.mort.abundGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|hyper.abundGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|hyper.mortGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|bad.asympower.param|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|bad.asymexp.param|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|fitSeveralAbundModel|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|graph.abundmodel|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-abund.fit.CTFS.r|find.xaxis.hist|Weak|Low-priority exploratory graphic.
+05|demogchange-abund.fit.CTFS.r|abundmodel.fit|Strong|Paper-specific model; explicitly recommended for deprecation.
+05|demogchange-demogChange.r|lmerMortLinear|Weak|Low-priority model function; no firm deprecation decision recorded.
+05|demogchange-demogChange.r|lmerMortFixedTime|Weak|Low-priority model function; no firm deprecation decision recorded.
+05|growth-growthfit.bin.r|extract.growthdata|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|run.growthbin.manyspp|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|run.growthfit.bin|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|growth.flexbin|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|llike.linearbin.optim|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|defineBinBreaks|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|defineSDpar|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|enoughSamplePerBin|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|wideEnoughBins|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|bad.binparam|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|bad.binsdpar|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|calculateBinModel.BIC|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|calculateBinModel.DIC|Weak|Not listed individually; inherits the growth-bin block recommendation.
+05|growth-growthfit.bin.r|calculateBinModel.AIC|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|calculateBinModel.bestpred|Weak|The old recommendation was to try to deprecate the growth-bin block.
+05|growth-growthfit.bin.r|assembleBinOutput|Weak|Try to deprecate; reconsider binning separately in a more general context.
+05|growth-growthfit.graph.r|graph.growthmodel.spp|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|graph.growthmodel|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|overlay.growthbinmodel|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|compare.growthbinmodel|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|graph.outliers.spp|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|graph.outliers|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|binGraphSampleSpecies|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|binGraphManySpecies.Panel|Weak|Low-priority graphic associated with the growth-bin models.
+05|growth-growthfit.graph.r|binGraphManySpecies|Weak|Low-priority graphic associated with the growth-bin models.",
+  sep = "|",
+  quote = "",
+  colClasses = "character",
+  check.names = FALSE
 )
 
-candidate_functions <- unique(unlist(candidate_groups, use.names = FALSE))
+candidate_functions <- candidate_table$Function
 
-for(group in names(candidate_groups))
-{
-  cat("### ", group, "\n\n", sep = "")
-  cat(paste0("-   `", candidate_groups[[group]], "()`", collapse = "\n"))
-  cat("\n\n")
-}
+knitr::kable(
+  candidate_table,
+  longtable = TRUE,
+  row.names = FALSE
+)
 ```
 
-## Earlier CTFS evaluation
-
-The earlier [CTFS function-decision table](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/data-raw/iss32_fun_table_edited.csv) was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. It records the following judgments:
-
--   deprecate the complete `lmerBayes()` and `modelBayes()` blocks;
--   deprecate the demographic abundance model because it was developed for one paper;
--   try to deprecate the growth-bin modeling block;
--   classify `lmerMortLinear()` and `lmerMortFixedTime()` as low-priority model functions;
--   treat much of `utilities-statistics.r` as overly specific, while recognizing that its functions require individual review because some may have broader uses. How useful these functions are for other uses requires evaluation of the downstream dependents.
-
-## Earlier tests (ctfs+fgeo development)
+## Evidence from formal tests
 
 -   The [CTFS development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md) record that `modelBayes()` still entered debugging and failed after an attempted maintenance fix.
 -   `growth.flexbin()`, `run.growthfit.bin()`, and `run.growthbin.manyspp()` failed in the growth tutorial. Their attempted calls remain commented out in [test-growth_vs_dbh.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-growth_vs_dbh.R).
 -   The `lmerBayes()` regression test was disabled because its required data were no longer available. Even when enabled, it checked only the names of the returned components, not the fitted result; see [test-replace_subset.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-replace_subset.R).
 -   The development notes report that one test of `model.littleR.Gibbs()` and `fitSeveralAbundModel()` took approximately 20 minutes. No active automated test for that model remains in the CTFS test suite.
 
-# Whole-package dependencies before work
+# Due diligence before removal
 
-## Read code and declare parameters
+The due diligence has two narrow goals:
+
+1.  identify any function outside the candidate set that would break if a candidate were removed; and
+2.  identify non-candidate functions that may no longer be necessary if all candidates are removed.
+
+This is a static analysis of calls among top-level fgeo2 functions. It does not detect calls constructed with mechanisms such as `get()`, `do.call()`, or `match.fun()`, or uses from tutorials, tests, and external user code. Any apparent absence of dependents therefore remains a prompt for final source and test checks, not automatic authorization to remove code.
+
+## Pre-work snapshot
 
 The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e). Git reads the files directly from that commit, so later changes in the working tree are not mixed into the evaluation.
 
@@ -122,7 +162,6 @@ library(igraph, quietly = TRUE)
 source(file.path(path, "evaluation/0-code-to-source.r"))
 
 pre_work_commit <- "040b73e0cd9a0d55d64c1639b22159d5c6cbd20e"
-pre_work_date <- as.Date("2026-09-01")
 
 modules <- c(
   "01_utilities", "02_biomass", "03_spatial",
@@ -174,91 +213,221 @@ if(length(missing_candidates))
 
 ```
 
-## Make the dependency graph
+## Dependents that could break
 
-All functions found in the seven `R/new` directories are passed to the graph as vertices. Consequently, the graph retains functions with no dependency edges as isolated vertices rather than omitting them.
+For each candidate, the following code follows dependency arrows through all levels and retains only dependents outside the candidate set. These are the functions that would require attention before removal.
 
 ```{r}
+#| results: asis
 
-g.before <- graph_from_data_frame(edges, directed = TRUE)
+dependent_rows <- list()
 
-downstream <- sapply(candidates, function(candidate) downstream_dependents(candidate, edges))
-downstream <- setdiff(unique(unlist(downstream)), candidates)
+for(candidate in candidates)
+{
+  direct_dependents <- unique(edges$to[edges$from == candidate])
+  direct_dependents <- setdiff(direct_dependents, candidates)
 
-V(g.before)$color <- "gray80"
-V(g.before)$color[V(g.before)$name %in% downstream] <- "yellow"
-V(g.before)$color[V(g.before)$name %in% candidates] <- "orange"
+  all_dependents <- downstream_dependents(candidate, edges)
+  all_dependents <- setdiff(all_dependents, candidates)
 
-pre_work_pdf <- file.path(
-  path,
-  "evaluation/results",
-  paste0(
-    "fgeo2-dependencies-", substr(pre_work_commit, 1, 7), "-",
-    format(pre_work_date, "%Y-%m-%d"), ".pdf"
+  if(length(all_dependents) == 0)
+    next
+
+  dependent_rows[[length(dependent_rows) + 1L]] <- data.frame(
+    Candidate = candidate,
+    `Direct dependents outside candidates` = paste(direct_dependents, collapse = ", "),
+    `Dependents outside candidates at any level` = paste(all_dependents, collapse = ", "),
+    check.names = FALSE
   )
-)
+}
 
-dir.create(dirname(pre_work_pdf), recursive = TRUE, showWarnings = FALSE)
-
-set.seed(1)
-
-# Control the overall canvas with height and width.
-pdf(pre_work_pdf, height = 33, width = 33)
-par(mar = c(0, 0, 2, 0))
-
-plot(
-  g.before,
-  layout = layout.fruchterman.reingold,
-  vertex.label = V(g.before)$name,
-  vertex.size = 6,          # node size
-  vertex.color = V(g.before)$color,
-  vertex.frame.color = "white",
-  vertex.label.color = "black",
-  vertex.label.cex = 2,     # label size
-  edge.color = "gray45",
-  edge.width = 0.7,         # line width
-  edge.arrow.size = 0.3     # arrow size
-)
-
-dev.off()
+if(length(dependent_rows) == 0)
+{
+  cat("**Result:** No function outside the candidate set depends on a candidate in the pre-work snapshot.\n")
+} else {
+  dependent_table <- do.call(rbind, dependent_rows)
+  knitr::kable(dependent_table, row.names = FALSE)
+}
 
 ```
 
-## Dependency map
+## Dependencies that may become unnecessary
 
-Arrows point from a dependency to the function that uses it. Candidate functions are orange. Their downstream dependents, followed through any number of dependency levels, are yellow – but note: there are not any. All other functions are gray.
+This check follows dependencies upstream through all levels. A non-candidate dependency is marked as potentially unnecessary when it belongs to the candidate dependency chain and has no downstream use outside that potential removal set.
 
 ```{r}
-#| echo: false
-#| out-width: "100%"
+#| results: asis
 
-pre_work_pdf_relative <- file.path("results", basename(pre_work_pdf))
-knitr::include_graphics(pre_work_pdf_relative)
+candidate_dependencies <- character()
+
+for(candidate in candidates)
+  candidate_dependencies <- c(
+    candidate_dependencies,
+    upstream_dependencies(candidate, edges)
+  )
+
+candidate_dependencies <- unique(candidate_dependencies)
+candidate_dependencies <- setdiff(candidate_dependencies, candidates)
+potential_removal_set <- c(candidates, candidate_dependencies)
+
+dependency_rows <- list()
+
+for(dependency in candidate_dependencies)
+{
+  all_users <- downstream_dependents(dependency, edges)
+  candidate_users <- intersect(all_users, candidates)
+  other_users <- setdiff(all_users, potential_removal_set)
+
+  conclusion <- "Still required elsewhere"
+  if(length(other_users) == 0)
+    conclusion <- "Potentially unnecessary"
+
+  dependency_rows[[length(dependency_rows) + 1L]] <- data.frame(
+    Dependency = dependency,
+    `Candidate functions downstream` = paste(candidate_users, collapse = ", "),
+    `Other downstream functions` = if(length(other_users)) paste(other_users, collapse = ", ") else "None detected",
+    Conclusion = conclusion,
+    check.names = FALSE
+  )
+}
+
+if(length(dependency_rows) == 0)
+{
+  cat("**Result:** No non-candidate fgeo2 dependencies were detected.\n")
+} else {
+  dependency_table <- do.call(rbind, dependency_rows)
+  dependency_table <- dependency_table[
+    order(
+      dependency_table$Conclusion != "Potentially unnecessary",
+      dependency_table$Dependency
+    ),
+  ]
+
+  knitr::kable(dependency_table, row.names = FALSE)
+}
 
 ```
 
-The same graph is stored separately as `evaluation/results/fgeo2-dependencies-040b73e-2026-09-01.pdf` so it can be inspected at full size.
+# Current evaluation and decisions
 
-# Detailed evaluation and decisions
+This section will record the present decision for each candidate after reviewing the earlier recommendation, the formal tests, and the due-diligence results above.
 
-This section is intentionally left open for the function-by-function or cluster-by-cluster evaluation. For each candidate, the evaluation should record at least:
-
--   its analytical purpose;
--   current dependencies and dependents;
--   available tests and known failures;
--   whether it is a metric/descriptor or part of model fitting;
--   the maintained external tools that cover the modeling task, when relevant;
--   the decision to retain, replace, adapt, or remove it, with concise reasoning;
--   any downstream changes required before removal.
-
-## Evaluation placeholder
+## Working notes
 
 To be completed before any functions are removed.
 
 # Whole-package dependencies after work
 
-This section is intentionally left as a placeholder. After the removals and any necessary changes to dependents are complete, it will record the post-work commit and date, reproduce the whole-package dependency graph, and compare the resulting structure with the pre-work snapshot.
+The graph is intentionally deferred until after the removals. Once the work is complete, replace the post-work commit and date below and enable the chunk. The graph will use every top-level function in the seven `R/new` directories, including functions with no detected internal dependency edges.
 
-## Post-work placeholder
+```{r}
+#| eval: false
+#| out-width: "100%"
 
-To be completed after the work.
+post_work_commit <- "REPLACE_WITH_POST_WORK_COMMIT"
+post_work_date <- as.Date("YYYY-MM-DD")
+
+post_all_files <- system2(
+  "git",
+  c("-C", shQuote(path), "ls-tree", "-r", "--name-only", post_work_commit),
+  stdout = TRUE
+)
+
+post_scripts <- post_all_files[
+  grepl(paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"), post_all_files)
+]
+
+post_code_env <- new.env(parent = .GlobalEnv)
+
+for(file in post_scripts)
+{
+  code <- system2(
+    "git",
+    c("-C", shQuote(path), "show", paste0(post_work_commit, ":", file)),
+    stdout = TRUE
+  )
+
+  eval(parse(text = paste(code, collapse = "\n")), envir = post_code_env)
+}
+
+post_objects <- mget(
+  ls(post_code_env, all.names = TRUE),
+  envir = post_code_env,
+  inherits = FALSE
+)
+
+post_functions <- names(post_objects)[vapply(post_objects, is.function, logical(1))]
+
+post_edges <- get_all_dependencies(envir = post_code_env)
+post_edges <- post_edges[, c("from_function", "to_function"), drop = FALSE]
+colnames(post_edges) <- c("from", "to")
+
+post_vertices <- data.frame(name = post_functions)
+g.after <- graph_from_data_frame(
+  post_edges,
+  directed = TRUE,
+  vertices = post_vertices
+)
+
+remaining_candidates <- intersect(candidate_functions, post_functions)
+post_downstream <- character()
+
+for(candidate in remaining_candidates)
+  post_downstream <- c(post_downstream, downstream_dependents(candidate, post_edges))
+
+post_downstream <- unique(post_downstream)
+post_downstream <- setdiff(post_downstream, remaining_candidates)
+
+V(g.after)$color <- "gray80"
+V(g.after)$color[V(g.after)$name %in% post_downstream] <- "yellow"
+V(g.after)$color[V(g.after)$name %in% remaining_candidates] <- "orange"
+
+post_work_pdf <- file.path(
+  path,
+  "evaluation/results",
+  paste0(
+    "fgeo2-dependencies-", substr(post_work_commit, 1, 7), "-",
+    format(post_work_date, "%Y-%m-%d"), ".pdf"
+  )
+)
+
+dir.create(dirname(post_work_pdf), recursive = TRUE, showWarnings = FALSE)
+
+set.seed(1)
+
+pdf(post_work_pdf, height = 33, width = 33)
+par(mar = c(0, 0, 2, 0))
+
+plot(
+  g.after,
+  layout = layout.fruchterman.reingold,
+  vertex.label = V(g.after)$name,
+  vertex.size = 6,
+  vertex.color = V(g.after)$color,
+  vertex.frame.color = "white",
+  vertex.label.color = "black",
+  vertex.label.cex = 2,
+  edge.color = "gray45",
+  edge.width = 0.7,
+  edge.arrow.size = 0.3
+)
+
+legend(
+  "topleft",
+  legend = c(
+    "Candidate remaining",
+    "Downstream dependent",
+    "Other function"
+  ),
+  pt.bg = c("orange", "yellow", "gray80"),
+  pch = 21,
+  pt.cex = 2,
+  bty = "n"
+)
+
+dev.off()
+
+post_work_pdf_relative <- file.path("results", basename(post_work_pdf))
+knitr::include_graphics(post_work_pdf_relative)
+
+```
