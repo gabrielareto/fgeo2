@@ -95,13 +95,9 @@ for(group in names(candidate_groups))
 The earlier [CTFS function-decision table](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/data-raw/iss32_fun_table_edited.csv) was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. It records the following judgments:
 
 -   deprecate the complete `lmerBayes()` and `modelBayes()` blocks;
-
 -   deprecate the demographic abundance model because it was developed for one paper;
-
 -   try to deprecate the growth-bin modeling block;
-
 -   classify `lmerMortLinear()` and `lmerMortFixedTime()` as low-priority model functions;
-
 -   treat much of `utilities-statistics.r` as overly specific, while recognizing that its functions require individual review because some may have broader uses. How useful these functions are for other uses requires evaluation of the downstream dependents.
 
 ## Earlier tests (ctfs+fgeo development)
@@ -184,20 +180,10 @@ All functions found in the seven `R/new` directories are passed to the graph as 
 
 ```{r}
 
-vertices <- data.frame(name = all_functions)
-g.before <- graph_from_data_frame(
-  edges,
-  directed = TRUE,
-  vertices = vertices
-)
+g.before <- graph_from_data_frame(edges, directed = TRUE)
 
-downstream <- character()
-
-for(candidate in candidates)
-  downstream <- c(downstream, downstream_dependents(candidate, edges))
-
-downstream <- unique(downstream)
-downstream <- setdiff(downstream, candidates)
+downstream <- sapply(candidates, function(candidate) downstream_dependents(candidate, edges))
+downstream <- setdiff(unique(unlist(downstream)), candidates)
 
 V(g.before)$color <- "gray80"
 V(g.before)$color[V(g.before)$name %in% downstream] <- "yellow"
@@ -234,26 +220,13 @@ plot(
   edge.arrow.size = 0.3     # arrow size
 )
 
-legend(
-  "topleft",
-  legend = c(
-    "Candidate for removal",
-    "Downstream dependent",
-    "Other function"
-  ),
-  pt.bg = c("orange", "yellow", "gray80"),
-  pch = 21,
-  pt.cex = 2,
-  bty = "n"
-)
-
 dev.off()
 
 ```
 
 ## Dependency map
 
-Arrows point from a dependency to the function that uses it. Candidate functions are orange. Their downstream dependents, followed through any number of dependency levels, are yellow. All other functions are gray. Every function found under the seven `R/new` directories is present and labeled, including isolated functions.
+Arrows point from a dependency to the function that uses it. Candidate functions are orange. Their downstream dependents, followed through any number of dependency levels, are yellow – but note: there are not any. All other functions are gray.
 
 ```{r}
 #| echo: false
@@ -265,43 +238,6 @@ knitr::include_graphics(pre_work_pdf_relative)
 ```
 
 The same graph is stored separately as `evaluation/results/fgeo2-dependencies-040b73e-2026-09-01.pdf` so it can be inspected at full size.
-
-```{r}
-
-candidate_dependencies <- unique(edges$from[
-  !(edges$from %in% candidates) &
-    edges$to %in% candidates
-])
-
-dependency_summary <- data.frame(
-  Measure = c(
-    "R/new scripts",
-    "Functions",
-    "Functions shown in the dependency graph",
-    "Inter-function dependencies",
-    "Candidate functions",
-    "Dependencies among candidate functions",
-    "Other functions used directly by candidates",
-    "Other functions depending on candidates at any level"
-  ),
-  Value = c(
-    length(scripts),
-    length(all_functions),
-    length(V(g.before)),
-    nrow(edges),
-    length(candidates),
-    sum(
-      edges$from %in% candidates &
-        edges$to %in% candidates
-    ),
-    length(candidate_dependencies),
-    length(downstream)
-  )
-)
-
-knitr::kable(dependency_summary, row.names = FALSE)
-
-```
 
 # Detailed evaluation and decisions
 
@@ -317,7 +253,7 @@ This section is intentionally left open for the function-by-function or cluster-
 
 ## Evaluation placeholder
 
-*To be completed before any functions are removed.*
+To be completed before any functions are removed.
 
 # Whole-package dependencies after work
 
@@ -325,4 +261,4 @@ This section is intentionally left as a placeholder. After the removals and any 
 
 ## Post-work placeholder
 
-*To be completed after the work.*
+To be completed after the work.
