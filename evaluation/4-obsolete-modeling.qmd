@@ -30,97 +30,93 @@ The goal is to make the fgeo2 body of code lighter and easier to maintain by rem
 -   minimum edits to the remaining ones; and
 -   identifying dependents somewhere else, so all code remains working.
 
-# Candidates for removal
+# Candidate functions
 
 As a starting point, I will use an earlier function-by-function evaluation that was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. The table was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. That table is preserved in [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
 
-The table below groups the review into three practical categories:
+An independent second review then examined the current source, tests, dependencies, scientific role, and maintained alternatives. It deliberately looked for reasons to retain the code rather than treating the old recommendation as authoritative.
 
--   **Strong:** explicit recommendation to deprecate the complete block, or an explicitly paper-specific implementation marked for deprecation.
--   **Weak:** “try to deprecate” or low priority, without a firm recommendation.
--   **After checks:** removal appeared appropriate, but the old review suspected that other functions might depend on the code.
-
-The candidates are ordered by module and script so the source is easy to locate. Module `01` means `01_utilities/R/new`; module `05` means `05_demography_growth/R/new`, etc.
+The table combines both reviews. The old review uses **Strong**, **Weak**, and **After checks**. The current operational decision is **REMOVE**, **RETAIN**, or **CHECK FIRST**. Candidates are ordered by module and script so the source is easy to locate; module `01` means `01_utilities/R/new` and module `05` means `05_demography_growth/R/new`.
 
 ```{r}
 #| echo: false
 #| results: asis
 
 candidate_table <- read.delim(
-  text = "Module|Script|Function|Old recommendation|Summary of old decision and notes
-01|utilities-lmerBayes.r|lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|lmerBayes.hyperllike.sigma|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|lmerBayes.hyperllike.mean|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|full.likelihood.lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|llike.fixef.lmer|Strong|Not listed individually; inherits the explicit lmerBayes block recommendation.
-01|utilities-lmerBayes.r|llike.model.lmer|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|residual.llike.lmerBayes|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|badSD|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|arrangeParam.llike.2D|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|arrangeParam.Gibbs.2D|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|saveParamFile|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|restoreParamFile|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|resetParam|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|summaryMCMC|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|recalculate.lmerBayesllike|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-lmerBayes.r|covTocorr|Strong|Explicit recommendation to deprecate the complete lmerBayes block.
-01|utilities-modelBayes.r|modelBayes|Strong|Explicit recommendation to deprecate the complete modelBayes block.
-01|utilities-modelBayes.r|residual.llike.modelBayes|Strong|Explicit recommendation to deprecate the complete modelBayes block.
-01|utilities-modelBayes.r|summaryModelMCMC|Strong|Explicit recommendation to deprecate the complete modelBayes block.
-01|utilities-statistics.r|regression.Bayes|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|Gibbs.regslope|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|Gibbs.regsigma|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|Gibbs.normalmean|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|Gibbs.normalvar|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|model.xy|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|arrangeParam.llike|After checks|Considered overly specific; check other uses before removal.
-01|utilities-statistics.r|arrangeParam.Gibbs|After checks|Considered overly specific; check other uses before removal.
-01|utilities-statistics.r|llike.GaussModel|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|llike.GaussModelSD|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|BadParam|After checks|Considered overly specific; check other uses before removal.
-01|utilities-statistics.r|graph.modeldiag|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|metrop1step|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|metrop1step.discrete|After checks|The old review suspected other functions might depend on it.
-01|utilities-statistics.r|testmcmcfunc|After checks|The old review suspected other functions might depend on it.
-05|demogchange-abund.fit.CTFS.r|model.littleR.Gibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|full.abundmodel.llike|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|prob.N1|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|spmean.mort.abundGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|hyper.abundGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|hyper.mortGibbs|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|bad.asympower.param|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|bad.asymexp.param|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|fitSeveralAbundModel|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|graph.abundmodel|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-abund.fit.CTFS.r|find.xaxis.hist|Weak|Low-priority exploratory graphic.
-05|demogchange-abund.fit.CTFS.r|abundmodel.fit|Strong|Paper-specific model; explicitly recommended for deprecation.
-05|demogchange-demogChange.r|lmerMortLinear|Weak|Low-priority model function; no firm deprecation decision recorded.
-05|demogchange-demogChange.r|lmerMortFixedTime|Weak|Low-priority model function; no firm deprecation decision recorded.
-05|growth-growthfit.bin.r|extract.growthdata|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|run.growthbin.manyspp|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|run.growthfit.bin|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|growth.flexbin|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|llike.linearbin.optim|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|defineBinBreaks|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|defineSDpar|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|enoughSamplePerBin|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|wideEnoughBins|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|bad.binparam|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|bad.binsdpar|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|calculateBinModel.BIC|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|calculateBinModel.DIC|Weak|Not listed individually; inherits the growth-bin block recommendation.
-05|growth-growthfit.bin.r|calculateBinModel.AIC|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|calculateBinModel.bestpred|Weak|The old recommendation was to try to deprecate the growth-bin block.
-05|growth-growthfit.bin.r|assembleBinOutput|Weak|Try to deprecate; reconsider binning separately in a more general context.
-05|growth-growthfit.graph.r|graph.growthmodel.spp|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|graph.growthmodel|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|overlay.growthbinmodel|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|compare.growthbinmodel|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|graph.outliers.spp|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|graph.outliers|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|binGraphSampleSpecies|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|binGraphManySpecies.Panel|Weak|Low-priority graphic associated with the growth-bin models.
-05|growth-growthfit.graph.r|binGraphManySpecies|Weak|Low-priority graphic associated with the growth-bin models.",
+  text = "Module|Script|Function|Old review|Current decision|Operational conclusion
+01|utilities-lmerBayes.r|lmerBayes|Strong|REMOVE|Bespoke MCMC lacks explicit priors and modern diagnostics; archive the model and API description.
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.sigma|Strong|REMOVE|Sampler-specific covariance update; preserve an intended covariance prior only if documented.
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.mean|Strong|REMOVE|Apparently unused generic likelihood; preserve the formula only if needed.
+01|utilities-lmerBayes.r|full.likelihood.lmerBayes|Strong|REMOVE|Likelihood accounting is questionable; preserve a formal factorization only for reproducibility.
+01|utilities-lmerBayes.r|llike.fixef.lmer|Strong|REMOVE|Thin adapter used only by the obsolete sampler.
+01|utilities-lmerBayes.r|llike.model.lmer|Strong|REMOVE|Incomplete observation likelihood with interactive failure behavior; record error families if migrating.
+01|utilities-lmerBayes.r|residual.llike.lmerBayes|Strong|REMOVE|Residual adapter used only by the obsolete sampler.
+01|utilities-lmerBayes.r|badSD|Strong|REMOVE|Trivial positivity check with no independent value.
+01|utilities-lmerBayes.r|arrangeParam.llike.2D|Strong|REMOVE|Parameter-packing helper tied to legacy sampler internals.
+01|utilities-lmerBayes.r|arrangeParam.Gibbs.2D|Strong|REMOVE|Parameter-packing helper tied to legacy Gibbs blocks.
+01|utilities-lmerBayes.r|saveParamFile|Strong|REMOVE|Ad hoc chain persistence; document the legacy format only if archived draws must be read.
+01|utilities-lmerBayes.r|restoreParamFile|Strong|REMOVE|Legacy restoration logic; create a one-time converter only if old fits require it.
+01|utilities-lmerBayes.r|resetParam|Strong|REMOVE|Reset plumbing used only by the obsolete persistence design.
+01|utilities-lmerBayes.r|summaryMCMC|Strong|REMOVE|Lacks modern chain diagnostics; preserve output names only for a legacy converter.
+01|utilities-lmerBayes.r|recalculate.lmerBayesllike|Strong|REMOVE|Broken defaults and mismatched arguments make reconstruction unreliable.
+01|utilities-lmerBayes.r|covTocorr|Strong|REMOVE|Duplicates stats::cov2cor().
+01|utilities-modelBayes.r|modelBayes|Strong|REMOVE|Bespoke adaptive MCMC lacks explicit priors and diagnostics; archive callback conventions if useful.
+01|utilities-modelBayes.r|residual.llike.modelBayes|Strong|REMOVE|Internal residual adapter with no independent scientific role.
+01|utilities-modelBayes.r|summaryModelMCMC|Strong|REMOVE|Incomplete legacy summaries without modern convergence checks.
+01|utilities-statistics.r|regression.Bayes|After checks|REMOVE|Narrow conjugate regression with implicit priors and fragile inputs.
+01|utilities-statistics.r|Gibbs.regslope|After checks|REMOVE|Legacy sampler block with implicit prior and direct matrix inversion.
+01|utilities-statistics.r|Gibbs.regsigma|After checks|REMOVE|Legacy inverse-gamma update coupled only to regression.Bayes().
+01|utilities-statistics.r|Gibbs.normalmean|After checks|REMOVE|Generic conjugate update with implicit assumptions and no standalone use.
+01|utilities-statistics.r|Gibbs.normalvar|After checks|REMOVE|Generic update with an arbitrary zero-variance fallback.
+01|utilities-statistics.r|model.xy|After checks|REMOVE|Adaptive MCMC has implicit priors and inconsistent optional-SD handling; archive equations if needed.
+01|utilities-statistics.r|arrangeParam.llike|After checks|REMOVE|Internal parameter-packing helper with a faulty NULL path.
+01|utilities-statistics.r|arrangeParam.Gibbs|After checks|REMOVE|Internal packing helper used by legacy Gibbs blocks.
+01|utilities-statistics.r|llike.GaussModel|After checks|REMOVE|Generic likelihood used only by candidate modeling code.
+01|utilities-statistics.r|llike.GaussModelSD|After checks|REMOVE|Legacy heteroscedastic likelihood; preserve the variance specification only if reused.
+01|utilities-statistics.r|BadParam|After checks|REMOVE|Default validator always returns false and adds no protection.
+01|utilities-statistics.r|graph.modeldiag|After checks|REMOVE|Broken model-specific diagnostic plotting.
+01|utilities-statistics.r|metrop1step|After checks|REMOVE|Adaptive Metropolis step lacks safe adaptation, diagnostics, and robust failure handling.
+01|utilities-statistics.r|metrop1step.discrete|After checks|REMOVE|Untested discrete Metropolis step with no independent users.
+01|utilities-statistics.r|testmcmcfunc|After checks|REMOVE|Explicitly described as no longer used.
+05|demogchange-abund.fit.CTFS.r|model.littleR.Gibbs|Strong|CHECK FIRST|Freeze equations, priors, fixtures, and expected summaries; do not retain the sampler unchanged.
+05|demogchange-abund.fit.CTFS.r|full.abundmodel.llike|Strong|CHECK FIRST|Reconstruct and validate the generative factorization before removal or reimplementation.
+05|demogchange-abund.fit.CTFS.r|prob.N1|Strong|CHECK FIRST|Preserve and validate the distinctive demographic observation equation and its edge cases.
+05|demogchange-abund.fit.CTFS.r|spmean.mort.abundGibbs|Strong|CHECK FIRST|Verify the mortality-abundance conditional density against the publication and simulated data.
+05|demogchange-abund.fit.CTFS.r|hyper.abundGibbs|Strong|REMOVE|Sampler-only hyperparameter density; record prior choices in the model specification.
+05|demogchange-abund.fit.CTFS.r|hyper.mortGibbs|Strong|REMOVE|Sampler-only mortality hyperparameter block; record prior choices in the specification.
+05|demogchange-abund.fit.CTFS.r|bad.asympower.param|Strong|REMOVE|Trivial legacy constraint; record its valid parameter domain with the model specification.
+05|demogchange-abund.fit.CTFS.r|bad.asymexp.param|Strong|REMOVE|Trivial legacy constraint; record its valid parameter domain with the model specification.
+05|demogchange-abund.fit.CTFS.r|fitSeveralAbundModel|Strong|REMOVE|Repeats a slow, unreliable sampler without adding scientific capability.
+05|demogchange-abund.fit.CTFS.r|graph.abundmodel|Strong|REMOVE|Model-specific plotting; archive figure intent and variable definitions if needed.
+05|demogchange-abund.fit.CTFS.r|find.xaxis.hist|Weak|REMOVE|Minor histogram-axis helper with no independent value.
+05|demogchange-abund.fit.CTFS.r|abundmodel.fit|Strong|REMOVE|Sampler-specific summary helper with a broken confidence-interval branch.
+05|demogchange-demogChange.r|lmerMortLinear|Weak|REMOVE|Standard complementary-log-log hazard model; preserve the equation and a migration example.
+05|demogchange-demogChange.r|lmerMortFixedTime|Weak|REMOVE|Standard category-specific hazard model; preserve factor and time-offset conventions.
+05|growth-growthfit.bin.r|extract.growthdata|Weak|RETAIN|Data preparation fits fgeo2; repair coupling, transformations, naming, and returnfull, and port a test fixture.
+05|growth-growthfit.bin.r|run.growthbin.manyspp|Weak|REMOVE|Dataset-specific batch wrapper around failed models; preserve only the intended result schema.
+05|growth-growthfit.bin.r|run.growthfit.bin|Weak|REMOVE|Orchestrates obsolete fitting engines without independent scientific logic.
+05|growth-growthfit.bin.r|growth.flexbin|Weak|REMOVE|Unmaintained breakpoint fitting; preserve the piecewise-growth and error specification, not the engine.
+05|growth-growthfit.bin.r|llike.linearbin.optim|Weak|REMOVE|Likelihood adapter used only by the obsolete flexible-bin optimizer.
+05|growth-growthfit.bin.r|defineBinBreaks|Weak|REMOVE|Model-specific starting heuristic; preserve bin-width and sample rules only if later justified.
+05|growth-growthfit.bin.r|defineSDpar|Weak|REMOVE|Arbitrary model-specific starting values.
+05|growth-growthfit.bin.r|enoughSamplePerBin|Weak|REMOVE|Validator used only by the deprecated fitting chain; document the rule only if justified.
+05|growth-growthfit.bin.r|wideEnoughBins|Weak|REMOVE|Model-specific validator; document the minimum-width rule only if justified.
+05|growth-growthfit.bin.r|bad.binparam|Weak|REMOVE|Constraint wrapper tied to the obsolete breakpoint parameterization.
+05|growth-growthfit.bin.r|bad.binsdpar|Weak|REMOVE|Constraint wrapper tied to the obsolete residual-SD parameterization.
+05|growth-growthfit.bin.r|calculateBinModel.BIC|Weak|REMOVE|RSS-based calculation is not aligned with the fitted heteroscedastic likelihood.
+05|growth-growthfit.bin.r|calculateBinModel.DIC|Weak|REMOVE|Questionable reconstructed likelihood; preserve historical values only as metadata.
+05|growth-growthfit.bin.r|calculateBinModel.AIC|Weak|REMOVE|Implemented expression is not the standard AIC formula.
+05|growth-growthfit.bin.r|calculateBinModel.bestpred|Weak|REMOVE|Parameter and draw dimensions are interchanged, making predictions unreliable.
+05|growth-growthfit.bin.r|assembleBinOutput|Weak|REMOVE|Expects inconsistent fields and depends on broken upstream output.
+05|growth-growthfit.graph.r|graph.growthmodel.spp|Weak|REMOVE|Wrapper tied to obsolete model objects; preserve desired panels only as specifications.
+05|growth-growthfit.graph.r|graph.growthmodel|Weak|REMOVE|Model-specific plotting with no unique scientific computation.
+05|growth-growthfit.graph.r|overlay.growthbinmodel|Weak|REMOVE|Overlay helper tied to deprecated parameter and prediction structures.
+05|growth-growthfit.graph.r|compare.growthbinmodel|Weak|REMOVE|Uses the invalid AIC calculation and references the wrong object.
+05|growth-growthfit.graph.r|graph.outliers.spp|Weak|CHECK FIRST|Prototype a pure record-level growth-QC table with explicit census keys; do not retain unchanged.
+05|growth-growthfit.graph.r|graph.outliers|Weak|REMOVE|Batch plotting wrapper; rebuild only if the extracted QC workflow proves useful.
+05|growth-growthfit.graph.r|binGraphSampleSpecies|Weak|REMOVE|Sampling and plotting wrapper tied to obsolete model outputs.
+05|growth-growthfit.graph.r|binGraphManySpecies.Panel|Weak|REMOVE|Untested panel helper tied to obsolete model outputs.
+05|growth-growthfit.graph.r|binGraphManySpecies|Weak|REMOVE|Top-level graphics wrapper inherits broken fitting and comparison dependencies.",
   sep = "|",
   quote = "",
   colClasses = "character",
@@ -128,10 +124,11 @@ candidate_table <- read.delim(
 )
 
 candidate_functions <- candidate_table$Function
+removal_functions <- candidate_table$Function[
+  candidate_table[["Current decision"]] == "REMOVE"
+]
 candidate_table_display <- candidate_table
-names(candidate_table_display)[c(1, 4, 5)] <- c(
-  "Mod.", "Old rating", "Old evaluation summary"
-)
+names(candidate_table_display)[1] <- "Mod."
 
 candidate_table_latex <- knitr::kable(
   candidate_table_display,
@@ -142,10 +139,10 @@ candidate_table_latex <- knitr::kable(
 )
 
 candidate_table_latex <- sub(
-  "\\begin{longtable}{lllll}",
+  "\\begin{longtable}{llllll}",
   paste0(
     "\\begin{longtable}{@{}",
-    "L{0.9cm}L{3.2cm}L{5cm}L{2.4cm}L{8.8cm}",
+    "L{0.7cm}L{3cm}L{4.8cm}L{1.8cm}L{2.2cm}L{7.5cm}",
     "@{}}"
   ),
   candidate_table_latex,
@@ -154,13 +151,23 @@ candidate_table_latex <- sub(
 
 cat(
   "\\begin{landscape}\n",
-  "\\small\n",
-  "\\setlength{\\tabcolsep}{4pt}\n",
+  "\\footnotesize\n",
+  "\\setlength{\\tabcolsep}{3pt}\n",
   candidate_table_latex,
   "\n\\end{landscape}\n",
   sep = ""
 )
 ```
+
+## Functions requiring careful review
+
+Before changing the code, review these functions and watch their internal, tutorial, test, and external dependents explicitly:
+
+-   **Retain and repair:** `extract.growthdata()`.
+-   **Preserve and validate the scientific specification before removal or reimplementation:** `model.littleR.Gibbs()`, `full.abundmodel.llike()`, `prob.N1()`, and `spmean.mort.abundGibbs()`.
+-   **Test whether the useful measurement-QC operation can be extracted:** `graph.outliers.spp()`.
+
+The current recommendation for the other 67 candidates is removal, subject to the dependency and test checks below.
 
 Some formal tests indicate that these functions, if conserved, would require maintenance and debugging. In other words: conservation will come with overhead costs.
 
@@ -174,7 +181,7 @@ Some formal tests indicate that these functions, if conserved, would require mai
 This due diligence has two main goals:
 
 1.  identify any function outside the candidate set that would break if a candidate were removed; and
-2.  identify non-candidate functions that may no longer be necessary if all candidates are removed.
+2.  identify non-candidate functions that may no longer be necessary if the functions marked **REMOVE** are removed.
 
 The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e).
 
@@ -231,6 +238,7 @@ edges <- edges[, c("from_function", "to_function"), drop = FALSE]
 colnames(edges) <- c("from", "to")
 
 candidates <- intersect(candidate_functions, all_functions)
+removal_candidates <- intersect(removal_functions, all_functions)
 missing_candidates <- setdiff(candidate_functions, all_functions)
 
 if(length(missing_candidates))
@@ -300,14 +308,14 @@ if(length(dependent_rows) == 0)
 
 ## Dependencies that may become unnecessary
 
-This check follows dependencies upstream through all levels. A non-candidate dependency is marked as potentially unnecessary when it belongs to the candidate dependency chain and has no downstream use outside that potential removal set.
+This check follows dependencies upstream through all levels. A non-candidate dependency is marked as potentially unnecessary when it belongs to the dependency chain of functions marked **REMOVE** and has no downstream use outside that potential removal set. Functions marked **RETAIN** or **CHECK FIRST** prevent a shared dependency from receiving that conclusion.
 
 ```{r}
 #| results: asis
 
 candidate_dependencies <- character()
 
-for(candidate in candidates)
+for(candidate in removal_candidates)
   candidate_dependencies <- c(
     candidate_dependencies,
     upstream_dependencies(candidate, edges)
@@ -315,14 +323,14 @@ for(candidate in candidates)
 
 candidate_dependencies <- unique(candidate_dependencies)
 candidate_dependencies <- setdiff(candidate_dependencies, candidates)
-potential_removal_set <- c(candidates, candidate_dependencies)
+potential_removal_set <- c(removal_candidates, candidate_dependencies)
 
 dependency_rows <- list()
 
 for(dependency in candidate_dependencies)
 {
   all_users <- downstream_dependents(dependency, edges)
-  candidate_users <- intersect(all_users, candidates)
+  removal_users <- intersect(all_users, removal_candidates)
   other_users <- setdiff(all_users, potential_removal_set)
 
   conclusion <- "Still required elsewhere"
@@ -331,7 +339,7 @@ for(dependency in candidate_dependencies)
 
   dependency_rows[[length(dependency_rows) + 1L]] <- data.frame(
     Dependency = dependency,
-    `Candidate functions downstream` = paste(candidate_users, collapse = ", "),
+    `Functions marked REMOVE downstream` = paste(removal_users, collapse = ", "),
     `Other downstream functions` = if(length(other_users)) paste(other_users, collapse = ", ") else "None detected",
     Conclusion = conclusion,
     check.names = FALSE
@@ -379,17 +387,9 @@ if(length(dependency_rows) == 0)
 
 # Current evaluation and decisions
 
-I have reviewed all functions one by one, and in the context of their corresponding working block.
+The independent review broadly confirms the removal strategy: remove 67 of the 73 candidates, retain and repair `extract.growthdata()`, and complete the specified checks for the five functions highlighted above. The main scientific qualification is the abundance model: its equations may be distinctive and worth preserving, but the current sampler and likelihood implementation should not be maintained as production software without reconstruction and validation.
 
-As far as I understand, all this functionality is better covered by standard applications of WinBugs, STAN, `brms` package in R, and other standard tools for Bayesian / hierarchical modeling.
-
-The modeling task itself requires expertise. Experts do know these tools. Overall, it seems very unlikely that any member of the ForestGEO / ATFS communities use (or should use) the code developed by Condit and stored in CTFS.
-
-The recent ForestGEO workshop in Krabi (Thailand) suggests that these tools are becoming more and more accessible and easy to use, even for the average user. The AI revolution will probably make Bayesian statistics even easier to implement.
-
-Some of Condit's code seems legacy code with the partial goal of reproducibility of results, particularly the code in the "abund.fit" block. Although reproducibility is a valuable goal, there are other ways of ensuring that. It does not seem useful that fgeo2 functions as a repository for legacy code.
-
-All points in the same direction: a massive, direct removal of all the functions mentioned above is justified, and it would not have downstream consequences. All code remains under "old" folders as part of the fgeo2 distribution, though.
+General Bayesian, hierarchical, segmented, and model-comparison tasks are better handled by maintained tools such as Stan, `brms`, NIMBLE, `segmented`, `mcp`, and `loo`. fgeo2 should preserve only reusable data preparation, clearly justified measurement-QC operations, and any scientific specifications needed for reproducibility or future reimplementation. The legacy implementations remain available under the `old` directories and in repository history.
 
 # Package structure after removals
 
