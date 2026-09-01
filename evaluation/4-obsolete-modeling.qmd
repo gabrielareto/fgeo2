@@ -15,6 +15,9 @@ format:
     include-in-header:
       text: |
         \usepackage{enumitem}
+        \usepackage{array}
+        \usepackage{pdflscape}
+        \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
         \setlist{itemsep=2pt, topsep=2pt}
 editor: visual
 ---
@@ -125,11 +128,37 @@ candidate_table <- read.delim(
 )
 
 candidate_functions <- candidate_table$Function
+candidate_table_display <- candidate_table
+names(candidate_table_display)[c(1, 4, 5)] <- c(
+  "Mod.", "Old rating", "Old evaluation summary"
+)
 
-knitr::kable(
-  candidate_table,
+candidate_table_latex <- knitr::kable(
+  candidate_table_display,
+  format = "latex",
+  booktabs = TRUE,
   longtable = TRUE,
   row.names = FALSE
+)
+
+candidate_table_latex <- sub(
+  "\\begin{longtable}{lllll}",
+  paste0(
+    "\\begin{longtable}{@{}",
+    "L{0.9cm}L{3.2cm}L{5cm}L{2.4cm}L{8.8cm}",
+    "@{}}"
+  ),
+  candidate_table_latex,
+  fixed = TRUE
+)
+
+cat(
+  "\\begin{landscape}\n",
+  "\\small\n",
+  "\\setlength{\\tabcolsep}{4pt}\n",
+  candidate_table_latex,
+  "\n\\end{landscape}\n",
+  sep = ""
 )
 ```
 
@@ -246,7 +275,29 @@ if(length(dependent_rows) == 0)
   cat("**Result:** No function outside the candidate set depends on a candidate in the pre-work snapshot.\n")
 } else {
   dependent_table <- do.call(rbind, dependent_rows)
-  knitr::kable(dependent_table, row.names = FALSE)
+  dependent_table_latex <- knitr::kable(
+    dependent_table,
+    format = "latex",
+    booktabs = TRUE,
+    longtable = TRUE,
+    row.names = FALSE
+  )
+
+  dependent_table_latex <- sub(
+    "\\begin{longtable}{lll}",
+    "\\begin{longtable}{@{}L{4cm}L{9cm}L{9cm}@{}}",
+    dependent_table_latex,
+    fixed = TRUE
+  )
+
+  cat(
+    "\\begin{landscape}\n",
+    "\\footnotesize\n",
+    "\\setlength{\\tabcolsep}{4pt}\n",
+    dependent_table_latex,
+    "\n\\end{landscape}\n",
+    sep = ""
+  )
 }
 
 ```
@@ -303,7 +354,29 @@ if(length(dependency_rows) == 0)
     ),
   ]
 
-  knitr::kable(dependency_table, row.names = FALSE)
+  dependency_table_latex <- knitr::kable(
+    dependency_table,
+    format = "latex",
+    booktabs = TRUE,
+    longtable = TRUE,
+    row.names = FALSE
+  )
+
+  dependency_table_latex <- sub(
+    "\\begin{longtable}{llll}",
+    "\\begin{longtable}{@{}L{3.4cm}L{8.1cm}L{8.1cm}L{2.5cm}@{}}",
+    dependency_table_latex,
+    fixed = TRUE
+  )
+
+  cat(
+    "\\begin{landscape}\n",
+    "\\footnotesize\n",
+    "\\setlength{\\tabcolsep}{4pt}\n",
+    dependency_table_latex,
+    "\n\\end{landscape}\n",
+    sep = ""
+  )
 }
 
 ```
