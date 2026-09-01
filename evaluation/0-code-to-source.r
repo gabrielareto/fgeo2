@@ -73,45 +73,175 @@ get_all_dependencies <- function(
     get_env_functions(ns, pkg, unique(nms))
   }
   
-  get_qualified_calls <- function(fun) {
-    out <- character()
-    
-    walk <- function(x) {
-      if (!is.call(x)) return(invisible(NULL))
-      
-      head <- x[[1]]
-      
-      op <- if (is.symbol(head)) {
-        as.character(head)
-      } else {
-        NA_character_
+  get_syntax_calls <- function(fun, known_names) {
+    local_dynamic <- character()
+    callbacks <- character()
+    qualified <- character()
+    dynamic_functions <- c("get", "get0", "mget", "match.fun", "do.call")
+    callback_arguments <- list(
+      apply = 3L, lapply = 2L, sapply = 2L, vapply = 2L,
+      tapply = 3L, eapply = 2L, rapply = 2L,
+      Map = 1L, mapply = 1L, Reduce = 1L, Filter = 1L,
+      Find = 1L, Position = 1L, Negate = 1L, Vectorize = 1L,
+      do.call = 1L, match.fun = 1L, outer = 3L, sweep = 4L,
+      by = 3L, optim = c(2L, 3L), optimize = 1L,
+      nlm = 1L, nlminb = 2:4, uniroot = 1L, integrate = 1L
+    )
+    callback_argument_names <- c(
+      "FUN", ".f", "fn", "gr", "objective", "gradient", "hessian"
+    )
+
+    literal_names <- function(x) {
+      if (is.character(x)) return(x)
+
+      if (
+        is.call(x) &&
+        identical(x[[1]], as.name("c"))
+      ) {
+        values <- as.list(x)[-1]
+        if (length(values) && all(vapply(values, is.character, logical(1)))) {
+          return(unlist(values, use.names = FALSE))
+        }
       }
-      
+
+      character()
+    }
+
+    has_explicit_environment <- function(x, op) {
+      args <- as.list(x)[-1]
+      arg_names <- names(args)
+      if (is.null(arg_names)) arg_names <- rep("", length(args))
+
+      if ("envir" %in% arg_names || "pos" %in% arg_names) return(TRUE)
+
+      environment_position <- switch(
+        op,
+        get = 2L,
+        get0 = 2L,
+        mget = 2L,
+        do.call = 4L,
+        Inf
+      )
+
+      length(args) >= environment_position &&
+        !nzchar(arg_names[[environment_position]])
+    }
+
+    walk <- function(x) {
+      if (is.pairlist(x)) {
+        for (i in seq_along(x)) {
+          if (identical(x[[i]], quote(expr = ))) next
+          walk(x[[i]])
+        }
+        return(invisible(NULL))
+      }
+
+      if (is.expression(x)) {
+        for (i in seq_along(x)) walk(x[[i]])
+        return(invisible(NULL))
+      }
+
+      if (!is.call(x)) return(invisible(NULL))
+
+      head <- x[[1]]
+      op <- if (is.symbol(head)) as.character(head) else NA_character_
+
+      called <- op
+      if (
+        is.call(head) &&
+        length(head) >= 3 &&
+        as.character(head[[1]]) %in% c("::", ":::")
+      ) {
+        called <- as.character(head[[3]])
+      }
+
       if (
         length(x) >= 3 &&
         !is.na(op) &&
         op %in% c("::", ":::")
       ) {
         pkg <- as.character(x[[2]])
-        nm  <- as.character(x[[3]])
-        
+        nm <- as.character(x[[3]])
+
         if (length(pkg) == 1 && length(nm) == 1) {
-          out <<- c(out, paste(pkg, nm, sep = "::"))
+          qualified <<- c(qualified, paste(pkg, nm, sep = "::"))
         }
       }
-      
-      for (i in seq_along(x)[-1]) {
-        walk(x[[i]])
+
+      if (
+        length(x) >= 2 &&
+        !is.na(called) &&
+        called %in% dynamic_functions
+      ) {
+        dynamic_names <- literal_names(x[[2]])
+        if (!has_explicit_environment(x, called)) {
+          local_dynamic <<- c(local_dynamic, dynamic_names)
+        }
       }
-      
+
+      args <- as.list(x)[-1]
+      arg_names <- names(args)
+      if (is.null(arg_names)) arg_names <- rep("", length(args))
+
+      callback_positions <- which(arg_names %in% callback_argument_names)
+      positional_callbacks <- if (!is.na(called)) {
+        callback_arguments[[called]]
+      } else {
+        NULL
+      }
+      if (!is.null(positional_callbacks)) {
+        positional_callbacks <- positional_callbacks[
+          positional_callbacks <= length(args) &
+            vapply(positional_callbacks, function(i) {
+              all(!nzchar(arg_names[seq_len(i)]))
+            }, logical(1))
+        ]
+      }
+
+      positions <- c(callback_positions, positional_callbacks)
+      if (!is.na(called) && called %in% known_names) {
+        positions <- c(positions, seq_along(args))
+      }
+
+      positions <- unique(positions[positions <= length(args)])
+      skip_dynamic <- !is.na(called) &&
+        called %in% dynamic_functions &&
+        has_explicit_environment(x, called)
+
+      for (i in positions) {
+        if (skip_dynamic) next
+
+        if (is.symbol(args[[i]])) {
+          callbacks <<- c(callbacks, as.character(args[[i]]))
+        } else if (i %in% c(callback_positions, positional_callbacks)) {
+          local_dynamic <<- c(local_dynamic, literal_names(args[[i]]))
+        }
+      }
+
+      # Include the call head, where pkg::function is stored.
+      for (i in seq_along(x)) walk(x[[i]])
+
       invisible(NULL)
     }
-    
+
     if (is.function(fun) && typeof(fun) == "closure") {
+      defaults <- formals(fun)
+      for (i in seq_along(defaults)) {
+        if (identical(defaults[[i]], quote(expr = ))) next
+        if (is.symbol(defaults[[i]])) {
+          callbacks <- c(callbacks, as.character(defaults[[i]]))
+        }
+      }
+
+      walk(formals(fun))
       walk(body(fun))
     }
-    
-    unique(out)
+
+    list(
+      local_dynamic = unique(local_dynamic),
+      callbacks = unique(callbacks),
+      qualified = unique(qualified)
+    )
   }
   
   get_import_map <- function(packages, known_ids) {
@@ -192,12 +322,32 @@ get_all_dependencies <- function(
     to <- meta[match(to_id, meta$id), ]
     
     if (!is.function(fun) || typeof(fun) != "closure") return(NULL)
+
+    syntax_calls <- get_syntax_calls(fun, unique(meta$function_name))
     
-    calls <- tryCatch(
-      codetools::findGlobals(fun, merge = FALSE)$functions,
-      error = function(e) character()
+    globals <- tryCatch(
+      codetools::findGlobals(fun, merge = FALSE),
+      error = function(e) list(functions = character(), variables = character())
+    )
+
+    locals <- c(
+      names(formals(fun)),
+      tryCatch(
+        codetools::findFuncLocals(formals(fun), body(fun)),
+        error = function(e) character()
+      )
     )
     
+    calls <- c(
+      globals$functions,
+      intersect(syntax_calls$callbacks, globals$variables)
+    )
+
+    # Character names in get(), do.call(), match.fun(), and related calls.
+    calls <- c(
+      calls,
+      setdiff(syntax_calls$local_dynamic, locals)
+    )
     calls <- unique(setdiff(calls, drop_calls))
     
     from_ids <- character()
@@ -231,7 +381,7 @@ get_all_dependencies <- function(
     }
     
     # Explicit pkg::fun or pkg:::fun calls
-    qualified <- get_qualified_calls(fun)
+    qualified <- syntax_calls$qualified
     qualified <- qualified[qualified %in% ids]
     
     from_ids <- unique(c(from_ids, qualified))
@@ -463,4 +613,3 @@ remove_dir_to_point_in_history <- function(path, historical_path)
   
   invisible(TRUE)
 }
-
