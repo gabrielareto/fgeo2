@@ -81,13 +81,6 @@ candidate_groups <- list(
 )
 
 candidate_functions <- unique(unlist(candidate_groups, use.names = FALSE))
-candidate_interfaces <- c(
-  "lmerBayes", "modelBayes", "regression.Bayes", "model.xy",
-  "model.littleR.Gibbs", "fitSeveralAbundModel",
-  "lmerMortLinear", "lmerMortFixedTime", "growth.flexbin",
-  "run.growthfit.bin", "run.growthbin.manyspp",
-  "compare.growthbinmodel"
-)
 
 for(group in names(candidate_groups))
 {
@@ -120,7 +113,7 @@ The earlier [CTFS function-decision table](https://github.com/forestgeo/ctfs/blo
 
 # Whole-package dependencies before work
 
-## Load code
+## Read code and declare parameters
 
 The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e). Git reads the files directly from that commit, so later changes in the working tree are not mixed into the evaluation.
 
@@ -128,17 +121,12 @@ The dependency structure below uses every R script in the `R/new` directory of a
 
 path <- normalizePath(system2("git", c("rev-parse", "--show-toplevel"),
                               stdout = TRUE)[1])
-knitr::opts_knit$set(root.dir = path)
 
 library(igraph, quietly = TRUE)
 source(file.path(path, "evaluation/0-code-to-source.r"))
 
 pre_work_commit <- "040b73e0cd9a0d55d64c1639b22159d5c6cbd20e"
-pre_work_date   <- as.Date("2026-09-01")
-
-# Fill these two values after completing the work.
-post_work_commit <- NA_character_
-post_work_date   <- as.Date(NA_character_)
+pre_work_date <- as.Date("2026-09-01")
 
 modules <- c(
   "01_utilities", "02_biomass", "03_spatial",
@@ -146,190 +134,133 @@ modules <- c(
   "06_topography_habitat", "07_mapping_plotting"
 )
 
-git_output <- function(path, args)
-{
-  out <- system2(
-    "git",
-    c("-C", shQuote(path), args),
-    stdout = TRUE,
-    stderr = TRUE
-  )
-
-  if(!is.null(attr(out, "status")))
-    stop(paste(out, collapse = "\n"), call. = FALSE)
-
-  out
-}
-
-read_snapshot_file <- function(path, commit, file)
-{
-  out <- git_output(
-    path,
-    c("show", shQuote(paste0(commit, ":", file)))
-  )
-
-  paste(out, collapse = "\n")
-}
-
-evaluate_snapshot <- function(path, commit, modules, candidates)
-{
-  files <- git_output(
-    path,
-    c("ls-tree", "-r", "--name-only", shQuote(commit))
-  )
-
-  module_pattern <- paste(modules, collapse = "|")
-  scripts <- files[
-    grepl(
-      paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"),
-      files
-    )
-  ]
-
-  code_env <- new.env(parent = .GlobalEnv)
-
-  for(file in scripts)
-  {
-    code <- read_snapshot_file(path, commit, file)
-    eval(parse(text = code), envir = code_env)
-  }
-
-  objects <- mget(
-    ls(code_env, all.names = TRUE),
-    envir = code_env,
-    inherits = FALSE
-  )
-  functions <- names(objects)[
-    vapply(objects, is.function, logical(1))
-  ]
-
-  edges <- get_all_dependencies(envir = code_env)
-  edges <- edges[, c("from_function", "to_function"), drop = FALSE]
-  colnames(edges) <- c("from", "to")
-
-  list(
-    commit = commit,
-    scripts = scripts,
-    functions = functions,
-    edges = edges,
-    candidates = intersect(candidates, functions)
-  )
-}
-
-make_dependency_graph <- function(snapshot)
-{
-  connected <- unique(c(snapshot$edges$from, snapshot$edges$to))
-  vertex_names <- unique(c(connected, snapshot$candidates))
-  vertices <- data.frame(name = vertex_names)
-
-  graph_from_data_frame(
-    snapshot$edges,
-    directed = TRUE,
-    vertices = vertices
-  )
-}
-
-dependency_pdf_file <- function(path, commit, date)
-{
-  file.path(
-    path,
-    "evaluation/results",
-    paste0(
-      "fgeo2-dependencies-", substr(commit, 1, 7), "-",
-      format(date, "%Y-%m-%d"), ".pdf"
-    )
-  )
-}
-
-
-write_dependency_pdf <- function(snapshot, file)
-{
-  dir.create(dirname(file), recursive = TRUE, showWarnings = FALSE)
-
-  g <- make_dependency_graph(snapshot)
-
-  # Follow dependency arrows: dependency -> function using it.
-  downstream <- unique(unlist(lapply(
-    snapshot$candidates,
-    downstream_dependents,
-    edges = snapshot$edges
-  )))
-
-  # Candidate status takes precedence over downstream status.
-  downstream <- setdiff(downstream, snapshot$candidates)
-
-  V(g)$color <- "gray80"
-  V(g)$color[V(g)$name %in% downstream] <- "yellow"
-  V(g)$color[V(g)$name %in% snapshot$candidates] <- "orange"
-
-  set.seed(1)
-
-  pdf(file, height = 33, width = 33)
-  on.exit(dev.off(), add = TRUE)
-
-  par(mar = c(0, 0, 2, 0))
-
-  plot(
-    g,
-    layout = layout.fruchterman.reingold,
-    vertex.label = V(g)$name,
-    vertex.size = 6,
-    vertex.color = V(g)$color,
-    vertex.frame.color = "white",
-    vertex.label.color = "black",
-    vertex.label.cex = 2,
-    edge.color = "gray45",
-    edge.width = 0.7,
-    edge.arrow.size = 0.3
-  )
-
-  legend(
-    "topleft",
-    legend = c(
-      "Candidate for removal",
-      "Downstream dependent",
-      "Other function"
-    ),
-    pt.bg = c("orange", "yellow", "gray80"),
-    pch = 21,
-    pt.cex = 2,
-    bty = "n"
-  )
-
-  invisible(g)
-}
-
-
-before <- evaluate_snapshot(
-  path = path,
-  commit = pre_work_commit,
-  modules = modules,
-  candidates = candidate_functions
+all_files <- system2(
+  "git",
+  c("-C", shQuote(path), "ls-tree", "-r", "--name-only", pre_work_commit),
+  stdout = TRUE
 )
 
-missing_candidates <- setdiff(candidate_functions, before$functions)
+module_pattern <- paste(modules, collapse = "|")
+scripts <- all_files[
+  grepl(paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"), all_files)
+]
+
+code_env <- new.env(parent = .GlobalEnv)
+
+for(file in scripts)
+{
+  code <- system2(
+    "git",
+    c("-C", shQuote(path), "show", paste0(pre_work_commit, ":", file)),
+    stdout = TRUE
+  )
+
+  eval(parse(text = paste(code, collapse = "\n")), envir = code_env)
+}
+
+objects <- mget(
+  ls(code_env, all.names = TRUE),
+  envir = code_env,
+  inherits = FALSE
+)
+
+all_functions <- names(objects)[vapply(objects, is.function, logical(1))]
+
+edges <- get_all_dependencies(envir = code_env)
+edges <- edges[, c("from_function", "to_function"), drop = FALSE]
+colnames(edges) <- c("from", "to")
+
+candidates <- intersect(candidate_functions, all_functions)
+missing_candidates <- setdiff(candidate_functions, all_functions)
+
 if(length(missing_candidates))
   stop("Candidate functions not found: ", paste(missing_candidates, collapse = ", "))
 
-pre_work_pdf <- dependency_pdf_file(
-  path = path,
-  commit = pre_work_commit,
-  date = pre_work_date
+```
+
+## Make the dependency graph
+
+All functions found in the seven `R/new` directories are passed to the graph as vertices. Consequently, the graph retains functions with no dependency edges as isolated vertices rather than omitting them.
+
+```{r}
+
+vertices <- data.frame(name = all_functions)
+g.before <- graph_from_data_frame(
+  edges,
+  directed = TRUE,
+  vertices = vertices
 )
 
-g.before <- write_dependency_pdf(before, pre_work_pdf)
+downstream <- character()
+
+for(candidate in candidates)
+  downstream <- c(downstream, downstream_dependents(candidate, edges))
+
+downstream <- unique(downstream)
+downstream <- setdiff(downstream, candidates)
+
+V(g.before)$color <- "gray80"
+V(g.before)$color[V(g.before)$name %in% downstream] <- "yellow"
+V(g.before)$color[V(g.before)$name %in% candidates] <- "orange"
+
+pre_work_pdf <- file.path(
+  path,
+  "evaluation/results",
+  paste0(
+    "fgeo2-dependencies-", substr(pre_work_commit, 1, 7), "-",
+    format(pre_work_date, "%Y-%m-%d"), ".pdf"
+  )
+)
+
+dir.create(dirname(pre_work_pdf), recursive = TRUE, showWarnings = FALSE)
+
+set.seed(1)
+
+# Control the overall canvas with height and width.
+pdf(pre_work_pdf, height = 33, width = 33)
+par(mar = c(0, 0, 2, 0))
+
+plot(
+  g.before,
+  layout = layout.fruchterman.reingold,
+  vertex.label = V(g.before)$name,
+  vertex.size = 6,          # node size
+  vertex.color = V(g.before)$color,
+  vertex.frame.color = "white",
+  vertex.label.color = "black",
+  vertex.label.cex = 2,     # label size
+  edge.color = "gray45",
+  edge.width = 0.7,         # line width
+  edge.arrow.size = 0.3     # arrow size
+)
+
+legend(
+  "topleft",
+  legend = c(
+    "Candidate for removal",
+    "Downstream dependent",
+    "Other function"
+  ),
+  pt.bg = c("orange", "yellow", "gray80"),
+  pch = 21,
+  pt.cex = 2,
+  bty = "n"
+)
+
+dev.off()
 
 ```
 
 ## Dependency map
 
-Arrows point from a dependency to the function that uses it. Candidate functions are highlighted in gold. Gray vertices are other functions in the current fgeo2 body of code. All candidates are included, even when isolated. Other isolated functions are omitted from the graph to retain legibility, but they remain included in the numerical summary of the complete body of code. Labels are limited to the main modeling interfaces and functions with at least four direct connections; the complete candidate names are listed in the previous section.
+Arrows point from a dependency to the function that uses it. Candidate functions are orange. Their downstream dependents, followed through any number of dependency levels, are yellow. All other functions are gray. Every function found under the seven `R/new` directories is present and labeled, including isolated functions.
 
 ```{r}
 #| echo: false
 #| out-width: "100%"
 
-knitr::include_graphics(pre_work_pdf, rel_path = FALSE)
+pre_work_pdf_relative <- file.path("results", basename(pre_work_pdf))
+knitr::include_graphics(pre_work_pdf_relative)
 
 ```
 
@@ -337,14 +268,9 @@ The same graph is stored separately as `evaluation/results/fgeo2-dependencies-04
 
 ```{r}
 
-candidate_dependencies <- unique(before$edges$from[
-  !(before$edges$from %in% before$candidates) &
-    before$edges$to %in% before$candidates
-])
-
-candidate_dependents <- unique(before$edges$to[
-  before$edges$from %in% before$candidates &
-    !(before$edges$to %in% before$candidates)
+candidate_dependencies <- unique(edges$from[
+  !(edges$from %in% candidates) &
+    edges$to %in% candidates
 ])
 
 dependency_summary <- data.frame(
@@ -356,20 +282,20 @@ dependency_summary <- data.frame(
     "Candidate functions",
     "Dependencies among candidate functions",
     "Other functions used directly by candidates",
-    "Other functions depending directly on candidates"
+    "Other functions depending on candidates at any level"
   ),
   Value = c(
-    length(before$scripts),
-    length(before$functions),
+    length(scripts),
+    length(all_functions),
     length(V(g.before)),
-    nrow(before$edges),
-    length(before$candidates),
+    nrow(edges),
+    length(candidates),
     sum(
-      before$edges$from %in% before$candidates &
-        before$edges$to %in% before$candidates
+      edges$from %in% candidates &
+        edges$to %in% candidates
     ),
     length(candidate_dependencies),
-    length(candidate_dependents)
+    length(downstream)
   )
 )
 
@@ -395,58 +321,8 @@ This section is intentionally left open for the function-by-function or cluster-
 
 # Whole-package dependencies after work
 
-This is the placeholder for the post-work evaluation. After the work is complete, set `post_work_commit` and `post_work_date` in the setup section. The code will evaluate the same seven `R/new` directories, generate a second dated dependency PDF, and compare the pre-work and post-work structures.
+This section is intentionally left as a placeholder. After the removals and any necessary changes to dependents are complete, it will record the post-work commit and date, reproduce the whole-package dependency graph, and compare the resulting structure with the pre-work snapshot.
 
-```{r}
-#| results: asis
+## Post-work placeholder
 
-post_work_ready <- !is.na(post_work_commit) && !is.na(post_work_date)
-
-if(post_work_ready)
-{
-  after <- evaluate_snapshot(
-    path = path,
-    commit = post_work_commit,
-    modules = modules,
-    candidates = candidate_functions
-  )
-
-  post_work_pdf <- dependency_pdf_file(
-    path = path,
-    commit = post_work_commit,
-    date = post_work_date
-  )
-
-  g.after <- write_dependency_pdf(after, post_work_pdf)
-
-  comparison <- data.frame(
-    Measure = c(
-      "R/new scripts",
-      "Functions",
-      "Inter-function dependencies",
-      "Candidate functions remaining"
-    ),
-    `Before work` = c(
-      length(before$scripts),
-      length(before$functions),
-      nrow(before$edges),
-      length(before$candidates)
-    ),
-    `After work` = c(
-      length(after$scripts),
-      length(after$functions),
-      nrow(after$edges),
-      length(after$candidates)
-    ),
-    check.names = FALSE
-  )
-
-  print(knitr::kable(comparison, row.names = FALSE))
-  
-  knitr::include_graphics(post_work_pdf, rel_path = FALSE)
-  
-} else {
-  cat("Post-work commit and date not set. This section is intentionally a placeholder.")
-}
-
-```
+*To be completed after the work.*
