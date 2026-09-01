@@ -1,5 +1,5 @@
 ---
-title: "Evaluation of obsolete modeling functions"
+title: "Evaluation of (probably) obsolete modeling functions"
 author: "Gabriel Arellano"
 date: today
 format:
@@ -27,17 +27,17 @@ The goal is to make the fgeo2 body of code lighter and easier to maintain by rem
 -   minimum edits to the remaining ones; and
 -   identifying dependents somewhere else, so all code remains working.
 
-# Previous evaluation and candidates for removal
+# Candidates for removal
 
-An earlier function-by-function evaluation was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. The table was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. The complete record is preserved in [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
+As a starting point, I will use an earlier function-by-function evaluation that was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. The table was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. That table is preserved in [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
 
-The table below combines its `decision` and `notes` fields into three practical categories:
+The table below groups the review into three practical categories:
 
 -   **Strong:** explicit recommendation to deprecate the complete block, or an explicitly paper-specific implementation marked for deprecation.
 -   **Weak:** “try to deprecate” or low priority, without a firm recommendation.
 -   **After checks:** removal appeared appropriate, but the old review suspected that other functions might depend on the code.
 
-The candidates are ordered by module and script so the source is easy to locate. Module `01` means `01_utilities/R/new`; module `05` means `05_demography_growth/R/new`.
+The candidates are ordered by module and script so the source is easy to locate. Module `01` means `01_utilities/R/new`; module `05` means `05_demography_growth/R/new`, etc.
 
 ```{r}
 #| echo: false
@@ -133,16 +133,16 @@ knitr::kable(
 )
 ```
 
-## Evidence from formal tests
+Some formal tests indicate that these functions, if conserved, would require maintenance and debugging. In other words: conservation will come with overhead costs.
 
 -   The [CTFS development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md) record that `modelBayes()` still entered debugging and failed after an attempted maintenance fix.
 -   `growth.flexbin()`, `run.growthfit.bin()`, and `run.growthbin.manyspp()` failed in the growth tutorial. Their attempted calls remain commented out in [test-growth_vs_dbh.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-growth_vs_dbh.R).
 -   The `lmerBayes()` regression test was disabled because its required data were no longer available. Even when enabled, it checked only the names of the returned components, not the fitted result; see [test-replace_subset.R](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-replace_subset.R).
 -   The development notes report that one test of `model.littleR.Gibbs()` and `fitSeveralAbundModel()` took approximately 20 minutes. No active automated test for that model remains in the CTFS test suite.
 
-# Due diligence before removal
+# Due diligence for dependents and dependencies
 
-The due diligence has two narrow goals:
+This due diligence has two main goals:
 
 1.  identify any function outside the candidate set that would break if a candidate were removed; and
 2.  identify non-candidate functions that may no longer be necessary if all candidates are removed.
@@ -310,13 +310,19 @@ if(length(dependency_rows) == 0)
 
 # Current evaluation and decisions
 
-This section will record the present decision for each candidate after reviewing the earlier recommendation, the formal tests, and the due-diligence results above.
+I have reviewed all functions one by one, and in the context of their corresponding working block.
 
-## Working notes
+As far as I understand, all this functionality is better covered by standard applications of WinBugs, STAN, `brms` package in R, and other standard tools for Bayesian / hierarchical modeling.
 
-To be completed before any functions are removed.
+The modeling task itself requires expertise. Experts do know these tools. Overall, it seems very unlikely that any member of the ForestGEO / ATFS communities use (or should use) the code developed by Condit and stored in CTFS.
 
-# Whole-package dependencies after work
+The recent ForestGEO workshop in Krabi (Thailand) suggests that these tools are becoming more and more accessible and easy to use, even for the average user. The AI revolution will probably make Bayesian statistics even easier to implement.
+
+Some of Condit's code seems legacy code with the partial goal of reproducibility of results, particularly the code in the "abund.fit" block. Although reproducibility is a valuable goal, there are other ways of ensuring that. It does not seem useful that fgeo2 functions as a repository for legacy code.
+
+All points in the same direction: a massive, direct removal of all the functions mentioned above is justified, and it would not have downstream consequences. All code remains under "old" folders as part of the fgeo2 distribution, though.
+
+# Package structure after removals
 
 The graph is intentionally deferred until after the removals. Once the work is complete, replace the post-work commit and date below and enable the chunk. The graph will use every top-level function in the seven `R/new` directories, including functions with no detected internal dependency edges.
 
