@@ -24,99 +24,101 @@ editor: visual
 
 # Goal
 
-The goal is to make the fgeo2 body of code lighter and easier to maintain by removing obsolete modeling functions. fgeo2 will focus on metrics, descriptors, and other reusable analytical primitives. Statistical modeling requires flexibility and is better handled with maintained, dedicated tools rather than project-specific model-fitting and MCMC infrastructure. This evaluation focuses on:
+The goal is to make the fgeo2 body of code lighter and easier to maintain by removing obsolete modeling functions. Statistical modeling requires flexibility and is better handled with maintained, dedicated tools. The new distribution of code (fgeo2) focuses on metrics, statistics, data handling, etc., leaving modeling aside for the most part.
+
+This evaluation focuses on:
 
 -   primarily, removal of modeling functions;
 -   minimum edits to the remaining ones; and
 -   identifying dependents somewhere else, so all code remains working.
 
+In this document I will often refer to the old script-based distribution of code as "CTFS", and the newer formal R packages as `ctfs` (a more formal distribution of CTFS code) and `fgeo` (same goals, different structure, heavy reorganization).
+
 # Candidate functions
 
-An earlier function-by-function evaluation was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. The table was edited by Sean McMahon and Gabriel Arellano and discussed with Stuart Davies and Mauro Lepore. It is preserved in [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
+In CTFS code, there are several blocks, with many functions each, that seem customized implementations of Bayesian models and/or legacy code for particular projects. It does not seem suitable for general use, and many of the functions are clear candidates for removal.
 
-That old evaluation was taken into account together with an independent review of the current source, tests, dependencies, scientific role, and maintained alternatives. The independent review deliberately looked for reasons to retain the code rather than treating the previous recommendation as authoritative.
-
-The table below is the consolidated evaluation. It gives one operational decision for each function: **remove**, **review**, or **keep**. The notes combine the old evaluation, the independent review, and evidence from the [CTFS development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md), [growth tests](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-growth_vs_dbh.R), and [legacy regression tests](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-replace_subset.R). Candidates are ordered by module and script so the source is easy to locate; module `01` means `01_utilities/R/new` and module `05` means `05_demography_growth/R/new`.
+An earlier function-by-function evaluation was prepared during the transition from the CTFS scripts to the `ctfs` and `fgeo` packages. That discussion involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx). I have used also the the [ctfs development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md), [growth tests](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-growth_vs_dbh.R), and [legacy regression tests](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/tests/testthat/test-replace_subset.R). I have complemented that old review with a new review of the code, some tests, evaluation of dependencies, scientific need, and maintained alternatives. The table below is the consolidated evaluation of functions involved in Bayesian, pseudo-Bayesian, or specialized model fitting. Other functions that are also clear candidates for removal will be reviewed somewhere else.
 
 ```{r}
 #| echo: false
 #| results: asis
 
 candidate_table <- read.delim(
-  text = "Module|Script|Function|Notes|Decision
-01|utilities-lmerBayes.r|lmerBayes|The old review recommended deprecating the complete block. Bespoke MCMC lacks explicit priors and modern diagnostics; its disabled regression test checked only component names. Archive the model and API description.|remove
-01|utilities-lmerBayes.r|lmerBayes.hyperllike.sigma|Sampler-specific covariance update; preserve an intended covariance prior only if documented.|remove
-01|utilities-lmerBayes.r|lmerBayes.hyperllike.mean|Apparently unused generic likelihood; preserve the formula only if needed.|remove
-01|utilities-lmerBayes.r|full.likelihood.lmerBayes|Likelihood accounting is questionable; preserve a formal factorization only for reproducibility.|remove
-01|utilities-lmerBayes.r|llike.fixef.lmer|Thin adapter used only by the obsolete sampler.|remove
-01|utilities-lmerBayes.r|llike.model.lmer|Incomplete observation likelihood with interactive failure behavior; record error families if migrating.|remove
-01|utilities-lmerBayes.r|residual.llike.lmerBayes|Residual adapter used only by the obsolete sampler.|remove
-01|utilities-lmerBayes.r|badSD|Trivial positivity check with no independent value.|remove
-01|utilities-lmerBayes.r|arrangeParam.llike.2D|Parameter-packing helper tied to legacy sampler internals.|remove
-01|utilities-lmerBayes.r|arrangeParam.Gibbs.2D|Parameter-packing helper tied to legacy Gibbs blocks.|remove
-01|utilities-lmerBayes.r|saveParamFile|Ad hoc chain persistence; document the legacy format only if archived draws must be read.|remove
-01|utilities-lmerBayes.r|restoreParamFile|Legacy restoration logic; create a one-time converter only if old fits require it.|remove
-01|utilities-lmerBayes.r|resetParam|Reset plumbing used only by the obsolete persistence design.|remove
-01|utilities-lmerBayes.r|summaryMCMC|Lacks modern chain diagnostics; preserve output names only for a legacy converter.|remove
-01|utilities-lmerBayes.r|recalculate.lmerBayesllike|Broken defaults and mismatched arguments make reconstruction unreliable.|remove
-01|utilities-lmerBayes.r|covTocorr|Duplicates stats::cov2cor().|remove
-01|utilities-modelBayes.r|modelBayes|The old review recommended deprecating the complete block. Bespoke adaptive MCMC lacks explicit priors and diagnostics; a maintenance attempt still failed in debugging. Archive callback conventions only if useful.|remove
-01|utilities-modelBayes.r|residual.llike.modelBayes|Internal residual adapter with no independent scientific role.|remove
-01|utilities-modelBayes.r|summaryModelMCMC|Incomplete legacy summaries without modern convergence checks.|remove
-01|utilities-statistics.r|regression.Bayes|Narrow conjugate regression with implicit priors and fragile inputs.|remove
-01|utilities-statistics.r|Gibbs.regslope|Legacy sampler block with implicit prior and direct matrix inversion.|remove
-01|utilities-statistics.r|Gibbs.regsigma|Legacy inverse-gamma update coupled only to regression.Bayes().|remove
-01|utilities-statistics.r|Gibbs.normalmean|Generic conjugate update with implicit assumptions and no standalone use.|remove
-01|utilities-statistics.r|Gibbs.normalvar|Generic update with an arbitrary zero-variance fallback.|remove
-01|utilities-statistics.r|model.xy|Adaptive MCMC has implicit priors and inconsistent optional-SD handling; archive equations if needed.|remove
-01|utilities-statistics.r|arrangeParam.llike|Internal parameter-packing helper with a faulty NULL path.|remove
-01|utilities-statistics.r|arrangeParam.Gibbs|Internal packing helper used by legacy Gibbs blocks.|remove
-01|utilities-statistics.r|llike.GaussModel|Generic likelihood used only by candidate modeling code.|remove
-01|utilities-statistics.r|llike.GaussModelSD|Legacy heteroscedastic likelihood; preserve the variance specification only if reused.|remove
-01|utilities-statistics.r|BadParam|Default validator always returns false and adds no protection.|remove
-01|utilities-statistics.r|graph.modeldiag|Broken model-specific diagnostic plotting.|remove
-01|utilities-statistics.r|metrop1step|Adaptive Metropolis step lacks safe adaptation, diagnostics, and robust failure handling.|remove
-01|utilities-statistics.r|metrop1step.discrete|Untested discrete Metropolis step with no independent users.|remove
-01|utilities-statistics.r|testmcmcfunc|Explicitly described as no longer used.|remove
-05|demogchange-abund.fit.CTFS.r|model.littleR.Gibbs|Previously recommended for deprecation as paper-specific. Before deciding, map equations and priors to the paper and tutorial, correct known indexing and likelihood defects, and create a small simulated fixture with expected summaries. A historical test took about 20 minutes and no active automated test remains; do not retain the sampler unchanged.|review
-05|demogchange-abund.fit.CTFS.r|full.abundmodel.llike|Previously recommended for deprecation as paper-specific. Reconstruct the generative factorization, verify that each density is counted once, and compare it with the paper and tutorial before archiving or reimplementation.|review
-05|demogchange-abund.fit.CTFS.r|prob.N1|Previously recommended for deprecation as paper-specific. Validate the demographic observation equation and edge cases, including zero and small abundance, against the paper and simulated values.|review
-05|demogchange-abund.fit.CTFS.r|spmean.mort.abundGibbs|Previously recommended for deprecation as paper-specific. Verify the mortality-abundance conditional density and parameter indexing against the paper and simulated data; record expected values.|review
-05|demogchange-abund.fit.CTFS.r|hyper.abundGibbs|Sampler-only hyperparameter density; record prior choices in the model specification.|remove
-05|demogchange-abund.fit.CTFS.r|hyper.mortGibbs|Sampler-only mortality hyperparameter block; record prior choices in the specification.|remove
-05|demogchange-abund.fit.CTFS.r|bad.asympower.param|Trivial legacy constraint; record its valid parameter domain with the model specification.|remove
-05|demogchange-abund.fit.CTFS.r|bad.asymexp.param|Trivial legacy constraint; record its valid parameter domain with the model specification.|remove
-05|demogchange-abund.fit.CTFS.r|fitSeveralAbundModel|Repeats a slow, unreliable sampler without adding scientific capability. A historical abundance-model test took about 20 minutes and no active automated test remains.|remove
-05|demogchange-abund.fit.CTFS.r|graph.abundmodel|Model-specific plotting; archive figure intent and variable definitions if needed.|remove
-05|demogchange-abund.fit.CTFS.r|find.xaxis.hist|Minor histogram-axis helper with no independent value.|remove
-05|demogchange-abund.fit.CTFS.r|abundmodel.fit|Sampler-specific summary helper with a broken confidence-interval branch.|remove
-05|demogchange-demogChange.r|lmerMortLinear|Standard complementary-log-log hazard model; preserve the equation and a migration example.|remove
-05|demogchange-demogChange.r|lmerMortFixedTime|Standard category-specific hazard model; preserve factor and time-offset conventions.|remove
-05|growth-growthfit.bin.r|extract.growthdata|Previously grouped with growth-bin deprecation, but data preparation fits fgeo2 and has historical regression coverage. Keep the capability; repair AGB coupling, transformations, naming, and returnfull, and port a compact fixture.|keep
-05|growth-growthfit.bin.r|run.growthbin.manyspp|Dataset-specific batch wrapper around failed models; its historical tutorial call failed and remains commented out in the formal test. Preserve only the intended result schema.|remove
-05|growth-growthfit.bin.r|run.growthfit.bin|Orchestrates obsolete fitting engines; its historical tutorial call failed and remains commented out in the formal test. It has no independent scientific logic.|remove
-05|growth-growthfit.bin.r|growth.flexbin|The old review proposed deprecating the growth-bin block. This unmaintained breakpoint fit failed in historical tutorial testing; preserve the piecewise-growth and error specification, not the engine.|remove
-05|growth-growthfit.bin.r|llike.linearbin.optim|Likelihood adapter used only by the obsolete flexible-bin optimizer.|remove
-05|growth-growthfit.bin.r|defineBinBreaks|Model-specific starting heuristic; preserve bin-width and sample rules only if later justified.|remove
-05|growth-growthfit.bin.r|defineSDpar|Arbitrary model-specific starting values.|remove
-05|growth-growthfit.bin.r|enoughSamplePerBin|Validator used only by the deprecated fitting chain; document the rule only if justified.|remove
-05|growth-growthfit.bin.r|wideEnoughBins|Model-specific validator; document the minimum-width rule only if justified.|remove
-05|growth-growthfit.bin.r|bad.binparam|Constraint wrapper tied to the obsolete breakpoint parameterization.|remove
-05|growth-growthfit.bin.r|bad.binsdpar|Constraint wrapper tied to the obsolete residual-SD parameterization.|remove
-05|growth-growthfit.bin.r|calculateBinModel.BIC|RSS-based calculation is not aligned with the fitted heteroscedastic likelihood.|remove
-05|growth-growthfit.bin.r|calculateBinModel.DIC|Questionable reconstructed likelihood; preserve historical values only as metadata.|remove
-05|growth-growthfit.bin.r|calculateBinModel.AIC|Implemented expression is not the standard AIC formula.|remove
-05|growth-growthfit.bin.r|calculateBinModel.bestpred|Parameter and draw dimensions are interchanged, making predictions unreliable.|remove
-05|growth-growthfit.bin.r|assembleBinOutput|Expects inconsistent fields and depends on broken upstream output.|remove
-05|growth-growthfit.graph.r|graph.growthmodel.spp|Wrapper tied to obsolete model objects; preserve desired panels only as specifications.|remove
-05|growth-growthfit.graph.r|graph.growthmodel|Model-specific plotting with no unique scientific computation.|remove
-05|growth-growthfit.graph.r|overlay.growthbinmodel|Overlay helper tied to deprecated parameter and prediction structures.|remove
-05|growth-growthfit.graph.r|compare.growthbinmodel|Uses the invalid AIC calculation and references the wrong object.|remove
-05|growth-growthfit.graph.r|graph.outliers.spp|Previously treated as a low-priority growth graphic. Prototype a model-free record-difference table keyed by explicit plot, census, and tree identifiers, and test whether it adds useful measurement QC; keep only the extracted operation if it does.|review
-05|growth-growthfit.graph.r|graph.outliers|Batch plotting wrapper; rebuild only if the extracted QC workflow proves useful.|remove
-05|growth-growthfit.graph.r|binGraphSampleSpecies|Sampling and plotting wrapper tied to obsolete model outputs.|remove
-05|growth-growthfit.graph.r|binGraphManySpecies.Panel|Untested panel helper tied to obsolete model outputs.|remove
-05|growth-growthfit.graph.r|binGraphManySpecies|Top-level graphics wrapper inherits broken fitting and comparison dependencies.|remove",
+  text = "Module|Script|Function|Notes|Recommendation
+01|utilities-lmerBayes.r|lmerBayes|Fits a nonlinear hierarchical model with one grouping factor by running a hand-written Metropolis-within-Gibbs sampler. It has no explicit prior interface, keeps adapting proposal widths throughout the saved chain, provides no convergence diagnostics, and has only a disabled test that checked output names. Modern mixed-model and Bayesian packages cover this role.|remove
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.sigma|Calculates the multivariate-normal density of group parameters while lmerBayes updates one covariance element. It is only a technical helper for the hand-written covariance sampler.|remove
+01|utilities-lmerBayes.r|lmerBayes.hyperllike.mean|Calculates the same group-parameter density while changing one hypermean. lmerBayes does not call it. This functionality is readily available from standard distribution functions.|remove
+01|utilities-lmerBayes.r|full.likelihood.lmerBayes|Adds the group-level likelihoods used by lmerBayes and mixes observation likelihood with the density of random-effect parameters. The source itself questions what should be counted: it does not seem reliable.|remove
+01|utilities-lmerBayes.r|llike.fixef.lmer|Replaces one fixed-effect value and recalculates the lmerBayes likelihood. It is only a parameter-update adapter for that sampler.|remove
+01|utilities-lmerBayes.r|llike.model.lmer|Calculates observation likelihood for one group and adds the multivariate-normal density of that group's parameters. It contains browser calls for numerical failures and documents a Flat error option whose code is commented out. It is coupled to lmerBayes, not a reusable interface.|remove
+01|utilities-lmerBayes.r|residual.llike.lmerBayes|Recalculates Gaussian or negative-binomial likelihoods across groups while one residual parameter is changed. It is only a technical helper for lmerBayes.|remove
+01|utilities-lmerBayes.r|badSD|Returns whether a single residual parameter is non-positive. This one-line check is needed only by the old sampler.|remove
+01|utilities-lmerBayes.r|arrangeParam.llike.2D|Copies a matrix and replaces one element, optionally mirroring it to keep a covariance matrix symmetric. It exists only to pass scalar proposals to the lmerBayes sampler.|remove
+01|utilities-lmerBayes.r|arrangeParam.Gibbs.2D|Combines already-updated and not-yet-updated elements of two covariance matrices during a Gibbs sweep. It is bookkeeping specific to lmerBayes.|remove
+01|utilities-lmerBayes.r|saveParamFile|Flattens each block of the lmerBayes parameter array and appends it to a tab-separated file to reduce memory use during long runs. This is an old storage workaround.|remove
+01|utilities-lmerBayes.r|restoreParamFile|Reads the tab-separated chain written by saveParamFile, it has no use outside that storage workaround.|remove
+01|utilities-lmerBayes.r|resetParam|Creates an empty parameter-array block after the preceding block has been written to disk, retaining only its last state. It is bookkeeping for saveParamFile.|remove
+01|utilities-lmerBayes.r|summaryMCMC|Calculates posterior means, quantiles, predictions, and DIC from lmerBayes output, but not other standard diagnostics like effective sample size, R-hat, or multi-chain diagnostics. Its DIC depends on the not-fully-reliable combined likelihood above.|remove
+01|utilities-lmerBayes.r|recalculate.lmerBayesllike|Attempts to recompute likelihoods along a saved lmerBayes chain. It cannot work as documented because keep is never replaced by fit$keep and it passes the residual argument under the wrong name.|remove
+01|utilities-lmerBayes.r|covTocorr|Converts a covariance matrix to correlations with nested loops. Equivalent to the standard stats::cov2cor.|remove
+01|utilities-modelBayes.r|modelBayes|Fits a user-supplied mean and residual model without random effects using scalar random-walk Metropolis updates. It has no explicit priors, adapts proposal widths throughout the chain, leaves its update argument unused, stops in browser on some failures, and failed after an earlier repair attempt during development of ctfs/fgeo.|remove
+01|utilities-modelBayes.r|residual.llike.modelBayes|Calculates Gaussian or negative-binomial likelihood while one residual-model parameter is changed. It is only a technical helper for modelBayes.|remove
+01|utilities-modelBayes.r|summaryModelMCMC|Calculates means, quantiles, and fitted values from modelBayes draws. It has no convergence diagnostics. The source explicitly warns that its prediction-array construction will fail for some dimensions.|remove
+01|utilities-statistics.r|regression.Bayes|Fits an ordinary Gaussian linear regression with a conjugate Gibbs sampler. Priors are implicit, inputs are weakly checked. Better maintained regression tools already provide this type of model with tests and diagnostics.|remove
+01|utilities-statistics.r|Gibbs.regslope|Draws regression coefficients conditional on the residual variance for regression.Bayes, only a technical helper for that function.|remove
+01|utilities-statistics.r|Gibbs.regsigma|Draws the residual variance from an inverse-gamma distribution for regression.Bayes. It is only a technical helper and hard-codes the implied prior through its shape and scale formula.|remove
+01|utilities-statistics.r|Gibbs.normalmean|Draws a normal mean conditional on a supplied standard deviation, with an implicit flat prior. No function in R/new calls it.|remove
+01|utilities-statistics.r|Gibbs.normalvar|Draws a normal variance from an inverse-gamma distribution and returns the arbitrary value 0.01 when the data have zero variance. Its only current use is updating diagonal variances inside lmerBayes.|remove
+01|utilities-statistics.r|model.xy|Fits an arbitrary one-predictor mean and residual model with hand-written Metropolis updates. It supplies no prior density, adapts proposals throughout the chain. The code seems to contain some errors or inconsistencies. Only used for the growth-bin model.|remove
+01|utilities-statistics.r|arrangeParam.llike|Copies a parameter vector and replaces the element currently proposed by a sampler. It is simple bookkeeping. The NULL case can fail.|remove
+01|utilities-statistics.r|arrangeParam.Gibbs|Builds the parameter vector for one step of a Gibbs sweep from the previous and current rows of a chain matrix. It is bookkeeping for the hand-written samplers.|remove
+01|utilities-statistics.r|llike.GaussModel|Calculates a Gaussian log-likelihood for model.xy after calling a supplied prediction function. It enters browser rather than returning a controlled error when the result is non-finite, and it is used only by the old growth-model chain.|remove
+01|utilities-statistics.r|llike.GaussModelSD|Calculates the same Gaussian likelihood while residual-model parameters are updated. Its default permits residual standard deviations to approach zero, which can make the likelihood arbitrarily large. It is used only by model.xy.|remove
+01|utilities-statistics.r|BadParam|Always returns FALSE. It is a placeholder callback for model.xy, not a parameter check.|remove
+01|utilities-statistics.r|graph.modeldiag|Opens several X11 devices for trace and likelihood plots from model.xy. There seems to be errors / inconsistencies in the code. Maintained MCMC plotting packages are more reliable and complete.|remove
+01|utilities-statistics.r|metrop1step|Performs one scalar random-walk Metropolis proposal and changes the proposal width after every acceptance or rejection. It seems non-standard MCMC machinery.|remove
+01|utilities-statistics.r|metrop1step.discrete|Performs one Metropolis proposal among character states. Nothing in R/new calls it, it has no tests, and it adds no features beyond a short standard calculation.|remove
+01|utilities-statistics.r|testmcmcfunc|Prints and returns a normal log-density for manual testing of the Metropolis code. Its own description says it is no longer used.|remove
+05|demogchange-abund.fit.CTFS.r|model.littleR.Gibbs|Fits a paper-specific hierarchical model of species mortality and population-change rates between two censuses, allowing several symmetric and asymmetric distributions across species. The code has inconsistent calls to data vs. demog, and it does not seem it has been tested over generalized datasets. If someone wanted to replicate, they would have to re-implement from scracth in Stan or another maintained framework.|remove
+05|demogchange-abund.fit.CTFS.r|full.abundmodel.llike|Combines the observation and across-species densities for the paper-specific abundance model. It counts some terms more than once and is not reliable. Used only by model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|prob.N1|Calculates the likelihood contribution for the second-census abundance of one species. Just a helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|spmean.mort.abundGibbs|Calculates the likelihood contribution for mortality and survival of one species. Just a helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|hyper.abundGibbs|Calculates the across-species density of population-change rates. Just a helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|hyper.mortGibbs|Calculates the across-species density of mortality rates. Just a helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|bad.asympower.param|Checks the allowed parameter range for the asymmetric-power distribution. Just a parameter-checking helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|bad.asymexp.param|Checks that the scale parameters for the asymmetric exponential or Gaussian distribution are positive. Just a parameter-checking helper for full.abundmodel.llike() and model.littleR.Gibbs().|remove
+05|demogchange-abund.fit.CTFS.r|fitSeveralAbundModel|Runs model.littleR.Gibbs for adjacent census pairs, the first and last census, and two DBH thresholds. It adds batching and file-sized output but no new statistical method; one historical test took about 20 minutes and no active automated test remains.|remove
+05|demogchange-abund.fit.CTFS.r|graph.abundmodel|Plots observed and fitted distributions of species population change, optionally plots mortality against change, and lists the largest increases and losses. All inputs and uncertainty curves come from model.littleR.Gibbs, so the function has no use once that model is removed; the plots should be straightforward to recreate from any validated fit.|remove
+05|demogchange-abund.fit.CTFS.r|find.xaxis.hist|Creates the x grid used by graph.abundmodel, split at the fitted distribution center. It is a small plotting helper with no independent use.|remove
+05|demogchange-abund.fit.CTFS.r|abundmodel.fit|Evaluates the fitted across-species density for graph.abundmodel. The code contains errors or inconsistencies. It is otherwise only a plotting helper.|remove
+05|demogchange-demogChange.r|lmerMortLinear|Does not fit a model; it converts a linear predictor for log mortality into survival probability over each census interval. It was written as a response function for lmerBayes, has no detected users outside the candidate code, and the equation is simple to state directly in a future model.|remove
+05|demogchange-demogChange.r|lmerMortFixedTime|Does not fit a model; it assigns a separate log-mortality parameter to each integer category and converts it to interval survival. It is another response function for the obsolete modeling code, and maintained formula-based tools can express the same model directly.|remove
+05|growth-growthfit.bin.r|extract.growthdata|Builds a species-level table of size and growth between two censuses. It may be worth to keep and repair .|keep
+05|growth-growthfit.bin.r|run.growthbin.manyspp|Fits one to four piecewise growth models for each sufficiently abundant species and saves the growing result after every species. It assumes log-transformed DBH, has dataset-specific defaults, and only batches the failed growth-bin model; its historical tutorial call remains disabled.|remove
+05|growth-growthfit.bin.r|run.growthfit.bin|Fits successive one- to four-bin models and uses each result to initialize the next. It is only an organizer for growth.flexbin and adds no calculation useful after that fitting method is removed.|remove
+05|growth-growthfit.bin.r|growth.flexbin|Fits piecewise linear growth with free breakpoints, first with optim and then optionally with model.xy. The Gibbs route failed in historical tutorial testing, while the optim-only route later tries to read MCMC fields that do not exist. Maintained segmented-regression packages cover the same task more reliably.|remove
+05|growth-growthfit.bin.r|llike.linearbin.optim|Splits a combined vector into piecewise-growth and residual parameters and returns the Gaussian log-likelihood for optim. It is only an adapter for growth.flexbin.|remove
+05|growth-growthfit.bin.r|defineBinBreaks|Chooses starting breakpoints from quantiles, equal-width bins, or minimum-width and minimum-sample rules. These are starting-value heuristics for growth.flexbin, not a general binning function, and no other code uses them.|remove
+05|growth-growthfit.bin.r|defineSDpar|Returns fixed fallback starting values for a two- or three-parameter residual model. The values are arbitrary and the function is used only by growth.flexbin.|remove
+05|growth-growthfit.bin.r|enoughSamplePerBin|Checks whether every proposed size bin contains a minimum number of observations. It is a small validator used only to constrain growth.flexbin breakpoints.|remove
+05|growth-growthfit.bin.r|wideEnoughBins|Checks whether every proposed size bin exceeds a fraction of the observed size range. It is a small validator used only to constrain growth.flexbin breakpoints.|remove
+05|growth-growthfit.bin.r|bad.binparam|Checks that growth-model breakpoints lie within the size range and meet the minimum width and sample rules. Its interpretation of the parameter vector is specific to linearmodel.bin.|remove
+05|growth-growthfit.bin.r|bad.binsdpar|Checks the breakpoint and positive scale of the three-parameter residual model used by growth.flexbin. It has no use outside that parameterization.|remove
+05|growth-growthfit.bin.r|calculateBinModel.BIC|Calculates BIC from residual sum of squares as if errors were homoscedastic Gaussian. growth.flexbin fits a size-dependent residual model, so this value does not match the likelihood actually optimized.|remove
+05|growth-growthfit.bin.r|calculateBinModel.DIC|Calculates DIC from the mean saved log-likelihood and the likelihood at the median parameter values. DIC requires a clearly defined likelihood and normally the posterior mean; this calculation inherits the defects of model.xy and is not reliable for comparing the bin models.|remove
+05|growth-growthfit.bin.r|calculateBinModel.AIC|Returns log-likelihood minus twice the parameter count. Standard AIC is minus twice the log-likelihood plus twice the parameter count, so both the sign and scale are wrong.|remove
+05|growth-growthfit.bin.r|calculateBinModel.bestpred|Tries to average predictions across saved MCMC draws but swaps the draw and parameter dimensions. It loops over parameters as if they were draws and therefore returns the wrong prediction.|remove
+05|growth-growthfit.bin.r|assembleBinOutput|Tries to flatten the selected growth-bin fits into one species table. compare.growthbinmodel returns slopes, but this function first asks for slope, so it fails before assembling the table; the remaining column indexing is also tied to the old result layout.|remove
+05|growth-growthfit.graph.r|graph.growthmodel.spp|Plots observed growth, a fitted piecewise curve, residual bands, and optional MCMC curves for one species. It expects fields that growth.flexbin does not always create, including meanpred. Too linked to the obsolete fit routines to keep.|remove
+05|growth-growthfit.graph.r|graph.growthmodel|Loops over species and sends each growth.flexbin result to graph.growthmodel.spp, optionally opening a PDF or X11 device. It is only a batch plotting wrapper.|remove
+05|growth-growthfit.graph.r|overlay.growthbinmodel|Overlays the one- to four-bin growth.flexbin curves for each species. It is only a plotting wrapper for those obsolete model objects.|remove
+05|growth-growthfit.graph.r|compare.growthbinmodel|Ranks bin models with the incorrect AIC calculation, and it indexes fit$keep on the outer list instead of the individual fit when calculating mean likelihood. The selected model and returned slopes are therefore not reliable.|remove
+05|growth-growthfit.graph.r|graph.outliers.spp|Compares full and trimmed growth tables, returns records absent after trimming, and plots them for one species. The useful part is data checking. Treatment and review for outliers should be probably part of the QA/QC routines.|remove
+05|growth-growthfit.graph.r|graph.outliers|Calls graph.outliers.spp for many species and manages graphics devices. It adds no checking logic of its own.|remove
+05|growth-growthfit.graph.r|binGraphSampleSpecies|Makes a fixed four-panel figure by retrieving fit objects from the global environment with get. It is tied to growth.flexbin output and to object names rather than explicit inputs.|remove
+05|growth-growthfit.graph.r|binGraphManySpecies.Panel|Makes four panels by calling binGraphManySpecies for named global objects. It is an untested figure-layout wrapper with no analytical role.|remove
+05|growth-growthfit.graph.r|binGraphManySpecies|Overlays selected growth curves from many species, but it first calls the broken comparison and assembly functions and retrieves data by name from the global environment. It cannot provide a trustworthy summary of the obsolete fits.|remove",
   sep = "|",
   quote = "",
   colClasses = "character",
@@ -159,14 +161,9 @@ cat(
 )
 ```
 
-## Functions requiring review
+## Functions to be kept or reviewed
 
-Before changing the code, review these functions and watch their internal, tutorial, test, and external dependents explicitly:
-
--   **Abundance model:** `model.littleR.Gibbs()`, `full.abundmodel.llike()`, `prob.N1()`, and `spmean.mort.abundGibbs()`. Compare the equations, priors, and parameterization with the publication and tutorial; reconstruct the likelihood factorization; document the known indexing and likelihood defects; and create a small simulated fixture with expected intermediate and final values. Then decide whether to archive only the scientific specification or reimplement it in a maintained framework. The current sampler should not be retained unchanged.
--   **Measurement QC:** `graph.outliers.spp()`. Separate the comparison of full and trimmed growth records from model fitting and plotting. Prototype a record-level table with explicit plot, census, and tree identifiers, test it on a compact fixture, and retain only that model-free operation if it provides useful quality control.
-
-The single **keep** decision is `extract.growthdata()`: preserve its data-preparation role, repair the issues listed in the table, and port a compact regression fixture. The other 67 candidates are marked **remove**, subject to the dependency checks below.
+I keep `extract.growthdata()`, moving it to the growth-growth.r script. The rest of the candidates are removed.
 
 # Due diligence for dependents and dependencies
 
@@ -379,9 +376,9 @@ if(length(dependency_rows) == 0)
 
 # Current evaluation and decisions
 
-The consolidated evaluation recommends removing 67 of the 73 candidates, keeping and repairing `extract.growthdata()`, and completing the specified review for the five functions highlighted above. The main scientific qualification is the abundance model: its equations may be distinctive and worth preserving, but the current sampler and likelihood implementation should not be maintained as production software without reconstruction and validation.
+The consolidated evaluation recommends removing almost all the evaluated functions, keeping and repairing `extract.growthdata()` later. I created some issues for further development inspired by the obsolete code.
 
-General Bayesian, hierarchical, segmented, and model-comparison tasks are better handled by maintained tools such as Stan, `brms`, NIMBLE, `segmented`, `mcp`, and `loo`. fgeo2 should preserve only reusable data preparation, clearly justified measurement-QC operations, and any scientific specifications needed for reproducibility or future reimplementation. The legacy implementations remain available under the `old` directories and in repository history.
+General Bayesian, hierarchical, segmented, and model-comparison tasks are better handled by maintained tools such as Stan, `brms`, etc. fgeo2 should not preserve it. The legacy implementations remain available under the `old` directories and in repository history.
 
 # Package structure after removals
 
