@@ -376,24 +376,26 @@ if(length(dependency_rows) == 0)
 
 ## Additional functions requiring an explicit decision
 
-The dependency check above identifies the following functions as potentially unnecessary after the functions marked **remove** are deleted. They were not included in the original candidate table and therefore require an explicit decision before the removal work proceeds. Replace `pending` with `keep` or `remove`. A function marked `remove` will be added to the final removal set; a function marked `keep` will remain for later evaluation with its module.
+The dependency check above identifies the following functions as potentially unnecessary after the obsolete functions are deleted.
 
--   `AssignDiag()` (`utilities-utilities.r`) replaces the diagonal of a matrix, with special handling for scalar input. Its only current callers are inside `lmerBayes()`. **Decision: pending.**
--   `gsp()` (`utilities-utilities.r`) retrieves an object from a specified search-path position. Its only current caller is `graph.abundmodel()`. **Decision: pending.**
--   `addBinParam()` (`utilities-distributions.r`) creates starting parameters for a growth model with one additional size bin. Its only current caller is `run.growthfit.bin()`. **Decision: pending.**
--   `constant()` (`utilities-distributions.r`) returns the same predicted value for every value of `x`. It is used only as a callback by the obsolete samplers. **Decision: pending.**
--   `linear.model.ctr()` (`utilities-distributions.r`) calculates a straight line after optionally centering `x`. It is used only as a callback by the obsolete growth-bin functions. **Decision: pending.**
--   `split.data()` (`utilities-utilities.r`) splits a data frame into a named list using a column or external grouping vector. Its only current callers are in the obsolete sampler code, but it is also mentioned in an example in `map-map.r` and is the stated inverse of `merge.data()`. **Decision: pending.**
--   `dasymnorm()` (`utilities-distributions.r`) calculates the density of a two-piece normal distribution. Its only current callers are in the obsolete abundance model, but it is a general distribution function. **Decision: pending.**
--   `dsymexp()` (`utilities-distributions.r`) calculates the density of a symmetric two-sided exponential distribution. Its only current callers are in the obsolete abundance model; companion cumulative and random-generation functions remain. **Decision: pending.**
--   `dasymexp()` (`utilities-distributions.r`) calculates the density of an asymmetric two-sided exponential distribution. Its only current callers are in the obsolete abundance model; a companion quantile function remains. **Decision: pending.**
--   `dasympower()` (`utilities-distributions.r`) calculates the density of a bilateral power distribution. Its only current callers are in the obsolete abundance model; companion quantile and random-generation functions remain. **Decision: pending.**
+-   `AssignDiag()` (`utilities-utilities.r`) replaces the diagonal of a matrix, with special handling for scalar input. Its only current callers are inside `lmerBayes()`. **Decision: remove.**
+-   `gsp()` (`utilities-utilities.r`) retrieves an object from a specified search-path position. Its only current caller is `graph.abundmodel()`. **Decision: remove.**
+-   `addBinParam()` (`utilities-distributions.r`) creates starting parameters for a growth model with one additional size bin. Its only current caller is `run.growthfit.bin()`. **Decision: remove.**
+-   `constant()` (`utilities-distributions.r`) returns the same predicted value for every value of `x`. It is used only as a callback by the obsolete samplers. **Decision: remove.**
+-   `linear.model.ctr()` (`utilities-distributions.r`) calculates a straight line after optionally centering `x`. It is used only as a callback by the obsolete growth-bin functions. **Decision: remove.**
+-   `split.data()` (`utilities-utilities.r`) splits a data frame into a named list using a column or external grouping vector. Its only current callers are in the obsolete sampler code, but it is also mentioned in an example in `map-map.r` and is the stated inverse of `merge.data()`. **Decision: keep.** It will be reviewed gain when reviewing the utilities, and again when reviewing the isolated functions.
+-   `dasymnorm()` (`utilities-distributions.r`) calculates the density of a two-piece normal distribution. Its only current callers are in the obsolete abundance model, but it is a general distribution function. **Decision: remove.**
+-   `dsymexp()` (`utilities-distributions.r`) calculates the density of a symmetric two-sided exponential distribution. Its only current callers are in the obsolete abundance model; companion cumulative and random-generation functions remain. **Decision: remove.**
+-   `dasymexp()` (`utilities-distributions.r`) calculates the density of an asymmetric two-sided exponential distribution. Its only current callers are in the obsolete abundance model; a companion quantile function remains. **Decision: remove.**
+-   `dasympower()` (`utilities-distributions.r`) calculates the density of a bilateral power distribution. Its only current callers are in the obsolete abundance model; companion quantile and random-generation functions remain. **Decision: remove.**
+
+Other pending functions can be identified later, from the graph of dependencies, or iterations of the priority-setting routines.
 
 # Current evaluation and decisions
 
-The consolidated evaluation recommends removing 72 of the 73 evaluated functions, while keeping and repairing `extract.growthdata()` later. The ten additional functions listed above remain undecided and are not yet authorized for removal. I created some issues for further development inspired by the obsolete code.
-
-General Bayesian, hierarchical, segmented, and model-comparison tasks are better handled by maintained tools such as Stan, `brms`, etc. fgeo2 should not preserve it. The legacy implementations remain available under the `old` directories and in repository history.
+General Bayesian, hierarchical, segmented, and model-comparison tasks are better handled by maintained tools such as Stan, `brms`, etc. fgeo2 should not preserve it. The legacy implementations remain available under the `old` directories and in repository history.\
+\
+The updated evaluation suggests removing 72 of the 73 evaluated functions, while keeping `extract.growthdata()` for later review. Other nine additional functions listed above will become useless and are also to be removed. I created some issues for further development inspired by the obsolete code.
 
 # Package structure after removals
 
