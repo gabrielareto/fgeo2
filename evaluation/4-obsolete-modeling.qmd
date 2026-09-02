@@ -399,14 +399,13 @@ The updated evaluation suggests removing 72 of the 73 evaluated functions, while
 
 # Package structure after removals
 
-The graph is intentionally deferred until after the removals. Once the work is complete, replace the post-work commit and date below and enable the chunk. The graph will use every top-level function in the seven `R/new` directories, including functions with no detected internal dependency edges.
+After removals, this is the structure of fgeo2:
 
 ```{r}
-#| eval: false
 #| out-width: "100%"
 
-post_work_commit <- "REPLACE_WITH_POST_WORK_COMMIT"
-post_work_date <- as.Date("YYYY-MM-DD")
+post_work_commit <- "4f9a619"
+post_work_date <- as.Date("2026-09-02")
 
 post_all_files <- system2(
   "git",
@@ -444,24 +443,10 @@ post_edges <- post_edges[, c("from_function", "to_function"), drop = FALSE]
 colnames(post_edges) <- c("from", "to")
 
 post_vertices <- data.frame(name = post_functions)
-g.after <- graph_from_data_frame(
-  post_edges,
-  directed = TRUE,
-  vertices = post_vertices
-)
+g.after <- graph_from_data_frame(post_edges, directed = TRUE)
 
-remaining_candidates <- intersect(candidate_functions, post_functions)
-post_downstream <- character()
-
-for(candidate in remaining_candidates)
-  post_downstream <- c(post_downstream, downstream_dependents(candidate, post_edges))
-
-post_downstream <- unique(post_downstream)
-post_downstream <- setdiff(post_downstream, remaining_candidates)
-
-V(g.after)$color <- "gray80"
-V(g.after)$color[V(g.after)$name %in% post_downstream] <- "yellow"
-V(g.after)$color[V(g.after)$name %in% remaining_candidates] <- "orange"
+subnet <- components(g.after, mode = "weak")
+V(g.after)$color <- hcl.colors(subnet$no, "Dark 3")[subnet$membership]
 
 post_work_pdf <- file.path(
   path,
@@ -493,22 +478,11 @@ plot(
   edge.arrow.size = 0.3
 )
 
-legend(
-  "topleft",
-  legend = c(
-    "Candidate remaining",
-    "Downstream dependent",
-    "Other function"
-  ),
-  pt.bg = c("orange", "yellow", "gray80"),
-  pch = 21,
-  pt.cex = 2,
-  bty = "n"
-)
-
 dev.off()
 
 post_work_pdf_relative <- file.path("results", basename(post_work_pdf))
 knitr::include_graphics(post_work_pdf_relative)
 
 ```
+
+The image excludes isolated functions (single functions with no dependents and no dependencies). Different sub-networks have different colors.
