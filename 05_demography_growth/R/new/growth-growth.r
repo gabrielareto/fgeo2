@@ -274,7 +274,47 @@ growth.biomass.indiv <- function(census1, census2, mindbh = 10, steminfo = FALSE
 }
 
 
-# </source> </function> <function> <name> DBHtransition </name> <description> Calculates a transition matrix of individuals by
+# </source> </function>
+
+# <function> <name> extract.growthdata </name> <description> Extract data for growth rates from plot databases and 2 censuses
+# in CTFS R format. Returns a table with growth, size (ie dbh), and species name. Default is to return log-transformed growth,
+# with negative and zero growth set to a mingrow, but with logit=TRUE, growth and dbh are not log-transformed.  </description>
+# <arguments> </arguments> <sample> </sample> <source>
+extract.growthdata <- function(census1, census2, growcol = "incgr", mingrow = 0.1, logit = "x", growthfunc = growth.biomass.indiv,
+    pomcut = 10000, rounddown = FALSE, mindbh = 10, dbhunit = "mm", err.limit = 4, maxgrow = 75, exclude.stem.change = TRUE, returnfull = FALSE) {
+    growthtable <- growthfunc(census1, census2, rounddown = rounddown, mindbh = mindbh, dbhunit = dbhunit, err.limit = err.limit,
+        maxgrow = maxgrow, pomcut = pomcut, exclude.stem.change = exclude.stem.change)
+    growthrate <- growthtable[, growcol]
+    dbh <- growthtable$dbh1
+    treeID <- growthtable$treeID
+    agb <- growthtable$agb1
+
+    if (logit == "x" | logit == "xy") {
+        dbh <- log(growthtable$dbh1)
+        agb <- log(growthtable$agb1)
+    }
+
+    if (logit == "y" | logit == "xy") {
+        growthrate[growthrate <= 0] <- mingrow
+        growthrate <- log(growthrate)
+    }
+
+    result <- data.frame(sp = I(growthtable$sp), treeID, dbh = dbh, agb = agb, growth = growthrate)
+    result <- subset(result, !is.na(growth) & !is.na(dbh) & !is.na(agb) & !is.na(sp))
+    if (!returnfull)
+        return(result)
+
+    full <- subset(growthtable, !is.na(growthrate) & !is.na(dbh1) & !is.na(agb1) & !is.na(sp), select = c("sp", "treeID", "dbh1",
+        "dbh2", "agb1", "agb2", "time", "incgr"))
+    colnames(full)[which(colnames(full) == "incgr")] <- "growth"
+
+    if (returnfull)
+        return(full)
+
+}
+# </source> </function>
+
+# <function> <name> DBHtransition </name> <description> Calculates a transition matrix of individuals by
 # diameter categories from two censuses.  The missing code (M) is checked in codes field if misscode is set; otherwise,
 # status=M is assumed to mean missing and status=AB is assumed to mean the stem was lost, so there is no dbh.  Growth rates
 # above maxgrow and below mingrow are excluded, where max and min are annual increments.  (Not tested recently and not part of

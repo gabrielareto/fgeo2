@@ -397,36 +397,6 @@ rpower=function(n,beta)
 # 
 # 
 
-# <function>
-# <name>
-# dasympower
-# </name>
-# <description>
-# A bilateral power distribution, centered at center, decaying with exponent rate1 for positive x and rate2 for negative x. Both rate1 and rate2
-# must be < (-1). See dpower, this is analogous to dasymexp for dpower. By R. Chisholm. 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-dasympower=function(x,center,rate1,rate2,log=FALSE)
-{
- logy=numeric()
- right=x>=center
- left=x<center
- a = 1/(1/(-rate1-1) + 1/(-rate2-1))
-
- logy[right]=log(a)+(rate1*log(-center+x[right]+1))
- logy[left]=log(a)+(rate2*log(+center-x[left]+1))
- 
- if(log) return(logy)
- return(exp(logy))
-}
-# </source>
-# </function>
 # 
 # 
 # <function>
@@ -434,7 +404,7 @@ dasympower=function(x,center,rate1,rate2,log=FALSE)
 # rasympower
 # </name>
 # <description>
-# Random draws from the bilateral power distribution, dasympower. By R. Chisholm. 
+# Random draws from the bilateral power distribution. By R. Chisholm.
 # </description>
 # <arguments>
 # 
@@ -453,7 +423,7 @@ rasympower <- function( n, rate1, rate2, c )
 # qasympower
 # </name>
 # <description>
-# Quantiles from the bilateral power distribution, dasympower. By R. Chisholm. 
+# Quantiles from the bilateral power distribution. By R. Chisholm.
 # </description>
 # <arguments>
 # 
@@ -473,40 +443,6 @@ qasympower <- function(y, rate1, rate2, c)
 # </source>
 # </function>
 
-# <function>
-# <name>
-# dsymexp
-# </name>
-# <description>
-# Probability distribution for a folded, symmetrical exponential. When x>=center, 
-# it's just a standard exponential. When x<center, it's the mirror image of same one.
-# Each must be divided by two, though, in order to integrate to one.
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-dsymexp=function(x,center,rate,log=FALSE)
-{
- logy=numeric()
- right=x>=center
- left=x<center
-
- logy[right]=log(0.5)+log(rate)+(-rate*(x[right]-center))
- logy[left]=log(0.5)+log(rate)+(-rate*(center-x[left]))
-
- if(log) return(logy)
- 
- #if(length(which(is.na(y)))>0) browser()
- #if(length(which(y<=0))>0) browser()
- 
- return(exp(logy))
-}
-# </source>
-# </function>
 # 
 # 
 # 
@@ -571,49 +507,12 @@ rsymexp=function(n,center,rate)
 } 
 # </source>
 # </function>
-# 
-# 
-# 
-# <function>
-# <name>
-# dasymexp
-# </name>
-# <description>
-# Probability distributions for a folded but asymmetrical exponential. 
-# When x>=center, it's a standard exponential. When x<center, it's the mirror image 
-# of a different exponential; rate1 refers to the right half, rate2 to the
-# left. The center is not the median: the section x>center has integral rate2/(rate1+rate2),
-# and the section x<center rate1/(rate1+rate2). 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-dasymexp=function(x,center,rate1,rate2,log=FALSE)
-{
- logy=numeric()
- right=x>=center
- left=x<center
- k=rate1*rate2/(rate1+rate2)
-
- logy[right]=log(k)+(-rate1*(x[right]-center))
- logy[left]=log(k)+(-rate2*(center-x[left]))
- 
- if(log) return(logy)
- return(exp(logy))
-}
-# </source>
-# </function>
-# 
 # <function>
 # <name>
 # qasymexp
 # </name>
 # <description>
-# Quantiles of dasymexp 
+# Quantiles from an asymmetric two-sided exponential distribution.
 # </description>
 # <arguments>
 # y is the vector of desired quantiles; c is the center parameter; rate1 is the rate for the right half, and rate2 the left.
@@ -636,45 +535,6 @@ qasymexp=function(y,rate1,rate2,c)
 # </function>
 
 # 
-# <function>
-# <name>
-# dasymexp
-# </name>
-# <description>
-# Probability distributions for an asymmetrical Gaussian, that is with different standard deviations
-# above and below the mode, or center. The mode is not the mean, though. The SD on the right is sigma1,
-# and on the left, sigma2. 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-dasymnorm=function(x,center,sigma1,sigma2,log=FALSE)
-{
- y=numeric()
- right=x>=center
- left=x<center
-
- sigma=(sigma1+sigma2)/2
- 
- if(log) 
-  {
-   y[right]=log(sigma1/sigma)+dnorm(x[right],mean=center,sd=sigma1,log=log)
-   y[left]=log(sigma2/sigma)+dnorm(x[left],mean=center,sd=sigma2,log=log)
-  }
- else
-  {
-   y[right]=(sigma1/sigma)*dnorm(x[right],mean=center,sd=sigma1,log=log)
-   y[left]=(sigma2/sigma)*dnorm(x[left],mean=center,sd=sigma2,log=log)
-  }
-  
- return(y)
-}
-# </source>
-# </function>
 # 
 
 # <function>
@@ -1883,36 +1743,6 @@ logistic.multiplicative=function(x,param,log=FALSE)
 
 # </source>
 # </function>
-# 
-# 
-# 
-# <function>
-# <name>
-# constant
-# </name>
-# <description>
-# A function to return a constant at all predictors x. The predictors are a numeric vector, or a matrix of
-# many predictors (each column a single predictor). This function is useful in modeling, where the name of a function
-# is passed; this allows modeling where a response is a constant across all values of x. 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-constant=function(x,param,...) 
-{
- if(is.null(dim(x))) return(rep(param,length(x)))
- return(rep(param,dim(x)[1]))
-}
-
-
-# </source>
-# </function>
-# 
-# 
 # <function>
 # <name>
 # center.predictors
@@ -2171,28 +2001,6 @@ simple=function(x,param)
 # </function>
 
 
-# <function>
-# <name>
-# linear.model.ctr
-# </name>
-# <description>
-# A simple linear model, where the first parameter is intercept, second the slope, and x can be centered on their median. 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-linear.model.ctr=function(x,param,xcenter=NULL)
-{
- if(is.null(xcenter)) x=x-median(x)
-
- return(param[2]*x+param[1])
-}
-# </source>
-# </function>
 # 
 # 
 # <function>
@@ -2412,47 +2220,6 @@ linearmodel.bin.set=function(v,param,binparam)
 }
 # </source>
 # </function>
-# 
-# 
-# 
-# <function>
-# <name>
-# addBinParam
-# </name>
-# <description>
-# Given parameters for a model with N linear bins, creates parameters for N+1 bins which produce the same model. 
-# </description>
-# <arguments>
-# 
-# </arguments>
-# <sample>
-# 
-# </sample>
-# <source>
-addBinParam=function(x,best,bin)
-{
- if(bin==1)
-  return(c(median(x),best[2],best[2],best[1]))
-
- internal=best[1:(bin-1)]
- slope=best[bin:(length(best)-1)]
- intercept=best[length(best)]
- 
- div=c(min(x),internal,max(x))
- widest=which.max(diff(div))
- 
- newbreak=0.5*diff(div[c(widest:(widest+1))])+div[widest]
- newinternal=sort(c(internal,newbreak))
- 
- if(widest<bin) newslope=slope[c(1:widest,widest,(widest+1):bin)]
- else newslope=slope[c(1:widest,widest)]
- 
- return(c(newinternal,newslope,intercept))
-}
-# </source>
-# </function>
-#
-#
 # <function>
 # <name>
 # logisticmodel.bin
@@ -2824,4 +2591,3 @@ discrete.model=function(x,param)
 # </source>
 # </function>
 # 
-

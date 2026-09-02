@@ -291,15 +291,7 @@ save.searchpath <- function(n) {
 
 
 
-# </source> </function> <function> <name> gsp </name> <description> Returns one of the objects at a given search position. This
-# provides a way to write programs to check multiple sets of data attached at different positions.
-
-# </description> <arguments> </arguments> <sample> </sample> <source>
-gsp <- function(searchpos, whichobj = 1) return(get(ls(searchpos)[whichobj]))
-
-
-
-# </source> </function> <function> <name> match.dataframe </name> <description> Matches two dataframes using two or more
+# </source> </function>  <function> <name> match.dataframe </name> <description> Matches two dataframes using two or more
 # columns. R's function match() works only on vectors (and thus single columns only). The return is a vector of indices,
 # exactly as match() does.
 
@@ -674,20 +666,7 @@ IfElse <- function(test, a, b) {
         return(a) else return(b)
 }
 
-# <function> <name> AssignDiag </name> <description> A way to assign the diagonals of a matrix that can handle input having no
-# dimensions. Ordinarily, x is square matrix and newdiag is a vector equal in length to x's diagonal.  A new x is returned
-# having the newdiag on its diagonal. In that usage, it matches the assign option for R's function diag.  This improves diag by
-# handling x with no dimensions, ie a scalar, or just one dimension. Then newdiag is simply returned.  </description>
-# <arguments> </arguments> <sample> </sample> <source>
-AssignDiag <- function(x, newdiag) {
-    if (is.null(dim(x))) 
-        return(newdiag)
-    if (length(dim(x)) == 0) 
-        return(newdiag)
-    diag(x) <- newdiag
-    return(x)
-}
-# </source> </function> <function> <name> vectToCommas </name> <description> Given a vector of character variables, collapse
+#  <function> <name> vectToCommas </name> <description> Given a vector of character variables, collapse
 # into a single string with quotes, separated by commas </description> <arguments> </arguments> <sample> </sample> <source>
 vectToCommas <- function(v) {
     withquotes <- paste("'", v, "'", sep = "")
