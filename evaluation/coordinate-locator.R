@@ -25,7 +25,7 @@ path = "/Users/gabriela/Dropbox/PERSONAL/LLC/Oikobit\ LLC/projects/code-and-stat
 test = "F" # A, B, C, D, E, F
 
 # build complete paths
-subpath = "data_examples/coordinate-recovery-test/"
+subpath = "data_examples/coordinate_recovery_test/"
 pdf.path = paste0(path, subpath, "test ", test, ".pdf")
 csv.path = paste0(path, subpath, "points test ", test, ".csv")
 
