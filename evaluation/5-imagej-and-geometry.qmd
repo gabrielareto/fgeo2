@@ -97,21 +97,28 @@ Both algorithms can be implemented using linear algebra through applications of 
 The affine transformation is theoretically appropriate for flatbed scans and approximately perpendicular photographs, where the map can be corrected with translation, rotation, constant scaling and shear. It requires at least 3 non-collinear control-point pairs. With the usual four corners, all four can be used in a least-squares fit. Additional control points can also be fitted by least squares; for example, if corners of sub-quadrats of known location are represented in the map. \
 
 ```{r, eval = FALSE}
-# Inputs: numeric matrices with two columns (x, y).
-# corners.plot:  known coordinates of the four corners, in metres.
-# corners.image: clicked pixel coordinates, in the SAME corner order.
-# trees.image:   pixel coordinates of all trees.
+apply_affine_transformation <- function(known.xy.of.controls,
+                                        clicked.xy.of.controls,
+                                        clicked.xy.of.points)
+{
+  # Inputs: numeric matrices with two columns (x, y).
+  # known.xy.of.controls:  known coordinates of the four corners, in metres. Possibly more controls
+  # clicked.xy.of.controls: clicked pixel coordinates, in the SAME corner order.
+  # clicked.xy.of.points:   pixel coordinates of all trees.
+  
+  # Fit using all four corners; measurement error is in image coordinates.
+  coefficients <- qr.solve(cbind(1, known.xy.of.controls), clicked.xy.of.controls)
+  
+  # Invert the transformation to obtain tree coordinates in metres.
+  estimated.xy.of.points <- cbind(
+  	clicked.xy.of.points[, 1] - coefficients[1, 1],
+  	clicked.xy.of.points[, 2] - coefficients[1, 2]
+  )
+  
+  estimated.xy.of.points <- estimated.xy.of.points %*% solve(coefficients[-1, ])
+  estimated.xy.of.points
+}
 
-# Fit using all four corners; measurement error is in image coordinates.
-coefficients <- qr.solve(cbind(1, corners.plot), corners.image)
-
-# Invert the transformation to obtain tree coordinates in metres.
-trees.plot <- cbind(
-	trees.image[, 1] - coefficients[1, 1],
-	trees.image[, 2] - coefficients[1, 2]
-)
-
-trees.plot <- trees.plot %*% solve(coefficients[-1, ])
 ```
 
 ## Homography
@@ -119,33 +126,46 @@ trees.plot <- trees.plot %*% solve(coefficients[-1, ])
 The homography, or planar projective transformation, is theoretically appropriate when photographing a flat map introduces appreciable perspective. It requires at least 4 control-point pairs in a non-degenerate arrangement. Additional control points can also be fitted by least squares; for example, if corners of subquadrats of known location are represented in the map.
 
 ```{r, eval = FALSE}
-# Inputs: numeric matrices with two columns (x, y).
-# corners.image: four clicked corners, in pixels.
-# corners.plot:  corresponding corners, in plot metres, SAME row order.
-# trees.image:   tree coordinates, in pixels.
 
-x <- corners.image[, 1]
-y <- corners.image[, 2]
-gx <- corners.plot[, 1]
-gy <- corners.plot[, 2]
+apply_homography_transformation <- function(known.xy.of.controls,
+                                        clicked.xy.of.controls,
+                                        clicked.xy.of.points)
+{
+  # Inputs: numeric matrices with two columns (x, y).
+  # known.xy.of.controls:  known coordinates of the four corners, in metres. Possibly more controls
+  # clicked.xy.of.controls: clicked pixel coordinates, in the SAME corner order.
+  # clicked.xy.of.points:   pixel coordinates of all trees.
 
-# Each corner contributes two equations for the eight coefficients.
-equations <- rbind(
-	cbind(x, y, 1, 0, 0, 0, -gx*x, -gx*y),
-	cbind(0, 0, 0, x, y, 1, -gy*x, -gy*y)
-)
-
-coefficients <- solve(equations, c(gx, gy)) # for exactly 4 points
-coefficients <- qr.solve(equations, c(gx, gy)) # for n >= 4 controls, with rounding error
-
-# Assemble the 3 x 3 transformation matrix, fixing its last element at 1.
-homography <- matrix(c(coefficients, 1), nrow = 3, byrow = TRUE)
-
-# Transform all trees into homogeneous coordinates.
-trees.plot <- cbind(trees.image, 1) %*% t(homography)
-
-# Divide both coordinates by the third component to obtain plot metres.
-trees.plot <- trees.plot[, 1:2, drop = FALSE] / trees.plot[, 3]
+  x <- clicked.xy.of.controls[, 1]
+  y <- clicked.xy.of.controls[, 2]
+  gx <- known.xy.of.controls[, 1]
+  gy <- known.xy.of.controls[, 2]
+  
+  # Each corner contributes two equations for the eight coefficients.
+  equations <- rbind(
+  	cbind(x, y, 1, 0, 0, 0, -gx*x, -gx*y),
+  	cbind(0, 0, 0, x, y, 1, -gy*x, -gy*y)
+  )
+  
+  # Solve, either for exactly 4 points or through least squares
+  n.controls = nrow(known.xy.of.controls)
+  if(n.controls == 4)
+    coefficients <- solve(equations, c(gx, gy)) 
+  
+  if(n.controls > 4)
+    coefficients <- qr.solve(equations, c(gx, gy)) 
+  
+  # Assemble the 3 x 3 transformation matrix, fixing its last element at 1.
+  homography <- matrix(c(coefficients, 1), nrow = 3, byrow = TRUE)
+  
+  # Transform all points (~trees) into homogeneous coordinates.
+  estimated.xy.of.points <- cbind(clicked.xy.of.points, 1) %*% t(homography)
+  
+  # Divide both coordinates by the third component to obtain plot metres.
+  estimated.xy.of.points <- estimated.xy.of.points[, 1:2, drop = FALSE] / estimated.xy.of.points.points[, 3]
+  estimated.xy.of.points
+}
+  
 ```
 
 # Practical comparison of algorithms
