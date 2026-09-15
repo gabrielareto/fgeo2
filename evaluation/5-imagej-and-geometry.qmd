@@ -28,7 +28,7 @@ editor: visual
 
 # Goal and functions to evaluate
 
-The goal is to make the fgeo2 body of code lighter and easier to maintain, while preserving calculations and workflows that remain useful to ForestGEO / ATFS communities. Here I evaluate the ImageJ functions and the geometry functions inherited from CTFS. Most of the code is part of a workflow for converting digitized tree maps into local coordinates, but several of the geometry functions also have uses outside ImageJ.
+The goal is to make the fgeo2 body of code lighter and easier to maintain, while preserving calculations and workflows that remain useful to the ForestGEO and CTFS communities. Here I evaluate the ImageJ functions and the geometry functions inherited from CTFS. Most of the code is part of a workflow for converting digitized tree maps into local coordinates, but several of the geometry functions also have uses outside ImageJ.
 
 This evaluation focuses on:
 
@@ -36,15 +36,15 @@ This evaluation focuses on:
 -   identifying calculations and coordinate conventions worth keeping; and
 -   checking dependencies, so that removing one function does not leave other code broken.
 
-The functions to evaluate are all 25 functions in `utilities-geometry.r` and all four functions in `topography-imageJ.r`. This includes geometry helpers that are not used by ImageJ. I evaluate a slightly updated version of `fullplot.imageJ()`: the development of the quadrat-related code emoved its dependence on `convert.rowcol()`. That small change was done to avoid breaking the code when updating quadrat-related code, but it did not evaluate in depth or validate the image-to-coordinate conversion.
+The functions to evaluate are all 25 functions in `utilities-geometry.r` and all four functions in `topography-imageJ.r`. This includes geometry helpers that are not used by ImageJ. I evaluate a slightly updated version of `fullplot.imageJ()`: the development of the quadrat-related code removed its dependence on `convert.rowcol()`. That small change avoided breaking the code during the quadrat update, but did not constitute an in-depth evaluation or validation of the image-to-coordinate conversion.
 
 In this document I refer to Richard Condit's old script distribution as CTFS, the formal R package as `ctfs`, and the later package family as `fgeo`. fgeo2 is the current code development/replacement project, for the moment a script-based distribution.
 
-# How the imageJ CTFS code and algorithm works
+# How the ImageJ CTFS code and algorithm works
 
-The goal of Condit's algorithm is to reduce the error in tree-level locations using the four corners as control points, going from {clicked coordinates} to {adjusted coordinates}. In the {adjusted coordinates} system, the four corners (the reference or control points) are perfectly squared relative to each other. The rest of the coordinates are stretched/rotated/translated accordingly.
+The goal of Condit's algorithm is to reduce the error in tree-level locations using the four corners as control points, going from clicked coordinates to adjusted coordinates. In the adjusted coordinate system, the four corners are mapped to the supplied rectangular dimensions. The rest of the coordinates are transformed accordingly.
 
-Condit's [*Converting ImageJ Output to Local Plot Coordinates Using R*](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) (2011), explains the original workflow. Maps are scanned, corners and trees are marked in ImageJ, and labelled pixel coordinates are exported as text. `fullplot.imageJ()` reads these files, converts coordinates, combines map sections and prepares a table for database upload. Pages 1–4 describe file names, submaps, checking one folder before processing a whole plot, and checking the resulting coordinate ranges. An [HTML version](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html) is also available.
+Condit's [*Converting ImageJ Output to Local Plot Coordinates Using R*](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) (2011) explains the original workflow. Maps are scanned, corners and trees are marked in ImageJ, and labelled pixel coordinates are exported as text. `fullplot.imageJ()` reads these files, converts coordinates, combines map sections and prepares a table for database upload. Pages 1–4 describe file names, submaps, checking one folder before processing a whole plot, and checking the resulting coordinate ranges. An [HTML version](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html) is also available.
 
 `imageJ.to.lxly()` expects columns named `x`, `y` and `label`. Four records identify the corners, in physical order lower-left, upper-left, upper-right and lower-right. Labels are compared without case. `fullplot.imageJ()` defaults to `corners = c("p1", "p2", "p3", "p4")` in that order and passes them explicitly to the converter. A direct call to `imageJ.to.lxly()` instead defaults to `P2`, `P1`, `P4`, `P3`. These differing defaults make it particularly important to match corner labels to the actual maps. The remaining records identify trees. Image pixels can have a top-left origin and downward-positive y; the named corners define the intended local orientation. Incorrect corner identities can therefore reverse or reflect the coordinates.
 
@@ -63,114 +63,100 @@ The reported `lefterror` and `bottomerror` use coefficients of variation among t
 
 There is an ambiguity in the 2011 tutorial: it describes four 10 × 10 m submaps within a 20 × 20 m quadrat, but the worked calls use `gridsize = c(20,20)` with four suffixes. `SectionCorrection()` offsets by the supplied grid dimensions, so those literal arguments do not place four 10 × 10 m sections inside a 20 × 20 m quadrat. The dimensions and suffixes need to be checked against the actual maps.
 
-# Should we keep the imageJ workflow?
+# Should we keep the ImageJ workflow?
 
-The workflow is a (small) error-correction step needed because digitization of paper maps will not result in perfectly squared coordinates. Most of its components are obsolete or will be soon obsolete, relative to more modern or direct workflows:
+The workflow addresses a real error-correction step because digitizing hand-drawn paper maps does not produce perfectly registered coordinates. Paper maps, scanning and manual digitization remain practical at some sites. The potentially obsolete parts are the dependence on ImageJ itself and the custom algorithm and geometry helpers used for the correction.
 
--   paper maps, obsolete relative to working directly in digital maps in tablets;
--   manual clicking, obsolete relative to automated point location recognition;
--   a particular algorithm to fix geometrical issues that seem just an instance of a general problem.
+The original CTFS workflow returns local coordinates that identify a position within a quadrat. A second step is required to obtain global or plot-level coordinates. As discussed in the evaluation of quadrat-related code, this separation is a point of vulnerability.
 
-In addition, the CTFS original workflow returns local coordinates that, by themselves, mean nothing. They require another step to go from local or quadrat-level to global or plot-level coordinates. As discussed in the evaluation of quadrat-related code, this in itself is a point of vulnerability.
+This evaluation covers 29 functions. Coordinate recovery uses only a subset of them, but its chain of ImageJ and geometry helpers still adds substantial maintenance. A short replacement would make the code easier to understand and maintain.
 
-Because of the many geometrical helpers, the workflow requires 29 functions and represents a substantial proportion of the whole network of interconnected functions within CTFS/fgeo code. From the point of view of reducing future maintenance needs, it would be better to remove it entirely.
+The problematic or obsolete parts of this code were recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx). That evaluation omitted `pt.to.segment()`, which is included in the current evaluation.
 
-The problematic/obsolete nature of this code was recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx). That evaluation ommitted `pt.to.segment()`, which is included in the current evaluation now.
+However, there are also reasons to preserve the workflow, with or without updates to specific functions. Although the workflow and tutorial are more than 15 years old, there are more recent documented applications using the original CTFS code, conventions and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39–41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022) demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps.
 
-However, there are also some reasons to preserve the workflow, with or without updates in specific functions. Although the workflow and current tutorial is 15+ years old, there are more recent validations of the workflow using original CTFS code, conventions, and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39–41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022), also demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps.
-
-These sources are not enough to guess how many sites use this workflow now (2026), but they suggest the workflow could be being used by different teams. At least, the old CTFS script-based distribution and the associated tutorials should remain available in easy-to-access repositories.
+These sources are not enough to estimate how many sites use this workflow now (2026), but they suggest that it may still be in use at different sites. At least, the old CTFS script-based distribution and the associated tutorials should remain available in easy-to-access repositories.
 
 # Alternative algorithms
 
-The core task of the CTFS/fgeo code is to implement Condit's algorithm to get the best-guess of point location. We call it "imageJ workflow" because the clicking has been done traditionally in imageJ, but the algorithm itself runs on a set of coordinates; the use og Image J software is not a strict requisite.\
-\
-The essence of the problem is how to go from {clicked coordinates} to {adjusted coordinates}: it is a projection or transformation problem. Many of these source –\> destiny transformations can be solved using linear algebra (see [this](https://docs.opencv.org/4.13.0/da/d54/group__imgproc__transform.html)). There are two algorithms that could solve the same problem than Condit's algorithm:
+The core task of the CTFS code is to implement Condit's algorithm to obtain a best estimate of point location. We call it the "ImageJ workflow" because clicking has traditionally been done in ImageJ, but the algorithm itself operates on coordinates. ImageJ is not a strict requirement.
+
+The problem is how to transform clicked coordinates into adjusted coordinates. Many source-to-destination transformations can be solved using linear algebra (see [this](https://docs.opencv.org/4.13.0/da/d54/group__imgproc__transform.html)). Two standard algorithms could solve the same problem as Condit's algorithm:
 
 -   **affine transformation**, appropriate for flatbed scans; and
--   **homography**, or planar projective transformation, appropriate for images with perspective (\~photographs).
+-   **homography**, or planar projective transformation, appropriate for images with perspective, such as photographs.
 
 Both algorithms can be implemented using linear algebra through applications of `solve()` and `qr.solve()` in base R.
 
 ## Affine transformation
 
-The affine transformation is theoretically appropriate for flatbed scans and approximately perpendicular photographs, where the map can be corrected with translation, rotation, constant scaling and shear. It requires at least 3 non-collinear control-point pairs. With the usual four corners, all four can be used in a least-squares fit. Additional control points can also be fitted by least squares; for example, if corners of sub-quadrats of known location are represented in the map. \
+The affine transformation is theoretically appropriate for flatbed scans and approximately perpendicular photographs, where the map can be corrected with translation, rotation, constant scaling and shear. It requires at least 3 non-collinear control-point pairs. With the usual four corners, all four can be used in a least-squares fit. Additional control points can also be fitted by least squares; for example, if corners of sub-quadrats of known location are represented in the map.
 
-```{r, eval = FALSE}
+```{r}
+#| label: affine-transformation
+
 apply_affine_transformation <- function(known.xy.of.controls,
                                         clicked.xy.of.controls,
                                         clicked.xy.of.points)
 {
-  # Inputs: numeric matrices with two columns (x, y).
-  # known.xy.of.controls:  known coordinates of the four corners, in metres. Possibly more controls
-  # clicked.xy.of.controls: clicked pixel coordinates, in the SAME corner order.
-  # clicked.xy.of.points:   pixel coordinates of all trees.
-  
-  # Fit using all four corners; measurement error is in image coordinates.
-  coefficients <- qr.solve(cbind(1, known.xy.of.controls), clicked.xy.of.controls)
-  
-  # Invert the transformation to obtain tree coordinates in metres.
-  estimated.xy.of.points <- cbind(
-  	clicked.xy.of.points[, 1] - coefficients[1, 1],
-  	clicked.xy.of.points[, 2] - coefficients[1, 2]
-  )
-  
-  estimated.xy.of.points <- estimated.xy.of.points %*% solve(coefficients[-1, ])
-  estimated.xy.of.points
-}
+	# Inputs are numeric matrices with x and y columns.
+	# Both control matrices must use the same row order.
 
+	# Fit the transformation from known to clicked coordinates.
+	coefficients <- qr.solve(cbind(1, known.xy.of.controls),
+	                         clicked.xy.of.controls)
+
+	# Invert the transformation to recover point coordinates in metres.
+	estimated.xy.of.points <- cbind(
+		clicked.xy.of.points[, 1] - coefficients[1, 1],
+		clicked.xy.of.points[, 2] - coefficients[1, 2]
+	)
+	estimated.xy.of.points <- estimated.xy.of.points %*%
+		solve(coefficients[-1, ])
+
+	estimated.xy.of.points
+}
 ```
 
 ## Homography
 
 The homography, or planar projective transformation, is theoretically appropriate when photographing a flat map introduces appreciable perspective. It requires at least 4 control-point pairs in a non-degenerate arrangement. Additional control points can also be fitted by least squares; for example, if corners of subquadrats of known location are represented in the map.
 
-```{r, eval = FALSE}
+```{r}
+#| label: homography-transformation
 
 apply_homography_transformation <- function(known.xy.of.controls,
-                                        clicked.xy.of.controls,
-                                        clicked.xy.of.points)
+                                             clicked.xy.of.controls,
+                                             clicked.xy.of.points)
 {
-  # Inputs: numeric matrices with two columns (x, y).
-  # known.xy.of.controls:  known coordinates of the four corners, in metres. Possibly more controls
-  # clicked.xy.of.controls: clicked pixel coordinates, in the SAME corner order.
-  # clicked.xy.of.points:   pixel coordinates of all trees.
+	# Inputs are numeric matrices with x and y columns.
+	# Both control matrices must use the same row order.
+	x <- clicked.xy.of.controls[, 1]
+	y <- clicked.xy.of.controls[, 2]
+	gx <- known.xy.of.controls[, 1]
+	gy <- known.xy.of.controls[, 2]
 
-  x <- clicked.xy.of.controls[, 1]
-  y <- clicked.xy.of.controls[, 2]
-  gx <- known.xy.of.controls[, 1]
-  gy <- known.xy.of.controls[, 2]
-  
-  # Each corner contributes two equations for the eight coefficients.
-  equations <- rbind(
-  	cbind(x, y, 1, 0, 0, 0, -gx*x, -gx*y),
-  	cbind(0, 0, 0, x, y, 1, -gy*x, -gy*y)
-  )
-  
-  # Solve, either for exactly 4 points or through least squares
-  n.controls = nrow(known.xy.of.controls)
-  if(n.controls == 4)
-    coefficients <- solve(equations, c(gx, gy)) 
-  
-  if(n.controls > 4)
-    coefficients <- qr.solve(equations, c(gx, gy)) 
-  
-  # Assemble the 3 x 3 transformation matrix, fixing its last element at 1.
-  homography <- matrix(c(coefficients, 1), nrow = 3, byrow = TRUE)
-  
-  # Transform all points (~trees) into homogeneous coordinates.
-  estimated.xy.of.points <- cbind(clicked.xy.of.points, 1) %*% t(homography)
-  
-  # Divide both coordinates by the third component to obtain plot metres.
-  estimated.xy.of.points <- estimated.xy.of.points[, 1:2, drop = FALSE] / estimated.xy.of.points.points[, 3]
-  estimated.xy.of.points
+	# Each control contributes two equations for the eight coefficients.
+	equations <- rbind(
+		cbind(x, y, 1, 0, 0, 0, -gx*x, -gx*y),
+		cbind(0, 0, 0, x, y, 1, -gy*x, -gy*y)
+	)
+	coefficients <- qr.solve(equations, c(gx, gy))
+
+	# Transform the points and convert from homogeneous coordinates.
+	homography <- matrix(c(coefficients, 1), nrow = 3, byrow = TRUE)
+	estimated.xy.of.points <- cbind(clicked.xy.of.points, 1) %*%
+		t(homography)
+	estimated.xy.of.points <- estimated.xy.of.points[, 1:2, drop = FALSE] /
+		estimated.xy.of.points[, 3]
+
+	estimated.xy.of.points
 }
-  
 ```
 
 # Practical comparison of algorithms
 
-The issues with scanning paper maps are not purely projective. There is heterogeneous error and different issues with physical paper. It is unclear if Condit's algorithm could be more robust than the affine or homography transformations. To compare the three algorithms, I create a grid of points with known location in a quadrat of known location and size, then print, then scan/photograph, then try to recover those locations through the algorithms. The difference between the known locations and the recovered locations is an estimate of how well the three algorithms can work in practice.
+The issues with scanning paper maps are not purely projective. Physical paper can also be folded, stretched or damaged. It is unclear whether Condit's algorithm is more robust to these problems than affine or homography transformations. To compare the three algorithms, I created a grid of known points, printed it, scanned or photographed the paper, and clicked the points in the resulting images. The difference between known and recovered locations measures performance under these six test conditions. This is a practical case study, not a general estimate of digitization error.
 
 ## Reference set of points with known location
 
@@ -178,10 +164,15 @@ This R code creates a set of points with known locations and four corners to use
 
 ```{r}
 
-# where to keep the pdf:
-p =  "/Users/gabriela/Dropbox/PERSONAL/LLC/Oikobit\ LLC/projects/code-and-statistics-forestgeo/fgeo2/" # personal path -- you update
+# Locate the fgeo2 project.
+p <- system2("git", c("rev-parse", "--show-toplevel"), stdout = TRUE)
+if(!is.null(attr(p, "status")) || length(p) != 1L)
+	stop("Run this evaluation inside the fgeo2 Git repository.")
+p <- normalizePath(p)
 
-path.to.data.examples <- paste0(p, "data_examples/")
+coordinate.recovery.path <- file.path(
+	p, "data_examples", "coordinate_recovery_test"
+)
 
 # main parameters
 l = 10 # side of the quadrat
@@ -190,7 +181,7 @@ n = 6 # resolution of the test grid
 # corners
 x0 = 50
 x1 = x0 + l
-y0 = x0
+y0 = 50
 y1 = y0 + l
 
 # grid
@@ -198,8 +189,9 @@ step = l/(n-1)
 xs <- seq(from = x0 - step, to = x1 + step, by = step)
 ys <- seq(from = y0 - step, to = y1 + step, by = step)
 xy <- expand.grid(x = xs, y = ys)
+xy$id <- paste0("p", seq_len(nrow(xy)))
 
-# classify the points in inside vs. edge vs. outside cases
+# classify points as inside, edge or outside
 xy$where <- "inside" # initialize
 xy$where[xy[,"x"] == x0 | xy[,"x"] == x1] <- "edge"
 xy$where[xy[,"y"] == y0 | xy[,"y"] == y1] <- "edge"
@@ -207,7 +199,9 @@ xy$where[xy[,"x"] < x0 | xy[,"x"] > x1] <- "outside" # overwrites some edges
 xy$where[xy[,"y"] < y0 | xy[,"y"] > y1] <- "outside" # overwrites some edges
 
 # plot the grid of points
-pdf(paste0(path.to.data.examples, "coordinate_recovery_test_grid.pdf"))
+reference.pdf <- file.path(coordinate.recovery.path,
+	"coordinate_recovery_test_grid.pdf")
+pdf(reference.pdf)
 
 plot(xy[,c("x", "y")],
      asp = 1,
@@ -230,21 +224,23 @@ dev.off()
 ```
 
 ```{r}
-knitr::include_graphics(paste0(path.to.data.examples, "coordinate_recovery_test_grid.pdf"))
+knitr::include_graphics(reference.pdf)
 ```
 
 ## Six paper cases
 
-The figure created was printed three times, and the prints were treated like this:
+The figure was printed three times, and the prints were treated like this:
 
 -   nothing done, taken from the printer as it is;
--   crumpled into a tight ball, then flatten out;
--   crumpled into a tight ball, then flatten out, then broken into pieces by hand, then reassembled in one try.
+-   crumpled into a tight ball, then flattened; and
+-   crumpled into a tight ball, flattened, broken into pieces by hand, then reassembled in one try.
 
 These three papers were then:
 
 -   scanned with not much care; and
 -   photographed with a cell phone, by hand, while sitting: not perfectly from the top but not using an absurd unrealistic angle either.
+
+Cases A–C are scans and cases D–F are photographs. Within each group, the first case is the untreated paper, the second is the crumpled paper, and the third is the paper that was broken and reassembled.
 
 ```{r}
 #| label: fig-coordinate-recovery-cases
@@ -253,7 +249,7 @@ These three papers were then:
 #| fig-height: 6
 #| fig-keep: last
 
-pdf.paths <- paste0(p, "/data_examples/coordinate_recovery_test/",
+pdf.paths <- file.path(coordinate.recovery.path,
 	paste0("test ", LETTERS[1:6], ".pdf"))
 
 y.limits = list(
@@ -298,11 +294,11 @@ par(old.par)
 
 ## Coordinate recovery
 
-I have not gone through the complete original workflow through image J. I do not have that software and it does not seem needed for the test. Instead, I have used R `locator()` function to click on the four corners first, then on the sequence of points at known locations, in order. See `fgeo2/evaluation/coordinate-locator.R` for the code that I used. The output of the point location process is in `fgeo2/data_examples/coordinate_recovery_test/` subfolder, as .csv files. These files look like this:\
+I have not used the complete original workflow through ImageJ because the transformation only requires the clicked coordinates. Instead, I used R's `locator()` to click the four corners first, followed by the known points in numerical order. See `evaluation/coordinate-locator.R` for the code. The resulting CSV files are stored in `data_examples/coordinate_recovery_test/`. They look like this:
 
 ```{r}
 
-example <- read.csv(paste0(p, "/data_examples/coordinate_recovery_test/points test A.csv"))
+example <- read.csv(file.path(coordinate.recovery.path, "points test A.csv"))
 head(example, 10)
 ```
 
@@ -310,7 +306,9 @@ In all cases, the coordinates are in pixels, internal to each individual image. 
 
 ## Error assessment
 
-The affine and homography transformations are implemented using the functions defined above. Condit's algorithm requires loading older CTFS code:
+I calculate error as the Euclidean distance between each known point and its recovered location. The four controls are used to fit each transformation and are not included among the validation points. Errors are expressed in centimetres.
+
+The affine and homography transformations use the functions defined above. Condit's algorithm is loaded from the archived CTFS scripts:
 
 ```{r}
 #| label: load-condit-code
@@ -324,7 +322,227 @@ stopifnot(exists("imageJ.to.lxly"),
           exists("distance.to.side"))
 ```
 
+The archived `distance.to.side()` passes one-column data frames to a numerical distance calculation and therefore fails for ordinary points. The following repair changes only the extraction of the intersection coordinates. The original function remains available as `distance.to.side.original`.
+
+```{r}
+#| label: repair-condit-distance
+
+distance.to.side.original <- distance.to.side
+
+distance.to.side <- function(pt, target, side1, side2)
+{
+	perpendicular <- perpendicular.distance(
+		b = target[1], m = target[2], x = pt[1], y = pt[2]
+	)
+
+	parallel <- drop(as.matrix(parallel.line(
+		b = side1[1], m = side1[2], x = pt[1], y = pt[2]
+	)))
+	intersection <- intersection.of.lines(
+		b1 = parallel[1], m1 = parallel[2],
+		b2 = target[1], m2 = target[2]
+	)
+	distance1 <- xydist(pt[1], pt[2], intersection$x, intersection$y)
+
+	parallel <- drop(as.matrix(parallel.line(
+		b = side2[1], m = side2[2], x = pt[1], y = pt[2]
+	)))
+	intersection <- intersection.of.lines(
+		b1 = parallel[1], m1 = parallel[2],
+		b2 = target[1], m2 = target[2]
+	)
+	distance2 <- xydist(pt[1], pt[2], intersection$x, intersection$y)
+
+	distances <- c(perpendicular, distance1, distance2)
+	c(mean(distances), sd(distances) / mean(distances))
+}
+```
+
+The following code runs the three algorithms. Identifiers are matched explicitly so the calculation does not depend on row order. Condit's result is converted from coordinates local to the 10 × 10 m quadrat to the known coordinates of the reference grid.
+
+```{r}
+#| label: compare-coordinate-recovery
+
+case.names = LETTERS[1:6]
+algorithm.names = c("Condit (repaired)", "Affine", "Homography")
+
+known.controls <- data.frame(
+	id = paste0("corner_", LETTERS[1:4]),
+	x = c(x0, x0, x1, x1),
+	y = c(y0, y1, y1, y0)
+)
+known.xy.of.controls <- as.matrix(known.controls[, c("x", "y")])
+known.xy.of.points <- as.matrix(xy[, c("x", "y")])
+
+error.results <- list()
+result.number <- 0L
+
+for(current.case in case.names)
+{
+	clicked <- read.csv(file.path(
+		coordinate.recovery.path,
+		paste0("points test ", current.case, ".csv")
+	))
+
+	control.order <- match(known.controls$id, clicked$id)
+	point.order <- match(xy$id, clicked$id)
+	stopifnot(!anyNA(control.order), !anyNA(point.order))
+
+	clicked.xy.of.controls <- as.matrix(
+		clicked[control.order, c("x", "y")]
+	)
+	clicked.xy.of.points <- as.matrix(
+		clicked[point.order, c("x", "y")]
+	)
+
+	affine.coordinates <- apply_affine_transformation(
+		known.xy.of.controls,
+		clicked.xy.of.controls,
+		clicked.xy.of.points
+	)
+	homography.coordinates <- apply_homography_transformation(
+		known.xy.of.controls,
+		clicked.xy.of.controls,
+		clicked.xy.of.points
+	)
+
+	# The CTFS function reads label, x and y from a text file.
+	condit.input <- clicked[, c("id", "x", "y")]
+	names(condit.input)[1] <- "label"
+	condit.file <- tempfile(fileext = ".csv")
+	write.csv(condit.input, condit.file, row.names = FALSE)
+
+	condit.result <- imageJ.to.lxly(
+		textfile = condit.file,
+		delim = ",",
+		lowerleft = "corner_A",
+		upperleft = "corner_B",
+		upperright = "corner_C",
+		lowerright = "corner_D",
+		gridsize = c(l, l)
+	)$coord
+	unlink(condit.file)
+
+	condit.order <- match(xy$id, condit.result$tag)
+	stopifnot(!anyNA(condit.order))
+	condit.coordinates <- cbind(
+		x = condit.result$lx[condit.order] + x0,
+		y = condit.result$ly[condit.order] + y0
+	)
+
+	estimated.coordinates <- list(
+		"Condit (repaired)" = condit.coordinates,
+		"Affine" = affine.coordinates,
+		"Homography" = homography.coordinates
+	)
+
+	for(current.algorithm in algorithm.names)
+	{
+		estimated <- estimated.coordinates[[current.algorithm]]
+		result.number <- result.number + 1L
+		error.results[[result.number]] <- data.frame(
+			case = current.case,
+			algorithm = current.algorithm,
+			id = xy$id,
+			point.class = xy$where,
+			error.cm = 100 * sqrt(
+				(estimated[, 1] - known.xy.of.points[, 1])^2 +
+				(estimated[, 2] - known.xy.of.points[, 2])^2
+			)
+		)
+	}
+}
+
+error.by.point <- do.call(rbind, error.results)
+row.names(error.by.point) <- NULL
+```
+
+The table reports the mean error and its standard deviation. The first three rows pool the six cases; the following rows retain the individual test conditions. Each case contains 64 validation points: 16 inside, 20 on the edge and 28 outside the quadrat.
+
+```{r}
+#| label: coordinate-recovery-error-table
+
+format_error <- function(x)
+	sprintf("%.0f (%.0f)", mean(x), sd(x))
+
+summary.cases = c("All cases", case.names)
+point.groups = c("Overall", "Inside", "Edge", "Outside")
+
+error.table <- expand.grid(
+	Algorithm = algorithm.names,
+	Case = summary.cases,
+	stringsAsFactors = FALSE
+)
+error.table <- error.table[, c("Case", "Algorithm")]
+
+for(current.group in point.groups)
+{
+	error.table[[current.group]] <- sapply(seq_len(nrow(error.table)), function(i)
+	{
+		keep <- error.by.point$algorithm == error.table$Algorithm[i]
+
+		if(error.table$Case[i] != "All cases")
+			keep <- keep & error.by.point$case == error.table$Case[i]
+
+		if(current.group != "Overall")
+			keep <- keep & error.by.point$point.class == tolower(current.group)
+
+		format_error(error.by.point$error.cm[keep])
+	})
+}
+
+knitr::kable(
+	error.table,
+	align = c("l", "l", "r", "r", "r", "r"),
+	caption = "Mean (SD) Euclidean location error, in centimetres. The four fitting controls are excluded."
+)
+```
+
+The same results can be inspected as distributions. The logarithmic scale keeps the ordinary errors visible beside the much larger errors produced when Condit's unsigned distances map outside points back toward the quadrat.
+
+```{r}
+#| label: fig-coordinate-recovery-errors
+#| fig-cap: "Point-location error by algorithm and location relative to the quadrat, pooled across the six cases. The y axis is logarithmic."
+#| fig-width: 10
+#| fig-height: 4
+
+error.by.point$algorithm <- factor(
+	error.by.point$algorithm,
+	levels = algorithm.names
+)
+algorithm.colors = c("grey60", "#E69F00", "#0072B2")
+
+old.par <- par(mfrow = c(1, 3), mar = c(7, 4, 2, 1))
+
+for(current.class in c("inside", "edge", "outside"))
+{
+	current.error <- error.by.point[
+		error.by.point$point.class == current.class,
+	]
+
+	boxplot(
+		error.cm ~ algorithm,
+		data = current.error,
+		log = "y",
+		col = algorithm.colors,
+		main = tools::toTitleCase(current.class),
+		ylab = "Error (cm, log scale)",
+		las = 2
+	)
+}
+
+par(old.par)
+```
+
 # Decision
+
+This practical comparison provisionally supports replacing Condit's coordinate-recovery algorithm in active fgeo2 code. The overall column should not be used alone because 28 of the 64 test points were deliberately placed outside the quadrat. The inside and edge results are closer to the ordinary mapping problem, while the outside results test extrapolation and failure behavior.
+
+For the scanned maps, cases A–C, the three algorithms produced similarly small errors inside and along the edge of the quadrat. The affine transformation is therefore the preferable default for scans: it is short, transparent and matches the expected geometry. For the photographed maps, cases D–F, homography produced substantially smaller errors and should remain available when perspective is plausible.
+
+Condit's method did not improve coordinate recovery inside the quadrat. Because it uses unsigned distances, it also mapped exterior points back toward the quadrat, producing errors of several metres. This behavior is intrinsic to the algorithm rather than to the repaired indexing statement.
+
+I recommend preserving the practical workflow from clicked image coordinates to adjusted coordinates, but replacing the old correction algorithm with affine transformation for scans and homography for photographs. ImageJ itself is optional: clicking or importing image coordinates is separate from the transformation. The historical CTFS scripts and tutorial should remain archived for reproducibility, but the complete legacy geometry dependency chain does not need to remain in the maintained implementation. This recommendation should remain provisional until the dependency review below is reconciled with the functions that are retained for other purposes.
 
 # Due diligence for dependents and dependencies
 
