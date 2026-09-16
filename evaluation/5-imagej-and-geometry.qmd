@@ -534,15 +534,25 @@ for(current.class in c("inside", "edge", "outside"))
 par(old.par)
 ```
 
-# Decision
+# Decision about the coordinate recovery code
 
-This practical comparison provisionally supports replacing Condit's coordinate-recovery algorithm in active fgeo2 code. The overall column should not be used alone because 28 of the 64 test points were deliberately placed outside the quadrat. The inside and edge results are closer to the ordinary mapping problem, while the outside results test extrapolation and failure behavior.
+Condit's algorithm does a good work with the "inside" and "edge" points (which is what most of the points are, in regular mapping). It is a smart algorithm that, for the most part, works under controlled circumstances with minimal error. But it has no place in a light and easy-to-maintain version of the code:
 
-For the scanned maps, cases A–C, the three algorithms produced similarly small errors inside and along the edge of the quadrat. The affine transformation is therefore the preferable default for scans: it is short, transparent and matches the expected geometry. For the photographed maps, cases D–F, homography produced substantially smaller errors and should remain available when perspective is plausible.
+-   Much greater complexity than the alternative implementations: Condit’s method requires many custom geometry helpers; affine and homography need only short, standard linear-algebra calculations.
+-   Inconsistent corner defaults: `fullplot.imageJ()` and `imageJ.to.lxly()` assume different corner orders, potentially reflecting the map or creating other practical vulnerabilities.
+-   Known implementation bug: `distance.to.side()` fails without correcting how intersection coordinates are extracted.
+-   Incorrect exterior behavior: unsigned distances fold outside points inside, potentially producing duplicate valid-looking records in adjacent quadrats. Affine and homography preserve exterior positions, treating corners as controls, not constraints.
+-   Corners vs. constraints: affine and homography can benefit from any number of control points, including internal quadrats of known location or reference trees with well-validated coordinates from previous censuses.
+-   Condit's algorithm returns local coordinates: the local-to-global conversion introduces additional opportunities for errors. The proposed affine / homography implementation returns global coordinates directly, and skips entirely the problematic dichotomy between local and global coordinates (discussed in detail in the evaluation of quadrat-related code).
+-   Condit's implementation cannot process images from photographs well, performing substantially worse than the homography transformation.
 
-Condit's method did not improve coordinate recovery inside the quadrat. Because it uses unsigned distances, it also mapped exterior points back toward the quadrat, producing errors of several metres. This behavior is intrinsic to the algorithm rather than to the repaired indexing statement.
+Substituting Condit's implementation by affine and homography transformations is almost entirely a win-win: they do the same, better, for a much lower cost (brief, stand-alone code).
 
-I recommend preserving the practical workflow from clicked image coordinates to adjusted coordinates, but replacing the old correction algorithm with affine transformation for scans and homography for photographs. ImageJ itself is optional: clicking or importing image coordinates is separate from the transformation. The historical CTFS scripts and tutorial should remain archived for reproducibility, but the complete legacy geometry dependency chain does not need to remain in the maintained implementation. This recommendation should remain provisional until the dependency review below is reconciled with the functions that are retained for other purposes.
+The entire workflow is or will be soon obsolete. Clearly, work in tablets is superior to work in paper, then scan, then click, then compile. It is not worth to develop extensive documentation or tutorials. Only minimal ones.
+
+The tutorial should include a quick fix or warning regarding the known bug in Condit's algorithm. But only for the purpose of back-compatibility. fgeo2 will not retain Condit's algorithm.
+
+Regarding homography vs. affine: homography is clearly superior in images with perspective (photographs) and only marginally worse than affine transformation for flatbed scans. The affine transformation does have theoretical properties that makes it better behaved in the \[four corners\] + \[clicking error\] case: it uses least squares fit, while homography fits exactly through the clicked (erroneous) corners as if they were total truth. In practice, this is not a serious issue for the homography transformation: added error to tree locations should be small (several cm) even for large clicking errors in corners (1/2 m), relative to the error in the affine transformation. Thus, the main recommendation should be to use the homography transformation in general, with affine as a plan B when there is a missing corner, or there is unusually large error in clicked corner location. In other words: use homography unless the person clicking is drunk.
 
 # Due diligence for dependents and dependencies
 
