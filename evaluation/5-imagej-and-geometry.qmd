@@ -938,7 +938,7 @@ overlap <- xmax1 >= xmin2 &
 
 For plot quadrats, `assign_points_to_quadrats()` already represents the boundary convention more explicitly.
 
-**Recommendation:** Remove `inside.rect()`. Retain `insideRectangle()` temporarily because it is used by `complete.plotmap()`. Retain `are.ptsinside()` temporarily because it is used by `selectrandomquad3()` and `ispt.inside()`. Retain `ispt.inside()` temporarily because it is used by `coverage.diag()`. These callers require future review, as the defects of these particular functions.
+**Recommendation:** Remove `inside.rect()`. Retain `insideRectangle()` temporarily because it is used by `complete.plotmap()`. Retain `are.ptsinside()` temporarily because it is used by `selectrandomquad3()` and `ispt.inside()`. Retain `ispt.inside()` temporarily because it is used by `coverage.diag()`. These functions and their dependents require future review but, for the moment, I do the minimum fixes to solve their current defects (see [fgeo2 commit 3a1ed6c](https://github.com/gabrielareto/fgeo2/commit/3a1ed6ca5bda2cea7d73119964208944a9292cd0)).
 
 ## Circles and ellipses
 
@@ -1091,14 +1091,14 @@ y <- r * sin(theta)
 None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we took in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. A few functions, however, have clear dependents, and can be left for later. Thus:
 
 -   Temporarily retain six functions:\
-    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed gain when reviewing the regression, binned-model, mapping, random-quadrat and other code that use them.
--   Remove the other 19 functions: \*\*\*
+    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed again when reviewing the regression, binned-model, mapping, random-quadrat and other code that use them.
+-   Remove the other 19 functions: `xydist()`, `xydistvect()`, `xydistmat()`, `pt.to.segment()`, `perpendicular.line()`, `intersection.of.lines()`, `intersection.line.curve()`, `is.between()`, `line.intersection.pts()`, `segmentPt()`, `drawrectangle()`, `angleBisector()`, `inside.rect()`, `circle()`, `fullcircle()`, `ellipse()`, `fullellipse()`, `cartesian.to.polar()` and `polar.to.cartesian()`.
 
 If standard and frequent ecological work requires it, fgeo2 could add geometry again. If that happens, the criteria should be using direct base R for elementary calculations within other functions (small repetition \> small dependency) and `sf` for substantive spatial geometry.
 
 # Due diligence for dependents and dependencies
 
-## Source code and dependency calculation
+## Source code
 
 The evaluation uses [commit `c54adc9`](https://github.com/gabrielareto/fgeo2/commit/c54adc9fb5d6c281d51c2a66d81d057a3efc1796), dated 2 September 2026. The code below reads the scripts at that commit, so later edits to `R/new` do not change the functions being evaluated. It uses the shared functions in `evaluation/0-code-to-source.r`, as in the modeling evaluation. R, Git, `codetools`, `igraph` and `knitr` are needed to run the analysis in a clone of fgeo2 containing this commit.
 
@@ -1227,7 +1227,9 @@ There are **`r length(direct.outside)` direct dependents and `r length(outside)`
 
 Some of these callers are themselves broken. Their presence does not prove that the geometry functions work, but they need to be considered before removal.
 
-## Dependency network
+## Dependencies that will not be needed anymore
+
+# Updated dependency network
 
 The figure shows connected candidates, their dependents outside the candidate set, and the immediate helpers used by candidates. It excludes unrelated parts of the code base and other dependencies of the outside functions. Different subnetworks have different colors. Squares are candidates, circles are outside dependents, and open squares are the additional helpers. Function names are shown in full.
 
