@@ -674,7 +674,7 @@ b
 
 It seems the treatment of lines in CTFS code is flawed by design – perhaps contaminated by the way linear models are represented. Point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes, and are more general and better representations. General spatial intersections and distances can be delegated to `sf`.
 
-**Recommendation:** Remove `perpendicular.line()`: its only remaining caller is `pt.to.segment()`, which should also be removed. Retain `parallel.line()` temporarily because it is called by `constant.linear()`. Retain `pts.to.interceptslope()` temporarily because it is called by `linearmodel.bin.set()` and its downstream modeling functions.
+**Recommendation:** Remove `perpendicular.line()`, `parallel.line()` and `pts.to.interceptslope()`. In the current `R/new` code, every caller of these functions is also marked for removal below. The former modeling dependents of `parallel.line()` and `pts.to.interceptslope()` are no longer present in `R/new`.
 
 ## Line and segment intersections
 
@@ -1088,11 +1088,11 @@ y <- r * sin(theta)
 
 ## Decision
 
-None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we took in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. A few functions, however, have clear dependents, and can be left for later. Thus:
+None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we took in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. Four functions, however, still have dependents and can be left for later. Thus:
 
--   Temporarily retain six functions:\
-    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed again when reviewing the regression, binned-model, mapping, random-quadrat and other code that use them.
--   Remove the other 19 functions: `xydist()`, `xydistvect()`, `xydistmat()`, `pt.to.segment()`, `perpendicular.line()`, `intersection.of.lines()`, `intersection.line.curve()`, `is.between()`, `line.intersection.pts()`, `segmentPt()`, `drawrectangle()`, `angleBisector()`, `inside.rect()`, `circle()`, `fullcircle()`, `ellipse()`, `fullellipse()`, `cartesian.to.polar()` and `polar.to.cartesian()`.
+-   Temporarily retain four functions:\
+    `perpendicular.distance()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed again when reviewing the regression, mapping, random-quadrat and other code that use them.
+-   Remove the other 21 functions: `xydist()`, `xydistvect()`, `xydistmat()`, `pt.to.segment()`, `perpendicular.line()`, `parallel.line()`, `intersection.of.lines()`, `intersection.line.curve()`, `is.between()`, `line.intersection.pts()`, `pts.to.interceptslope()`, `segmentPt()`, `drawrectangle()`, `angleBisector()`, `inside.rect()`, `circle()`, `fullcircle()`, `ellipse()`, `fullellipse()`, `cartesian.to.polar()` and `polar.to.cartesian()`.
 
 If standard and frequent ecological work requires it, fgeo2 could add geometry again. If that happens, the criteria should be using direct base R for elementary calculations within other functions (small repetition \> small dependency) and `sf` for substantive spatial geometry.
 
@@ -1100,7 +1100,7 @@ If standard and frequent ecological work requires it, fgeo2 could add geometry a
 
 ## Source code
 
-The evaluation uses [commit `c54adc9`](https://github.com/gabrielareto/fgeo2/commit/c54adc9fb5d6c281d51c2a66d81d057a3efc1796), dated 2 September 2026. The code below reads the scripts at that commit, so later edits to `R/new` do not change the functions being evaluated. It uses the shared functions in `evaluation/0-code-to-source.r`, as in the modeling evaluation. R, Git, `codetools`, `igraph` and `knitr` are needed to run the analysis in a clone of fgeo2 containing this commit.
+The dependency analysis uses [commit `e44f9fd`](https://github.com/gabrielareto/fgeo2/commit/e44f9fd273f1557ef934a2cb7f614312bff212ea), dated 18 September 2026. This was the latest commit when the analysis started. The code below reads all scripts under `R/new` at that commit, so later edits do not change the result. Scripts under `R/old` are not included.
 
 ```{r}
 #| label: source-code
@@ -1114,15 +1114,57 @@ path <- normalizePath(path)
 
 source(file.path(path, "evaluation/0-code-to-source.r"))
 
-evaluation.commit = "c54adc9fb5d6c281d51c2a66d81d057a3efc1796"
-evaluation.date = as.Date("2026-09-06")
+evaluation.commit <- "e44f9fd273f1557ef934a2cb7f614312bff212ea"
+evaluation.date <- as.Date("2026-09-18")
 
-modules = c("01_utilities", "02_biomass", "03_spatial",
-            "04_abundance_diversity", "05_demography_growth",
-            "06_topography_habitat", "07_mapping_plotting")
+modules <- c(
+	"01_utilities", "02_biomass", "03_spatial",
+	"04_abundance_diversity", "05_demography_growth",
+	"06_topography_habitat", "07_mapping_plotting"
+)
 
-candidate.scripts = c("01_utilities/R/new/utilities-geometry.r",
-                      "06_topography_habitat/R/new/topography-imageJ.r")
+geometry.functions.to.remove <- c(
+	"xydist",
+	"xydistvect",
+	"xydistmat",
+	"pt.to.segment",
+	"perpendicular.line",
+	"parallel.line",
+	"intersection.of.lines",
+	"intersection.line.curve",
+	"is.between",
+	"line.intersection.pts",
+	"pts.to.interceptslope",
+	"segmentPt",
+	"drawrectangle",
+	"angleBisector",
+	"inside.rect",
+	"circle",
+	"fullcircle",
+	"ellipse",
+	"fullellipse",
+	"cartesian.to.polar",
+	"polar.to.cartesian"
+)
+
+imageJ.functions.to.remove <- c(
+	"fullplot.imageJ",
+	"SectionCorrection",
+	"imageJ.to.lxly",
+	"distance.to.side"
+)
+
+functions.to.remove <- c(
+	geometry.functions.to.remove,
+	imageJ.functions.to.remove
+)
+
+stopifnot(
+	length(geometry.functions.to.remove) == 21L,
+	length(imageJ.functions.to.remove) == 4L,
+	length(functions.to.remove) == 25L,
+	!anyDuplicated(functions.to.remove)
+)
 
 all.files <- system2("git",
                      c("-C", shQuote(path), "ls-tree", "-r",
@@ -1151,7 +1193,7 @@ for(file in scripts)
 	script.functions <- functions_in_script(connection)
 	close(connection)
 
-	eval(parse(text = code), envir = code.env)
+	eval(parse(text = paste(code, collapse = "\n")), envir = code.env)
 	definition.rows[[file]] <- data.frame(Function = script.functions,
 	                                      Script = file)
 }
@@ -1163,10 +1205,12 @@ if(anyDuplicated(definitions$Function))
 objects <- mget(ls(code.env, all.names = TRUE),
                 envir = code.env, inherits = FALSE)
 all.functions <- names(objects)[vapply(objects, is.function, logical(1))]
-candidates <- definitions$Function[definitions$Script %in% candidate.scripts]
 
-stopifnot(setequal(all.functions, definitions$Function),
-          length(candidates) == 29L)
+missing.functions <- setdiff(functions.to.remove, all.functions)
+if(length(missing.functions))
+	stop("Functions not found: ", paste(missing.functions, collapse = ", "))
+
+stopifnot(setequal(all.functions, definitions$Function))
 
 edges <- get_all_dependencies(envir = code.env)
 edges <- unique(edges[, c("from_function", "to_function"), drop = FALSE])
@@ -1175,11 +1219,11 @@ names(edges) <- c("from", "to")
 
 There are **`r length(scripts)` scripts, `r length(all.functions)` functions and `r nrow(edges)` directed dependencies** in this snapshot. An arrow goes from a dependency to a function that uses it. The helper includes functions passed to `apply()` and `optim()`, which matter here for `distance.to.side()`, `ispt.inside()` and `minum.perpdist()`.
 
-This is the internal fgeo2 network. Historical copies and functions in external packages are not mixed into it. Undefined calls, such as `insideRectange()` and `line.intersection()`, cannot appear as defined nodes; their errors are discussed below. Calls constructed dynamically and uses in other people's scripts may also be absent.
+This is the internal fgeo2 network. Historical copies and functions in external packages are not mixed into it. Undefined calls, such as `line.intersection()`, cannot appear as defined nodes. Calls constructed dynamically and uses in other people's scripts may also be absent.
 
 ## Dependents that could break
 
-For each candidate, the following code identifies direct dependents and follows all dependency levels. The table retains functions outside the candidate set.
+For each of the 25 functions, the following code identifies direct dependents and follows all dependency levels. Only functions outside the removal set are reported.
 
 ```{r}
 #| label: outside-dependents
@@ -1189,57 +1233,139 @@ dependent.rows <- list()
 direct.outside <- character()
 outside <- character()
 
-for(candidate in candidates)
+for(function.name in functions.to.remove)
 {
-	direct <- setdiff(edges$to[edges$from == candidate], candidates)
-	all.dependents <- setdiff(downstream_dependents(candidate, edges), candidates)
+	direct <- setdiff(
+		edges$to[edges$from == function.name],
+		functions.to.remove
+	)
+	all.dependents <- setdiff(
+		downstream_dependents(function.name, edges),
+		functions.to.remove
+	)
 	direct.outside <- union(direct.outside, direct)
 	outside <- union(outside, all.dependents)
 
 	if(length(all.dependents) == 0L) next
 
-	dependent.rows[[candidate]] <- data.frame(
-		Candidate = candidate,
-		`Direct dependents outside candidates` = paste(sort(direct), collapse = ", "),
-		`Dependents outside candidates at any level` = paste(sort(all.dependents),
-		                                                    collapse = ", "),
+	dependent.rows[[function.name]] <- data.frame(
+		`Function to remove` = function.name,
+		`Direct dependents outside removal set` = paste(sort(direct), collapse = ", "),
+		`Dependents outside removal set at any level` = paste(
+			sort(all.dependents),
+			collapse = ", "
+		),
 		check.names = FALSE)
 }
 
-dependent.table <- do.call(rbind, dependent.rows)
-dependent.latex <- knitr::kable(dependent.table, format = "latex",
-                                booktabs = TRUE, longtable = TRUE,
-                                row.names = FALSE)
-dependent.latex <- sub("\\begin{longtable}{lll}",
-                       "\\begin{longtable}{@{}L{4cm}L{9cm}L{9cm}@{}}",
-                       dependent.latex, fixed = TRUE)
-cat("\\begin{landscape}\n\\footnotesize\n\\setlength{\\tabcolsep}{4pt}\n",
-    dependent.latex, "\n\\end{landscape}\n", sep = "")
+direct.outside <- sort(direct.outside)
+outside <- sort(outside)
+
+if(length(dependent.rows) == 0L)
+{
+	cat("**Result:** No function outside the removal set depends on any ",
+	    "of the 25 functions.\n", sep = "")
+} else {
+	dependent.table <- do.call(rbind, dependent.rows)
+	dependent.latex <- knitr::kable(
+		dependent.table,
+		format = "latex",
+		booktabs = TRUE,
+		longtable = TRUE,
+		row.names = FALSE
+	)
+	dependent.latex <- sub(
+		"\\begin{longtable}{lll}",
+		"\\begin{longtable}{@{}L{4cm}L{9cm}L{9cm}@{}}",
+		dependent.latex,
+		fixed = TRUE
+	)
+	cat(
+		"\\begin{landscape}\n",
+		"\\footnotesize\n",
+		"\\setlength{\\tabcolsep}{4pt}\n",
+		dependent.latex,
+		"\n\\end{landscape}\n",
+		sep = ""
+	)
+}
 ```
 
-There are **`r length(direct.outside)` direct dependents and `r length(outside)` dependents at any level outside the candidate set**. They connect the geometry code to regression, prediction, plotting and species-area calculations:
-
--   `perpendicular.distance()` is used by `minum.perpdist()` and, indirectly, `majoraxisreg()`.
--   `parallel.line()` is used by `constant.linear()`. Its scalar use differs from the defective mixed-vector example below.
--   `pts.to.interceptslope()` is used by `linearmodel.bin.set()`, followed by `linearmodel.bin()` and `logisticmodel.bin()`.
--   `insideRectangle()` is used by `complete.plotmap()`.
--   `are.ptsinside()` and `ispt.inside()` connect to `selectrandomquad3()` and `coverage.diag()`.
-
-Some of these callers are themselves broken. Their presence does not prove that the geometry functions work, but they need to be considered before removal.
+There are **`r length(direct.outside)` direct dependents and `r length(outside)` dependents at any level outside the removal set**. Removing these 25 functions therefore does not break another function in `R/new` at this snapshot.
 
 ## Dependencies that will not be needed anymore
 
+The following check starts with functions called directly by the 25 functions marked for removal. It then retains only functions with no caller left after that removal.
+
+```{r}
+#| label: unused-dependencies
+#| results: asis
+
+upstream.functions <- sort(setdiff(
+	unique(edges$from[edges$to %in% functions.to.remove]),
+	functions.to.remove
+))
+
+remaining.edges <- edges[
+	!edges$to %in% functions.to.remove,
+	,
+	drop = FALSE
+]
+
+uncalled.upstream <- upstream.functions[
+	!upstream.functions %in% unique(remaining.edges$from)
+]
+
+orphan.assessment <- c(
+	IfElse = paste(
+		"is a scalar wrapper around base R `if`.",
+		"It contains no ecological calculation and has no remaining caller."
+	),
+	logical.grep = paste(
+		"recreates `grepl(needle, haystack, fixed = TRUE)`.",
+		"It contains no ecological calculation and its only caller was",
+		"`fullplot.imageJ()`."
+	)
+)
+
+stopifnot(setequal(uncalled.upstream, names(orphan.assessment)))
+
+additional.functions.to.remove <- sort(uncalled.upstream)
+
+for(function.name in additional.functions.to.remove)
+{
+	script <- definitions$Script[
+		match(function.name, definitions$Function)
+	]
+
+	cat(
+		"-   `", function.name, "()` (`", basename(script), "`) ",
+		orphan.assessment[[function.name]],
+		" **Decision: remove.**\n",
+		sep = ""
+	)
+}
+```
+
+This is a targeted check of dependencies connected to the 25 functions. It does not identify unrelated isolated functions or disconnected groups; those require a separate review.
+
 # Updated dependency network
 
-The figure shows connected candidates, their dependents outside the candidate set, and the immediate helpers used by candidates. It excludes unrelated parts of the code base and other dependencies of the outside functions. Different subnetworks have different colors. Squares are candidates, circles are outside dependents, and open squares are the additional helpers. Function names are shown in full.
+The figure shows the connected functions marked for removal, any dependents outside that set, and their immediate helpers. It excludes unrelated parts of the code base and other dependencies of outside functions. Different subnetworks have different colors. Squares are functions to remove, circles are outside dependents, and open squares are retained helpers.
 
 ```{r}
 #| label: dependency-network
 #| out-width: "100%"
 
-helpers <- setdiff(unique(edges$from[edges$to %in% candidates]),
-                   c(candidates, outside))
-shown <- unique(c(candidates, outside, helpers))
+network.removals <- union(
+	functions.to.remove,
+	additional.functions.to.remove
+)
+helpers <- setdiff(
+	unique(edges$from[edges$to %in% network.removals]),
+	c(network.removals, outside)
+)
+shown <- unique(c(network.removals, outside, helpers))
 shown.edges <- edges[edges$from %in% shown & edges$to %in% shown, , drop = FALSE]
 
 # Construct the graph from edges so isolated functions are omitted.
@@ -1254,7 +1380,7 @@ V(g)$shape[V(g)$name %in% outside] <- "circle"
 V(g)$frame.color <- "gray25"
 V(g)$frame.color[V(g)$name %in% helpers] <- subnet.colors[V(g)$name %in% helpers]
 
-isolated.candidates <- setdiff(candidates, V(g)$name)
+isolated.removals <- setdiff(network.removals, V(g)$name)
 
 network.pdf <- file.path(path, "evaluation/results",
                          paste0("imagej-geometry-dependencies-",
@@ -1273,7 +1399,7 @@ plot(g, layout = network.layout,
      vertex.color = V(g)$color, vertex.shape = V(g)$shape,
      vertex.frame.color = V(g)$frame.color,
      edge.color = "gray45", edge.width = 0.7, edge.arrow.size = 0.3)
-legend("bottomleft", c("Candidate", "Outside dependent", "Internal helper"),
+legend("bottomleft", c("Function to remove", "Outside dependent", "Retained helper"),
        pch = c(15, 16, 0), pt.cex = 1.1, bty = "n", cex = 0.8)
 title("ImageJ and geometry: arrows point from a dependency to its caller")
 dev.off()
@@ -1281,4 +1407,4 @@ dev.off()
 knitr::include_graphics(network.pdf)
 ```
 
-The isolated candidates are `r paste(paste0("\u0060", sort(isolated.candidates), "\u0060"), collapse = ", ")`. They remain in the evaluation table. The additional helpers are `r paste(paste0("\u0060", sort(helpers), "\u0060"), collapse = ", ")`; these serve other utility roles and are not candidates for removal here. The figure is saved in `evaluation/results/`, with the evaluated commit and evaluation date in its filename.
+The isolated functions marked for removal are `r paste(paste0("\u0060", sort(isolated.removals), "\u0060"), collapse = ", ")`. The retained helpers are `r paste(paste0("\u0060", sort(helpers), "\u0060"), collapse = ", ")`; they still serve other functions in `R/new`. The figure is saved in `evaluation/results/`, with the evaluated commit and evaluation date in its filename.
