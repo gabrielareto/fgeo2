@@ -25,7 +25,9 @@ individual_grow.table <- function(cnsdata = list(bci.full1, bci.full2, bci.full3
     final$growth[final$incgr <= 0] <- mingrow
     final$LnGrowth <- log(final$growth)
     final$LnSize <- log(final$dbh1) - mean(log(final$dbh1))
-    final$CRGrowth <- pospower(final$incgr, powertransformation)
+    # Apply the power transformation while preserving the sign of negative growth.
+    final$CRGrowth <- sign(final$incgr) *
+        abs(final$incgr)^powertransformation
     if (debug) 
         browser()
     

@@ -174,6 +174,8 @@ This due diligence has two main goals:
 1.  identify any function outside the candidate set that would break if a candidate were removed; and
 2.  identify non-candidate functions that may no longer be necessary if the functions marked **remove** are removed.
 
+This is a targeted dependency check, not a repository-wide unused-function audit. It can only identify functions connected to the predefined candidate set. Isolated functions and disconnected groups with no path to a candidate require a separate review.
+
 The dependency structure below uses every R script in the `R/new` directory of all seven fgeo2 modules. The exact pre-work snapshot is commit [`040b73e`](https://github.com/gabrielareto/fgeo2/commit/040b73e0cd9a0d55d64c1639b22159d5c6cbd20e).
 
 ```{r}
@@ -301,6 +303,8 @@ if(length(dependent_rows) == 0)
 
 This check follows dependencies upstream through all levels. A non-candidate dependency is marked as potentially unnecessary when it belongs to the dependency chain of functions marked **remove** and has no downstream use outside that potential removal set. Functions marked **keep** or **review** prevent a shared dependency from receiving that conclusion.
 
+By construction, this check cannot identify an isolated function, or a disconnected group of functions, that is not upstream of one of the removal candidates.
+
 ```{r}
 #| results: asis
 
@@ -399,7 +403,7 @@ General Bayesian, hierarchical, segmented, and model-comparison tasks are better
 \
 The updated evaluation suggests removing 72 of the 73 evaluated functions, while keeping `extract.growthdata()` for later review. Other nine additional functions listed above will become useless and are also to be removed. I created some issues for further development inspired by the obsolete code.
 
-# Package structure after removals
+# Package structure after initial removals
 
 After removals, this is the structure of fgeo2:
 
@@ -487,4 +491,22 @@ knitr::include_graphics(post_work_pdf_relative)
 
 ```
 
-The image excludes isolated functions (single functions with no dependents and no dependencies). Different sub-networks have different colors.
+The image excludes isolated functions (single functions with no dependents and no dependencies). Different sub-networks have different colors. This graph describes dependency structure; it is not, by itself, an unused-code audit.
+
+# Follow-up: remaining distribution utilities
+
+A later repository-wide pass found 80 top-level function definitions, representing 79 unique names, still active in `01_utilities/R/new/utilities-distributions.r`; one function was defined twice. Only `pospower()` had a production caller outside that script: `individual_grow.table()`. The earlier due diligence did not identify the other functions because it started from the predefined modeling candidates and followed only their dependency paths. Most of the remaining distribution functions were isolated; others formed disconnected internal groups that were unrelated to the candidate set. The post-work graph omitted the isolated functions and did not classify disconnected groups according to external use.
+
+The one live use of `pospower()` is simply a signed power transformation. It can be written directly while preserving the behavior for positive, negative, zero, and missing growth values:
+
+```{r}
+#| eval: false
+
+# Apply the power transformation while preserving the sign of negative growth.
+final$CRGrowth <- sign(final$incgr) *
+  abs(final$incgr)^powertransformation
+```
+
+After replacing that call, no function in the active `R/new` code, tutorials, or tests uses a definition from `utilities-distributions.r`. The file also mixes elementary wrappers, exploratory calculations, and specialized modeling callbacks. Several functions have clear source-level problems: for example, `fitnorm()` supplies three default parameters while `minum.normal()` reads four, `fit.pdf()` refers to an undefined `par` in its one-parameter branch, and `logistic.ctr()` uses an undefined `inter`. Maintaining or repairing these functions would not support the current focus of fgeo2 on measurements, descriptors, and data preparation.
+
+**Decision:** replace the sole `pospower()` call with the direct signed-power expression and delete `utilities-distributions.r` from `R/new`. The historical implementation remains available in `R/old`, the original CTFS snapshot under `evaluation/Condit`, and Git history.
