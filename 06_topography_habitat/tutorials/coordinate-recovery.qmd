@@ -137,7 +137,7 @@ plot(
 polygon(known.controls$x, known.controls$y, border = "red", lwd = 2)
 ```
 
-# Fallback: affine transformation
+# Plan B: affine transformation
 
 An affine transformation needs at least three non-collinear controls. It is a practical fallback for a flatbed scan when one corner is unavailable. Do not use three controls to correct appreciable photographic perspective. If four or more reliable controls are available, retain them: the affine fit uses all of them by least squares.
 
@@ -193,7 +193,7 @@ ImageJ or [Fiji](https://imagej.net/software/fiji/downloads) can also export the
 
 # Local and global plot coordinates
 
-The known controls define the output coordinates. Corners such as `(50, 50)`, `(50, 60)`, `(60, 60)` and `(60, 50)` return global plot coordinates directly. Corners entered as `(0, 0)`, `(0, 10)`, `(10, 10)` and `(10, 0)` return coordinates local to that quadrat.
+The known controls define the output coordinates. Corners such as `(50, 50)`, `(50, 60)`, `(60, 60)` and `(60, 50)` return global plot coordinates directly. Corners entered as `(0, 0)`, `(0, 10)`, `(10, 10)` and `(10, 0)` return coordinates local to that 10 x 10 m quadrat.
 
 If a process must use local controls, convert its results afterwards with `compile_points_from_quadrats()`. The function and a fuller explanation are in the [quadrat source](../../03_spatial/R/new/quadrats.R) and [quadrat tutorial](../../03_spatial/tutorials/quadrats.qmd).
 
