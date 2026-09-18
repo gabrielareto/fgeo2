@@ -1351,7 +1351,15 @@ This is a targeted check of dependencies connected to the 25 functions. It does 
 
 # Removal of few auxiliary functions
 
-The evaluation above suggests to remove `IfElse()` and `logical.grep()` functions. I do it directly. In addition, I remove also `drp()` and `pst()` functions, which are small helpers that increase connectivity within the code. Removal of these functions improves the modularity of the code and will make it easier to maintain, hopefully.
+The evaluation above suggests to remove `IfElse()` and `logical.grep()` functions. I do it directly. In addition, I remove also `drp()` and `pst()` functions, which are small helpers that increase connectivity within the code. Removal of these functions improves the modularity of the code and will make it easier to maintain, hopefully:
+
+-   `logical.grep()` has been substituted by `grepl(needle, haystack, fixed = TRUE) %in% TRUE`; the "%in% TRUE" necessary to handly the NAs in the same way as the original.
+
+-   `drp()` has been substituted by `drop(as.matrix(x))`, exact equivalent.
+
+-   `pst()` has been substituted by paste0(), exact equivalent.
+
+-   `IfElse()` was called in three instances of the type `IfElse(length(a) > length(b), length(a), length(b))`, so it has been substituted by `max(length(a), length(b))` instead of some logical construct through base `ifelse()`.
 
 # Updated dependency network
 
