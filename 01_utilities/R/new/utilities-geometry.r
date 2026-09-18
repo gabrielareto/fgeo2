@@ -299,10 +299,11 @@ insideRectangle <- function(x, y, xrange, yrange) {
 
 # <function> <name> are.ptsinside </name> <description> Checks many points (dataframe pt with x and y) against a single quadrat
 # whose corners are given by as xlo, ylo, xhi, yhi.  It returns a logical vector, TRUE for the points inside. This is same as
-# insideRectange, but accepting input as a matrix pts and a single vector of the four corners of the rectange.  </description>
+# insideRectangle, but accepting input as a matrix pts and a single vector of the four corners of the rectange.  </description>
 # <arguments> </arguments> <sample> </sample> <source>
 are.ptsinside <- function(pts, coord) {
-    return(insideRectange(x = pts[, 1], y = pts[, 2], xrange = coord[, c(1, 3)], yrange = coord[, c(2, 4)]))
+    return(insideRectangle(x = pts[, 1], y = pts[, 2],
+        xrange = coord[c(1, 3)], yrange = coord[c(2, 4)]))
 }
 
 # </source> </function>
@@ -313,18 +314,18 @@ are.ptsinside <- function(pts, coord) {
 # </description> <arguments> </arguments> <sample> </sample> <source>
 ispt.inside <- function(pt, coord) {
     norect <- dim(coord)[1]
-    inside <- logical()
+    inside <- logical(norect)
     
-    for (i in 1:norect) logical[i] <- are.ptsinside(pt, drp(coord[i, ]))
+    for (i in seq_len(norect)) inside[i] <- are.ptsinside(t(pt), drp(coord[i, ]))
     
-    return(inside)
+    return(mean(inside))
 }
 # </source> </function>
 
 
 # <function> <name> inside.rect </name> <description> Determines whether any of the 4 corners of one rectangle are within a
 # second rectangle. Both rectangles are submitted as c(x0,x1,y0,y1). If just one of the corners is inside, it returns true. See
-# insideRectange(), which has a similar name but does something different.  </description> <arguments> </arguments> <sample>
+# insideRectangle(), which has a similar name but does something different.  </description> <arguments> </arguments> <sample>
 # </sample> <source>
 inside.rect <- function(rect1, rect2) {
     if (rect1[2] < rect2[1]) 
