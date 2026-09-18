@@ -1349,6 +1349,10 @@ for(function.name in additional.functions.to.remove)
 
 This is a targeted check of dependencies connected to the 25 functions. It does not identify unrelated isolated functions or disconnected groups; those require a separate review.
 
+# Removal of few auxiliary functions
+
+The evaluation above suggests to remove `IfElse()` and `logical.grep()` functions. I do it directly. In addition, I remove also `drp()` and `pst()` functions, which are small helpers that increase connectivity within the code. Removal of these functions improves the modularity of the code and will make it easier to maintain, hopefully.
+
 # Updated dependency network
 
 The figure shows the connected functions marked for removal, any dependents outside that set, and their immediate helpers. It excludes unrelated parts of the code base and other dependencies of outside functions. Different subnetworks have different colors. Squares are functions to remove, circles are outside dependents, and open squares are retained helpers.
