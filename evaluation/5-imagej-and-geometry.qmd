@@ -28,7 +28,7 @@ editor: visual
 
 # Goal and functions to evaluate
 
-The goal is to make the fgeo2 body of code lighter and easier to maintain, while preserving calculations and workflows that remain useful to the ForestGEO and CTFS communities. Here I evaluate the ImageJ functions and the geometry functions inherited from CTFS. Most of the code is part of a workflow for converting digitized tree maps into local coordinates, but several of the geometry functions also have uses outside ImageJ.
+The goal is to make the fgeo2 body of code lighter and easier to maintain, while preserving calculations and workflows that remain useful to ForestGEO and the Alliance for Tropical Forest Science. Here I evaluate the ImageJ functions and the geometry functions inherited from CTFS. Most of the code is part of a workflow for converting digitized tree maps into local coordinates, but several of the geometry functions also have uses outside ImageJ. In particular, I evaluate are all 25 functions in `utilities-geometry.r` and all four functions in `topography-imageJ.r`.
 
 This evaluation focuses on:
 
@@ -36,11 +36,13 @@ This evaluation focuses on:
 -   identifying calculations and coordinate conventions worth keeping; and
 -   checking dependencies, so that removing one function does not leave other code broken.
 
-The functions to evaluate are all 25 functions in `utilities-geometry.r` and all four functions in `topography-imageJ.r`. This includes geometry helpers that are not used by ImageJ. I evaluate a slightly updated version of `fullplot.imageJ()`: the development of the quadrat-related code removed its dependence on `convert.rowcol()`. That small change avoided breaking the code during the quadrat update, but did not constitute an in-depth evaluation or validation of the image-to-coordinate conversion.
+I evaluate a slightly updated version of `fullplot.imageJ()`: the development of the quadrat-related code removed its dependence on `convert.rowcol()`. That small change avoided breaking the code during the quadrat update, but did not constitute an in-depth evaluation or validation of the image-to-coordinate conversion.
 
-In this document I refer to Richard Condit's old script distribution as CTFS, the formal R package as `ctfs`, and the later package family as `fgeo`. fgeo2 is the current code development/replacement project, for the moment a script-based distribution.
+In this document I refer to Richard Condit's old script distribution as "CTFS", the formal R package as `ctfs`, and the later package family as `fgeo`. fgeo2 is the current code development/replacement project, for the moment a script-based distribution.
 
-# How the ImageJ CTFS code and algorithm works
+# Evaluation of coordinate recovery code
+
+## How the ImageJ CTFS code and algorithm works
 
 The goal of Condit's algorithm is to reduce the error in tree-level locations using the four corners as control points, going from clicked coordinates to adjusted coordinates. In the adjusted coordinate system, the four corners are mapped to the supplied rectangular dimensions. The rest of the coordinates are transformed accordingly.
 
@@ -63,23 +65,25 @@ The reported `lefterror` and `bottomerror` use coefficients of variation among t
 
 There is an ambiguity in the 2011 tutorial: it describes four 10 × 10 m submaps within a 20 × 20 m quadrat, but the worked calls use `gridsize = c(20,20)` with four suffixes. `SectionCorrection()` offsets by the supplied grid dimensions, so those literal arguments do not place four 10 × 10 m sections inside a 20 × 20 m quadrat. The dimensions and suffixes need to be checked against the actual maps.
 
-# Should we keep the ImageJ workflow?
+## Should we keep the ImageJ workflow?
 
-The workflow addresses a real error-correction step because digitizing hand-drawn paper maps does not produce perfectly registered coordinates. Paper maps, scanning and manual digitization remain practical at some sites. The potentially obsolete parts are the dependence on ImageJ itself and the custom algorithm and geometry helpers used for the correction.
+\[*Note: we call it the "ImageJ workflow" because clicking has traditionally been done in ImageJ software, and that label has been inherited into the R functions. The algorithm itself operates just on numerical coordinates tables in R. ImageJ is not a strict requirement.*\]
 
-The original CTFS workflow returns local coordinates that identify a position within a quadrat. A second step is required to obtain global or plot-level coordinates. As discussed in the evaluation of quadrat-related code, this separation is a point of vulnerability.
+The workflow addresses a real error-correction step because digitizing hand-drawn paper maps does not produce perfectly registered coordinates. Paper maps, scanning and manual digitization remain practical at some sites. The problematic part is the custom algorithm and complicated geometry helpers used for the correction. Dependency on ImageJ or external software is not strict — and should remain like that. Any practical tool useful to get labelled sets of coordinates should suffice.
+
+The original CTFS workflow returns local coordinates that identify a position within a quadrat. A second step is required to obtain global or plot-level coordinates. As discussed in the evaluation of quadrat-related code, this separation is a point of vulnerability. It is not a major weakness, though.
 
 This evaluation covers 29 functions. Coordinate recovery uses only a subset of them, but its chain of ImageJ and geometry helpers still adds substantial maintenance. A short replacement would make the code easier to understand and maintain.
 
-The problematic or obsolete parts of this code were recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx). That evaluation omitted `pt.to.segment()`, which is included in the current evaluation.
+The problematic or obsolete nature of this code were recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
 
-However, there are also reasons to preserve the workflow, with or without updates to specific functions. Although the workflow and tutorial are more than 15 years old, there are more recent documented applications using the original CTFS code, conventions and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39–41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022) demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps.
+However, there are also reasons to preserve the workflow, with or without updates to specific functions. Although the workflow and tutorial are more than 15 years old, there are more recent documented applications using the original CTFS code, conventions and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39–41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022) demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps. La Planada ForestGEO site, in Colombia, plans to use paper maps during the full census and the click-based digitization process (Stuart J. Davies, personal communication, September 2026).
 
-These sources are not enough to estimate how many sites use this workflow now (2026), but they suggest that it may still be in use at different sites. At least, the old CTFS script-based distribution and the associated tutorials should remain available in easy-to-access repositories.
+These sources are not enough to estimate how many sites use this workflow now, but they suggest that it may still be in use at different sites. At least, the old CTFS script-based distribution and the associated tutorials should remain available in easy-to-access repositories. Feasible replacements, more robust or easy to maintain, must be considered.
 
-# Alternative algorithms
+## Alternative algorithms
 
-The core task of the CTFS code is to implement Condit's algorithm to obtain a best estimate of point location. We call it the "ImageJ workflow" because clicking has traditionally been done in ImageJ, but the algorithm itself operates on coordinates. ImageJ is not a strict requirement.
+The core task of the CTFS code is to implement Condit's algorithm to obtain a best estimate of point location.
 
 The problem is how to transform clicked coordinates into adjusted coordinates. Many source-to-destination transformations can be solved using linear algebra (see [this](https://docs.opencv.org/4.13.0/da/d54/group__imgproc__transform.html)). Two standard algorithms could solve the same problem as Condit's algorithm:
 
@@ -88,7 +92,7 @@ The problem is how to transform clicked coordinates into adjusted coordinates. M
 
 Both algorithms can be implemented using linear algebra through applications of `solve()` and `qr.solve()` in base R.
 
-## Affine transformation
+### Affine transformation
 
 The affine transformation is theoretically appropriate for flatbed scans and approximately perpendicular photographs, where the map can be corrected with translation, rotation, constant scaling and shear. It requires at least 3 non-collinear control-point pairs. With the usual four corners, all four can be used in a least-squares fit. Additional control points can also be fitted by least squares; for example, if corners of sub-quadrats of known location are represented in the map.
 
@@ -118,7 +122,7 @@ apply_affine_transformation <- function(known.xy.of.controls,
 }
 ```
 
-## Homography
+### Homography
 
 The homography, or planar projective transformation, is theoretically appropriate when photographing a flat map introduces appreciable perspective. It requires at least 4 control-point pairs in a non-degenerate arrangement. Additional control points can also be fitted by least squares; for example, if corners of subquadrats of known location are represented in the map.
 
@@ -154,11 +158,11 @@ apply_homography_transformation <- function(known.xy.of.controls,
 }
 ```
 
-# Practical comparison of algorithms
+## Practical comparison of algorithms
 
-The issues with scanning paper maps are not purely projective. Physical paper can also be folded, stretched or damaged. It is unclear whether Condit's algorithm is more robust to these problems than affine or homography transformations. To compare the three algorithms, I created a grid of known points, printed it, scanned or photographed the paper, and clicked the points in the resulting images. The difference between known and recovered locations measures performance under these six test conditions. This is a practical case study, not a general estimate of digitization error.
+The issues with scanning paper maps are not purely projective. Physical paper can also be folded, stretched or damaged. It is unclear whether Condit's algorithm is more robust to these problems than affine or homography transformations. To compare the three algorithms, I created a grid of known points, printed it, scanned or photographed the paper, clicked the points in the resulting images, and run those points through the error-correction algorithms. The difference between known and recovered locations measures performance under test conditions.
 
-## Reference set of points with known location
+### Reference set of points with known location
 
 This R code creates a set of points with known locations and four corners to use as control.
 
@@ -227,7 +231,7 @@ dev.off()
 knitr::include_graphics(reference.pdf)
 ```
 
-## Six paper cases
+### Six paper cases
 
 The figure was printed three times, and the prints were treated like this:
 
@@ -292,9 +296,9 @@ for(i in seq_along(pdf.paths))
 par(old.par)
 ```
 
-## Coordinate recovery
+### Coordinate recovery
 
-I have not used the complete original workflow through ImageJ because the transformation only requires the clicked coordinates. Instead, I used R's `locator()` to click the four corners first, followed by the known points in numerical order. See `evaluation/coordinate-locator.R` for the code. The resulting CSV files are stored in `data_examples/coordinate_recovery_test/`. They look like this:
+I have not used the complete original workflow through ImageJ because the transformation only requires the clicked coordinates. Instead, I used R's `locator()` to click the four corners first, followed by the known points in numerical order. See `evaluation/coordinate-locator.R` for a simple code. A more complete version may be developed for distribution within fgeo2. The resulting CSV files are stored in `data_examples/coordinate_recovery_test/`. They look like this:
 
 ```{r}
 
@@ -302,11 +306,11 @@ example <- read.csv(file.path(coordinate.recovery.path, "points test A.csv"))
 head(example, 10)
 ```
 
-In all cases, the coordinates are in pixels, internal to each individual image. They are not at the same scale and they do not need to be.
+In all cases, the coordinates are in pixels, internal to each individual image. They are not in the same scale and they do not need to be.
 
-## Error assessment
+### Error assessment
 
-I calculate error as the Euclidean distance between each known point and its recovered location. The four controls are used to fit each transformation and are not included among the validation points. Errors are expressed in centimetres.
+I calculate error as the Euclidean distance between each known point and its recovered location. The four controls are used to fit each transformation and are not included among the validation points. Errors are expressed in centimeters.
 
 The affine and homography transformations use the functions defined above. Condit's algorithm is loaded from the archived CTFS scripts:
 
@@ -534,25 +538,684 @@ for(current.class in c("inside", "edge", "outside"))
 par(old.par)
 ```
 
-# Decision about the coordinate recovery code
+## Decision
 
-Condit's algorithm does a good work with the "inside" and "edge" points (which is what most of the points are, in regular mapping). It is a smart algorithm that, for the most part, works under controlled circumstances with minimal error. But it has no place in a light and easy-to-maintain version of the code:
+### Retain workflow, change code
 
--   Much greater complexity than the alternative implementations: Condit’s method requires many custom geometry helpers; affine and homography need only short, standard linear-algebra calculations.
+There is a possibility that some teams will use this general workflow, mid-term. A full replacement, including an R point clicker to replace imageJ software / plugins, seems to require minimal stand-alone code. I will give it a go.
+
+The entire workflow is or will be soon obsolete. Clearly, work in tablets is superior to work in paper, then scan, then click, then compile. For that reason, it is not worth to develop extensive documentation or tutorials, neither sophisticated code that tries to maximize automation or easier routines for many maps. I will focus on a minimum viable product. Teams who need more help can contact me.
+
+### Abandon Condit's algorithm
+
+Condit's algorithm works well with the "inside" and "edge" points, but it has no place in a light and easy-to-maintain version of the code. Affine and homography transformations do the same, better, for a lower cost:
+
+-   Condit’s method requires many custom geometry helpers; affine and homography need only short, standard linear-algebra calculations.
 -   Inconsistent corner defaults: `fullplot.imageJ()` and `imageJ.to.lxly()` assume different corner orders, potentially reflecting the map or creating other practical vulnerabilities.
 -   Known implementation bug: `distance.to.side()` fails without correcting how intersection coordinates are extracted.
 -   Incorrect exterior behavior: unsigned distances fold outside points inside, potentially producing duplicate valid-looking records in adjacent quadrats. Affine and homography preserve exterior positions, treating corners as controls, not constraints.
--   Corners vs. constraints: affine and homography can benefit from any number of control points, including internal quadrats of known location or reference trees with well-validated coordinates from previous censuses.
--   Condit's algorithm returns local coordinates: the local-to-global conversion introduces additional opportunities for errors. The proposed affine / homography implementation returns global coordinates directly, and skips entirely the problematic dichotomy between local and global coordinates (discussed in detail in the evaluation of quadrat-related code).
+-   Corners vs. controls: affine and homography can benefit from any number of control points, including internal quadrats of known location or reference trees with well-validated coordinates from previous censuses. Condit's algorithm can use only four corners, which are treated both as controls and constraints.
+-   Condit's algorithm returns local coordinates: the local-to-global conversion introduces additional opportunities for errors. The proposed affine / homography implementation returns global coordinates directly, and skips entirely the problematic dichotomy between local and global coordinates. Why this discussed in detail in the evaluation of quadrat-related code).
 -   Condit's implementation cannot process images from photographs well, performing substantially worse than the homography transformation.
 
-Substituting Condit's implementation by affine and homography transformations is almost entirely a win-win: they do the same, better, for a much lower cost (brief, stand-alone code).
+For back-compatibility and as a perk for those who want to still use Condit's algorithm, the tutorial should include a quick fix or warning regarding its known bug. But fgeo2 will not retain Condit's algorithm neither complicate things by trying to retain everything.
 
-The entire workflow is or will be soon obsolete. Clearly, work in tablets is superior to work in paper, then scan, then click, then compile. It is not worth to develop extensive documentation or tutorials. Only minimal ones.
+### Homography \> affine
 
-The tutorial should include a quick fix or warning regarding the known bug in Condit's algorithm. But only for the purpose of back-compatibility. fgeo2 will not retain Condit's algorithm.
+Homography is clearly superior in images with perspective (photographs) and only marginally worse than affine transformation for flatbed scans. The affine transformation does have theoretical properties that makes it better behaved in the \[four corners\] + \[clicking error\] case: it uses least squares fit, while homography fits exactly through the clicked (erroneous) corners as if they were total truth. In practice, this is not a serious issue for the homography transformation: added error to tree locations should be small (several cm) even for large clicking errors in corners (1/2 m), relative to the error in the affine transformation. Such inferior performance is of smaller magnitude than field error in mapping stems.\
+\
+Therefore, the main recommendation should be to use the homography transformation in general, with affine as a plan B when there is a missing corner, or there is unusually large error in clicked corner location. The tutorial can include another small test to confirm this, with the case of more than 4 points of control.
 
-Regarding homography vs. affine: homography is clearly superior in images with perspective (photographs) and only marginally worse than affine transformation for flatbed scans. The affine transformation does have theoretical properties that makes it better behaved in the \[four corners\] + \[clicking error\] case: it uses least squares fit, while homography fits exactly through the clicked (erroneous) corners as if they were total truth. In practice, this is not a serious issue for the homography transformation: added error to tree locations should be small (several cm) even for large clicking errors in corners (1/2 m), relative to the error in the affine transformation. Thus, the main recommendation should be to use the homography transformation in general, with affine as a plan B when there is a missing corner, or there is unusually large error in clicked corner location. In other words: use homography unless the person clicking is drunk.
+# Evaluation of geometry functions
+
+Most geometry functions seem part of a complicated network of helpers to imageJ code, and, at first glance, they should be removed. The 2016-2017 review of the code recommended complete removal. In addition to this general view, the current evaluation identifies specific problems/bugs, and the specific alternatives in well-maintained R.
+
+## Euclidean and line distances
+
+`xydist()`, `xydistvect()` and `xydistmat()` calculate Euclidean distances between paired Cartesian coordinates. `perpendicular.distance()` calculates the distance from a point to an infinite line, while `pt.to.segment()` attempts to calculate the shortest distance to a finite line segment and return the nearest point.
+
+The underlying operations are potentially useful, but the first three functions are elementary adapters, and the more complicated functions have unclear or unreliable behavior in important cases.
+
+```{r}
+# xydist() correctly calculates an ordinary Euclidean distance.
+xydist(
+	x1 = 0,
+	y1 = 0,
+	x2 = 3,
+	y2 = 4
+)
+```
+
+```{r}
+#| error: true
+
+# The documented vector interface of xydistvect() fails.
+xydistvect(
+    xy1 = c(0, 0),
+    xy2 = c(3, 4)
+)
+```
+
+```{r}
+#| error: true
+
+# xydistmat() is documented for an apply-style row containing
+# the coordinates of two points, but this input fails.
+xydistmat(
+    xy = c(0, 0, 3, 4)
+)
+```
+
+```{r}
+# An extremely steep line produces NaN rather than a distance.
+# The true distance from (1, 0) to this near-vertical line
+# should be approximately 1.
+perpendicular.distance(
+    b = 0,
+    m = 1e308,
+    x = 1,
+    y = 0
+)
+```
+
+```{r}
+# The point (10, 0) is closest to the endpoint (1, 0).
+# The returned distance is 1, but the nearest coordinates are NA.
+pt.to.segment(
+    x = c(10, 2),
+    y = c(0, 0),
+    x1 = 0,
+    y1 = 0,
+    x2 = 1,
+    y2 = 0
+)
+```
+
+Ordinary paired distances are clearer as a direct base-R expression:
+
+```{r}
+x1 = 0
+y1 = 0
+x2 = 3
+y2 = 4
+
+distance <- sqrt(
+    (x1 - x2)^2 +
+    (y1 - y2)^2
+)
+
+distance
+```
+
+For spatial objects, `sf` provides maintained implementations:
+
+```{r}
+#| eval: false
+
+sf::st_distance(point, segment)
+sf::st_nearest_points(point, segment)
+```
+
+If a future point-pattern analysis requires explicit projection onto segments, `spatstat.geom::project2segment()` is another maintained alternative.
+
+**Recommendation.** Remove `xydist()`, `xydistvect()`, `xydistmat()` and `pt.to.segment()`. Retain `perpendicular.distance()` temporarily because it is used by `minum.perpdist()` and, indirectly, `majoraxisreg()`. Review that regression chain against maintained major-axis implementations such as `smatr::ma()` before removing it.
+
+## Construction of lines
+
+`perpendicular.line()`, `parallel.line()` and `pts.to.interceptslope()` represent lines using slopes and intercepts. This representation becomes awkward for vertical lines and produces inconsistent behavior when scalar and vector inputs are combined.
+
+```{r}
+# The perpendicular to a horizontal line through (2, 3)
+# should be represented as the vertical line x = 2.
+#
+# Instead, the function approximates it with a very large
+# finite slope and intercept.
+perpendicular.line(
+    b = 0,
+    m = 0,
+    x = 2,
+    y = 3
+)
+```
+
+```{r}
+# The first requested parallel line has finite slope.
+# The second is vertical and should retain x = 3.
+#
+# The returned intercept for the second line is incorrect.
+parallel.line(
+    b = c(0, 0),
+    m = c(1, Inf),
+    x = c(2, 3),
+    y = c(4, 5)
+)
+```
+
+```{r}
+# Coincident points do not define a unique line.
+# The function nevertheless returns a vertical line.
+pts.to.interceptslope(
+    pt1 = c(1, 1),
+    pt2 = c(1, 1)
+)
+```
+
+```{r}
+# This mixed scalar/data-frame input describes two lines.
+# The second should be vertical at x = 1, but its intercept is NA.
+pts.to.interceptslope(
+    pt1 = c(1, 0),
+    pt2 = data.frame(
+        x = c(2, 1),
+        y = c(1, 2)
+    )
+)
+```
+
+For a finite slope, the intercept of a parallel line through a known point requires only:
+
+```{r}
+m = 1
+x = 2
+y = 4
+
+b <- y - m * x
+b
+```
+
+For more general calculations, point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes. General spatial intersections and distances can instead be delegated to `sf`.
+
+**Recommendation.** Remove `perpendicular.line()`: its only remaining caller is `pt.to.segment()`, which should also be removed. Retain `parallel.line()` temporarily because it is called by `constant.linear()`. Retain `pts.to.interceptslope()` temporarily because it is called by `linearmodel.bin.set()` and its downstream modeling functions. Review those callers before removing the helpers; their dependency does not justify preserving the current geometry API permanently.
+
+## Line and segment intersections
+
+`intersection.of.lines()` calculates intersections between slope-intercept lines. `intersection.line.curve()` attempts to locate intersections between a line and a piecewise curve. `is.between()` tests whether coordinates fall within the bounding ranges of a segment, and `line.intersection.pts()` attempts to construct an intersection from endpoint representations.
+
+These functions form a bespoke intersection system with inconsistent treatment of vertical, parallel and coincident lines.
+
+```{r}
+# A vertical line at x = 2 intersects both horizontal
+# lines at x = 2.
+#
+# The vectorized calculation returns NA for the second x value.
+intersection.of.lines(
+    b1 = 2,
+    m1 = Inf,
+    b2 = c(0, 1),
+    m2 = c(0, 0)
+)
+```
+
+```{r}
+# Distinct parallel lines have no intersection.
+# The result should represent that case explicitly,
+# rather than returning Inf and NaN.
+intersection.of.lines(
+    b1 = 0,
+    m1 = 0,
+    b2 = 1,
+    m2 = 0
+)
+```
+
+```{r}
+# The vertical line x = 1.5 intersects this curve segment
+# at approximately (1.5, 0.5).
+#
+# The calculated x coordinate becomes NA.
+intersection.line.curve(
+    b = 1.5,
+    m = Inf,
+    curve = data.frame(
+        x = c(0, 1, 2),
+        y = c(1, 0, 1)
+    )
+)
+```
+
+```{r}
+# The point is inside the coordinate ranges of the segment
+# but is not collinear with it.
+#
+# is.between() therefore tests a bounding box rather than
+# actual membership in the segment.
+is.between(
+    x = 0.5,
+    y = 0.2,
+    x1 = 0,
+    y1 = 0,
+    x2 = 1,
+    y2 = 1
+)
+```
+
+```{r}
+# Endpoint ownership is inconsistent between diagonal and
+# horizontal segments.
+c(
+    diagonal = is.between(
+        x = 1,
+        y = 1,
+        x1 = 1,
+        y1 = 1,
+        x2 = 0,
+        y2 = 0
+    ),
+    horizontal = is.between(
+        x = 1,
+        y = 0,
+        x1 = 1,
+        y1 = 0,
+        x2 = 0,
+        y2 = 0
+    )
+)
+```
+
+```{r}
+#| error: true
+
+# The function calls the undefined line.intersection().
+line.intersection.pts(
+    line1 = data.frame(
+        x = c(0, 1),
+        y = c(0, 1)
+    ),
+    line2 = data.frame(
+        x = c(0, 1),
+        y = c(1, 0)
+    )
+)
+```
+
+For a tightly bounded calculation, an intersection can be implemented directly with determinant or vector algebra. For general geometry, use maintained spatial predicates and operations:
+
+```{r}
+#| eval: false
+
+sf::st_intersection(line1, line2)
+sf::st_intersects(line1, line2)
+```
+
+**Recommendation.** Remove `intersection.of.lines()`, `intersection.line.curve()`, `is.between()` and `line.intersection.pts()`. Once the ImageJ workflow is deprecated, none has a remaining external dependency that warrants temporary retention.
+
+## Drawing helpers and angle bisectors
+
+`segmentPt()` draws a segment between two points, while `drawrectangle()` draws a quadrilateral from supplied vertices. `angleBisector()` constructs a line intended to bisect the angle defined by three points.
+
+The drawing functions are thin wrappers around base graphics. The angle-bisector implementation uses complicated slope and quadrant logic and fails a simple hand-checkable example.
+
+```{r}
+#| error: true
+
+# The documented matrix representation of four vertices fails.
+drawrectangle(
+    coord = matrix(
+        c(
+            0, 0,
+            1, 0,
+            1, 1,
+            0, 1
+        ),
+        ncol = 2,
+        byrow = TRUE
+    ),
+    add = FALSE
+)
+```
+
+```{r}
+# These points define a right angle at (1, 0).
+#
+# The internal bisector should have:
+#   slope     = -1
+#   intercept =  1
+#
+# The function instead returns slope 1 and intercept -1.
+angleBisector(
+    rbind(
+        c(0, 0),
+        c(1, 0),
+        c(1, 1)
+    )
+)
+```
+
+Base graphics already provides direct drawing primitives:
+
+```{r}
+#| eval: false
+
+graphics::segments(
+    x0 = 0,
+    y0 = 0,
+    x1 = 1,
+    y1 = 1
+)
+
+graphics::polygon(
+    x = c(0, 1, 1, 0),
+    y = c(0, 0, 1, 1)
+)
+
+graphics::rect(
+    xleft = 0,
+    ybottom = 0,
+    xright = 1,
+    ytop = 1
+)
+```
+
+A bisector can be calculated more reliably by converting both rays to unit direction vectors and adding them. `atan2()` should be used whenever a quadrant-aware angle is needed.
+
+**Recommendation.** Remove `segmentPt()`, `drawrectangle()` and `angleBisector()`. They have no unresolved downstream callers that justify preserving them.
+
+## Rectangle membership and overlap
+
+`insideRectangle()` applies a half-open rectangle-membership convention. `are.ptsinside()` attempts to determine whether points fall inside one rectangle. `ispt.inside()` attempts to summarize the coverage of points by multiple rectangles. `inside.rect()` tests the relationship between two rectangles.
+
+Rectangle membership is ecologically relevant for quadrats and plot maps. However, these general helpers duplicate simple comparisons, contain implementation errors, or overlap with the newer quadrat-assignment code.
+
+```{r}
+# This confirms the half-open convention:
+# the lower-left boundary is included;
+# the upper-right boundary is excluded;
+# missing coordinates are treated as outside.
+insideRectangle(
+    x = c(0, 1, NA),
+    y = c(0, 1, 0),
+    xrange = c(0, 1),
+    yrange = c(0, 1)
+)
+```
+
+```{r}
+#| error: true
+
+# The implementation calls the misspelled and undefined
+# function insideRectange().
+are.ptsinside(
+    pts = data.frame(
+        x = 0.5,
+        y = 0.5
+    ),
+    coord = c(0, 0, 1, 1)
+)
+```
+
+```{r}
+# Even after locally correcting the spelling, the documented
+# coordinate-vector representation still fails because it is
+# indexed as if it were two-dimensional.
+local(
+    {
+        insideRectange <- insideRectangle
+
+        f <- are.ptsinside
+        environment(f) <- environment()
+
+        try(
+            f(
+                pts = data.frame(
+                    x = 0.5,
+                    y = 0.5
+                ),
+                coord = c(0, 0, 1, 1)
+            )
+        )
+    }
+)
+```
+
+```{r}
+# This substitutes a working are.ptsinside() so that execution
+# reaches the next independent defect in ispt.inside().
+#
+# The function assigns into logical[i] rather than into the
+# result object that it is meant to construct.
+local(
+    {
+        are.ptsinside <- function(...) TRUE
+
+        f <- ispt.inside
+        environment(f) <- environment()
+
+        try(
+            f(
+                pt = c(0.5, 0.5),
+                areas = data.frame(
+                    xlo = 0,
+                    ylo = 0,
+                    xhi = 1,
+                    yhi = 1
+                )
+            )
+        )
+    }
+)
+```
+
+```{r}
+# The documentation describes containment involving rectangle
+# corners, but this example returns TRUE for overlapping bars
+# where neither rectangle contains a corner of the other.
+inside.rect(
+    rect1 = c(0, 4, 1, 2),
+    rect2 = c(1, 2, 0, 4)
+)
+```
+
+```{r}
+# Rectangles touching only along a zero-area boundary are
+# classified as overlapping.
+inside.rect(
+    rect1 = c(0, 1, 0, 1),
+    rect2 = c(1, 2, 0, 1)
+)
+```
+
+For one half-open rectangle, the complete calculation is:
+
+```{r}
+inside <- x >= xmin &
+          x < xmax &
+          y >= ymin &
+          y < ymax
+```
+
+Inclusive rectangle overlap can similarly be expressed directly:
+
+```{r}
+overlap <- xmax1 >= xmin2 &
+           xmin1 <= xmax2 &
+           ymax1 >= ymin2 &
+           ymin1 <= ymax2
+```
+
+For plot quadrats, `assign_points_to_quadrats()` already represents the boundary convention more explicitly and should remain the main interface.
+
+**Recommendation.** Remove `inside.rect()`. Retain `insideRectangle()` temporarily because it is used by `complete.plotmap()`. Retain `are.ptsinside()` temporarily because it is used by `selectrandomquad3()` and `ispt.inside()`. Retain `ispt.inside()` temporarily because it is used by `coverage.diag()`. These callers require future review; the current defects should not be interpreted as a recommendation to repair the helpers before their callers are evaluated.
+
+## Circles and ellipses
+
+`circle()` and `ellipse()` calculate curve coordinates for supplied horizontal coordinates. `fullcircle()` and `fullellipse()` assemble fuller plotting paths from those calculations.
+
+These are plotting helpers rather than ecological geometry primitives. Their output dimensions become inconsistent when requested coordinates fall outside the mathematical curve.
+
+```{r}
+# The second x coordinate lies outside a circle of radius 5.
+# The function returns a two-element result containing NA.
+circle(
+    x = c(0, 6),
+    radius = 5
+)
+```
+
+```{r}
+# When all supplied x coordinates lie outside the circle,
+# the function returns numeric(0), losing the input alignment.
+circle(
+    x = c(6, 7),
+    radius = 5
+)
+```
+
+```{r}
+#| error: true
+
+# The zero-length result propagated from circle() causes
+# fullcircle() to fail when constructing its data frame.
+fullcircle(
+    x = c(6, 7),
+    radius = 5
+)
+```
+
+```{r}
+# The same alignment problem occurs for an ellipse.
+ellipse(
+    x = c(0, 8),
+    radius = c(7, 5)
+)
+```
+
+```{r}
+# When all x coordinates fall outside the ellipse,
+# the result again has length zero.
+ellipse(
+    x = c(8, 9),
+    radius = c(7, 5)
+)
+```
+
+```{r}
+# fullellipse() retains the requested x coordinates but pairs
+# them entirely with missing y coordinates.
+fullellipse(
+    x = c(8, 9),
+    radius = c(7, 5)
+)
+```
+
+Circles and ellipses are more naturally generated parametrically:
+
+```{r}
+center.x = 0
+center.y = 0
+radius.x = 7
+radius.y = 5
+
+theta <- seq(
+    0,
+    2 * pi,
+    length.out = 361
+)
+
+ellipse.coordinates <- data.frame(
+    x = center.x + radius.x * cos(theta),
+    y = center.y + radius.y * sin(theta)
+)
+```
+
+Base graphics also provides `graphics::symbols()` for plotting circles, while `sf::st_buffer()` is appropriate when circles represent spatial buffers or neighborhoods rather than merely drawn curves.
+
+**Recommendation.** Remove `circle()`, `fullcircle()`, `ellipse()` and `fullellipse()`. They have no current callers, and maintained or elementary alternatives cover their plausible uses more clearly.
+
+## Cartesian and polar coordinates
+
+`cartesian.to.polar()` converts Cartesian coordinates to radius and angle. `polar.to.cartesian()` performs the inverse conversion.
+
+The inverse calculation is elementary and works for ordinary inputs. The forward calculation derives the angle from a one-argument inverse tangent and therefore loses quadrant information.
+
+```{r}
+# The point (-1, 1) is in the second quadrant.
+#
+# Its quadrant-aware angle should be 3 * pi / 4.
+# The function instead returns -pi / 4.
+cartesian.to.polar(
+    x = -1,
+    y = 1
+)
+```
+
+```{r}
+# The incorrect angle means that converting back does not
+# recover the original Cartesian coordinates.
+polar.coordinates <- cartesian.to.polar(
+    x = -1,
+    y = 1
+)
+
+polar.to.cartesian(
+    r = polar.coordinates$r,
+    theta = polar.coordinates$theta
+)
+```
+
+```{r}
+# The origin has a radius of zero, but no uniquely defined
+# angular direction. The current calculation returns NaN
+# without documenting an origin convention.
+cartesian.to.polar(
+    x = 0,
+    y = 0
+)
+```
+
+The correct quadrant-aware base-R calculations are:
+
+```{r}
+x = -1
+y = 1
+
+r <- sqrt(x^2 + y^2)
+theta <- atan2(y, x)
+
+```
+
+The inverse calculation is similarly direct:
+
+```{r}
+x <- r * cos(theta)
+y <- r * sin(theta)
+```
+
+**Recommendation.** Remove `cartesian.to.polar()` and `polar.to.cartesian()`. The current forward conversion is incorrect across quadrants, and both operations are clearer as direct base-R expressions.
+
+## Overall recommendation
+
+None of the 25 functions should be maintained permanently as a standalone fgeo2 geometry utility.
+
+-   Remove 19 functions.
+
+-   Temporarily retain six functions because unresolved non-ImageJ callers still depend on them:\
+    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`.
+
+-   Review the regression, binned-model, mapping, random-quadrat and coverage-diagnostic callers before removing those final six functions.
+
+-   Do not preserve any function solely for the deprecated ImageJ workflow.
+
+-   Add geometry again only when demanded by a concrete ecological workflow, using direct base R for elementary calculations and `sf` for substantive spatial geometry.
+
+| Functions | What and why | Well-maintained alternative |
+|----|----|----|
+| `xydist()`; `xydistvect()`; `xydistmat()` | **Remove.** The calculation is elementary. The two adapters contradict their documented interfaces, and their remaining callers are also removal candidates. | `sqrt((x1 - x2)^2 + (y1 - y2)^2)`; `sf::st_distance()` for spatial objects; `Rfast` package and several other alternatives for large objects |
+| `perpendicular.distance()` | **Retain temporarily.** Required by `minum.perpdist()` → `majoraxisreg()`. Review that regression chain before removal. Distance to an infinite line is otherwise of limited direct ecological value. | Base normal-form distance; review `majoraxisreg()` against `smatr::ma()`. |
+| `pt.to.segment()` | **Remove.** No current caller; ambiguous dual interface and valid inputs can return `NA` nearest coordinates. | `sf::st_distance()` plus `sf::st_nearest_points()`; `spatstat.geom::project2segment()`. |
+| `perpendicular.line()` | **Remove.** Used only by `pt.to.segment()`. Vertical lines are represented inconsistently as extremely large finite slopes. | Direct vector projection or normal-form line algebra. |
+| `parallel.line()` | **Retain temporarily.** Required by `constant.linear()`, which needs future review. Mixed finite and vertical vectors are handled incorrectly. | For finite slopes, `b = y - m * x`; alternatively rewrite `constant.linear()` directly. |
+| `intersection.of.lines()`; `intersection.line.curve()`; `is.between()`; `line.intersection.pts()` | **Remove.** No remaining external dependency after ImageJ removal. The system mishandles vertical, parallel and coincident cases; `is.between()` does not test collinearity; `line.intersection.pts()` calls an undefined function. | Base determinant/vector calculations for simple cases; `sf::st_intersection()` for general geometry. |
+| `pts.to.interceptslope()` | **Retain temporarily.** Required by `linearmodel.bin.set()` → `linearmodel.bin()` → `logisticmodel.bin()`. Review that modeling chain before removal; its current interface already fails. | Direct slope/intercept arithmetic; preferably point-direction or normal-form representation. |
+| `segmentPt()`; `drawrectangle()` | **Remove.** Thin wrappers with no external callers; part of the documented matrix interface fails. | `graphics::segments()`; `graphics::polygon()`; `graphics::rect()` for axis-aligned rectangles. |
+| `angleBisector()` | **Remove.** No caller, fragile slope/quadrant logic, and a simple right-angle example gives the wrong result. | Normalize and add the two direction vectors; use `atan2()` when an angle is required. |
+| `insideRectangle()` | **Retain temporarily.** Required by `complete.plotmap()`, which needs future review. Its boundary convention is already represented more explicitly in `assign_points_to_quadrats()`. | `x >= xmin & x < xmax & y >= ymin & y < ymax`; current quadrat-assignment code. |
+| `are.ptsinside()` | **Retain temporarily.** Required by `selectrandomquad3()` and `ispt.inside()`. Review those functions before removal. The current implementation is broken. | Direct vectorized comparisons; `assign_points_to_quadrats()` when quadrat identity is needed. |
+| `ispt.inside()` | **Retain temporarily.** Required by `coverage.diag()`, which needs future review. The implementation writes into the wrong object and does not return the documented fraction. | Apply an explicit rectangle predicate across rows and calculate `mean(inside)` or `rowMeans()`. |
+| `inside.rect()` | **Remove.** Isolated four-comparison helper; documentation describes corner containment while the code implements inclusive overlap. | `xmax1 >= xmin2 & xmin1 <= xmax2 & ymax1 >= ymin2 & ymin1 <= ymax2`. |
+| `circle()`; `fullcircle()`; `ellipse()`; `fullellipse()` | **Remove.** Plotting-only helpers with no callers and fragile output lengths for coordinates outside the curve. | `x = cx + a * cos(theta)` and `y = cy + b * sin(theta)`; `graphics::symbols()`; `sf::st_buffer()` for spatial neighborhoods. |
+| `cartesian.to.polar()`; `polar.to.cartesian()` | **Remove.** The first loses quadrant information; the second is a trivial isolated wrapper. | `r = sqrt(x^2 + y^2)`; `theta = atan2(y, x)`; `x = r * cos(theta)`; `y = r * sin(theta)`. |
+
+\
 
 # Due diligence for dependents and dependencies
 
@@ -738,300 +1401,3 @@ knitr::include_graphics(network.pdf)
 ```
 
 The isolated candidates are `r paste(paste0("\u0060", sort(isolated.candidates), "\u0060"), collapse = ", ")`. They remain in the evaluation table. The additional helpers are `r paste(paste0("\u0060", sort(helpers), "\u0060"), collapse = ", ")`; these serve other utility roles and are not candidates for removal here. The figure is saved in `evaluation/results/`, with the evaluated commit and evaluation date in its filename.
-
-# Evaluation of functions
-
-I use three recommendations: **keep** for calculations I would retain, **remove** for implementations whose value seems too small to justify maintaining them, and **review** where the method, interface, dependencies or present use need further attention. A removal recommendation for one helper may depend on the decision about another function.
-
-The table identifies every candidate, its source script and the main reasons for the recommendation. The small examples in the next section show the principal errors directly.
-
-```{r}
-#| label: candidate-evaluation
-#| results: asis
-
-candidate.table <- read.delim(
-	text = "Module|Script|Function|Notes|Recommendation
-01|utilities-geometry.r|xydist|Calculates paired Euclidean distances. The elementary calculation works and is shared by four candidate functions. Keep the short formula and its pairing and units; callers still need compatible lengths and valid coordinates.|keep
-01|utilities-geometry.r|xydistvect|Routes two sets of coordinates to xydist. It has no current callers and its documented length-two vector inputs fail because the code uses two-dimensional indexing. Direct column arithmetic is clearer.|remove
-01|utilities-geometry.r|xydistmat|Calculates distances from four columns, but is described for row-wise apply. A four-element row vector fails because the implementation expects two dimensions. It has no current callers and adds no distinct calculation.|remove
-01|utilities-geometry.r|perpendicular.distance|Calculates unsigned point-to-line distance, with an explicit vertical-line convention. Ordinary finite and vertical cases work; minum.perpdist uses it outside ImageJ. Keep for these cases. Extreme slopes can overflow, and invalid inputs are not checked.|keep
-01|utilities-geometry.r|pt.to.segment|Finds a minimum distance across points or segments. The closest-point coordinates and index are potentially useful, but the index changes meaning between vector modes. A valid multiple-point example returns NA endpoint coordinates. No current caller; review the intended input/output before deciding whether to preserve it.|review
-01|utilities-geometry.r|perpendicular.line|Constructs a perpendicular line for pt.to.segment. For a horizontal input it approximates a vertical slope by a huge finite number, unlike the other helpers' Inf convention. The calculation can be expressed directly. Removal depends on the decision about pt.to.segment.|remove
-01|utilities-geometry.r|parallel.line|Constructs a parallel line through supplied points. It is used by ImageJ and constant.linear. Mixed finite/vertical vectors can use the wrong x intercept because replacement loses alignment. Review the interface and callers before removal or repair.|review
-01|utilities-geometry.r|intersection.of.lines|Calculates intersections for ImageJ and segment/curve helpers. Scalar/vector combinations can return a spurious NA, and distinct parallel lines return Inf/NaN. It is a central helper; line degeneracy and output alignment need explicit treatment.|review
-01|utilities-geometry.r|intersection.line.curve|Intersects a line with a polyline. No current caller; inherits line-intersection and endpoint problems. A direct segment calculation, or a spatial library when general topology is actually needed, can replace this role.|remove
-01|utilities-geometry.r|is.between|Tests coordinate bounds for a point assumed to be collinear with a segment. It does not test collinearity. Endpoint inclusion varies with orientation, which matters for its segment/curve callers. Review boundary ownership with the segment calculation.|review
-01|utilities-geometry.r|line.intersection.pts|A two-point wrapper that calls the undefined line.intersection. It also reverses the slope/intercept arguments and passes data-frame columns as lists. No current callers and no distinct calculation worth preserving.|remove
-01|utilities-geometry.r|pts.to.interceptslope|Builds lines from pairs of points. ImageJ uses it for map boundaries; linearmodel.bin.set uses it outside ImageJ. Coincident points are treated as a vertical line, and vector indexing can lose alignment. Review the b/m interface and its callers.|review
-01|utilities-geometry.r|segmentPt|Draws a segment and is used only by drawrectangle. It is a thin wrapper around graphics::segments and adds no substantial calculation.|remove
-01|utilities-geometry.r|drawrectangle|Draws four supplied corners using segmentPt. No current callers. It promises matrix inputs but uses corners$x and corners$y when opening a plot. Standard polygon or rectangle plotting is sufficient.|remove
-01|utilities-geometry.r|angleBisector|Constructs a bisector from three points using slopes and quadrant adjustments. No current ImageJ or other caller. Vertical, coincident and turn-orientation cases complicate a bespoke calculation with no demonstrated present need.|remove
-01|utilities-geometry.r|insideRectangle|Tests axis-aligned rectangle membership with lower-inclusive and upper-exclusive boundaries; NA becomes FALSE. The examples confirm this policy, and complete.plotmap uses it. Keep the short predicate, boundary convention and row alignment.|keep
-01|utilities-geometry.r|are.ptsinside|Tests points in one rectangle and is called by selectrandomquad3 and ispt.inside. It calls the misspelled insideRectange and indexes documented vector bounds as a matrix. Review with its callers; the intended predicate is simple but the current implementation fails.|review
-01|utilities-geometry.r|ispt.inside|Intended to summarize coverage across rectangles; coverage.diag passes it to apply. It calls the broken are.ptsinside, writes into logical rather than inside, and returns an unfilled result instead of the described fraction. Review the intended coverage calculation.|review
-01|utilities-geometry.r|inside.rect|Implements inclusive rectangle overlap, although its description refers to corner inclusion. The overlap arithmetic works in the crossing-rectangle example. It is isolated and adds little value beyond four inequalities.|remove
-01|utilities-geometry.r|circle|Calculates circle ordinates for fullcircle. Mixed invalid x values retain NA positions, but all-outside inputs return numeric(0). There are no wider callers. Direct formulas or parametric coordinates are sufficient.|remove
-01|utilities-geometry.r|fullcircle|Combines two circle branches for plotting. No current callers. It fails to construct an aligned data frame when all x values are outside the circle; standard plotting or parametric coordinates cover its purpose.|remove
-01|utilities-geometry.r|ellipse|Calculates ellipse ordinates for fullellipse. It has the same all-invalid length problem as circle and no wider callers. Explicit semiaxes and parametric coordinates are simpler for drawing.|remove
-01|utilities-geometry.r|fullellipse|Combines two ellipse branches for plotting. No current callers and no calculation beyond ellipse; it inherits that function's fragile output length.|remove
-01|utilities-geometry.r|cartesian.to.polar|Uses atan(y/x), losing quadrant information. A round-trip from (-1,1) gives (1,-1). It is isolated; base atan2 supplies the appropriate angular calculation, with an explicit origin convention.|remove
-01|utilities-geometry.r|polar.to.cartesian|Calculates r*cos(theta) and r*sin(theta). These formulas work for ordinary valid inputs. It is isolated and adds very little interface value; the recommendation is not based on a mathematical error.|remove
-06|topography-imageJ.r|fullplot.imageJ|Reads map files, assigns quadrat names, converts coordinates and joins sections. Its workflow is documented in the 2011 and 2022 tutorials, but the conversion helper fails. Filename matching, calls to browser(), validation and tag alignment also need attention. Review using an authentic export and accepted coordinates.|review
-06|topography-imageJ.r|SectionCorrection|Translates four clockwise map sections by their width and/or height. The ordinary example works, but an unknown suffix silently receives no offset. Its continued value depends on the ImageJ workflow and the actual section conventions.|review
-06|topography-imageJ.r|imageJ.to.lxly|Converts labelled pixels using ratios of side distances. Its distance helper fails on an ordinary point. Controls are weakly checked, outside points can fold inward, and the error summaries are heuristic. Preserve the coordinate specification while evaluating the implementation and alternatives.|review
-06|topography-imageJ.r|distance.to.side|Returns the mean and CV of three distances to a side. Data-frame columns enter numeric aggregation, causing a warning and error even at a rectangle midpoint. Zero-distance CV is also undefined. Review both the implementation and the meaning of the three-distance method.|review",
-	sep = "|", quote = "", colClasses = "character", check.names = FALSE)
-
-stopifnot(nrow(candidate.table) == length(candidates),
-          !anyDuplicated(candidate.table$Function),
-          setequal(candidate.table$Function, candidates),
-          all(candidate.table$Recommendation %in% c("keep", "remove", "review")))
-
-candidate.latex <- knitr::kable(candidate.table, format = "latex",
-                                booktabs = TRUE, longtable = TRUE,
-                                row.names = FALSE)
-candidate.latex <- sub("\\begin{longtable}{lllll}",
-                       paste0("\\begin{longtable}{@{}",
-                              "L{0.8cm}L{3cm}L{4.8cm}L{10.1cm}L{1.6cm}@{}}"),
-                       candidate.latex, fixed = TRUE)
-cat("\\begin{landscape}\n\\footnotesize\n\\setlength{\\tabcolsep}{3pt}\n",
-    candidate.latex, "\n\\end{landscape}\n", sep = "")
-```
-
-The recommendations are summarized directly from the table:
-
-```{r}
-#| label: recommendation-counts
-#| results: asis
-
-counts <- table(factor(candidate.table$Recommendation,
-                       levels = c("keep", "remove", "review")))
-summary.table <- data.frame(Recommendation = names(counts),
-                            Functions = as.integer(counts))
-knitr::kable(summary.table, row.names = FALSE)
-```
-
-## Dependencies that constrain removal
-
-The functions marked **remove** are not an independent deletion list. The following calculation identifies any of their dependents that are marked **keep**, **review**, or lie outside the candidate set.
-
-```{r}
-#| label: removal-constraints
-#| results: asis
-
-removal.functions <- candidate.table$Function[candidate.table$Recommendation == "remove"]
-constraint.rows <- list()
-
-for(candidate in removal.functions)
-{
-	remaining <- setdiff(downstream_dependents(candidate, edges), removal.functions)
-	if(length(remaining) == 0L) next
-
-	constraint.rows[[candidate]] <- data.frame(
-		`Proposed removal` = candidate,
-		`Dependents not proposed for removal` = paste(sort(remaining), collapse = ", "),
-		check.names = FALSE)
-}
-
-if(length(constraint.rows))
-{
-	constraint.table <- do.call(rbind, constraint.rows)
-	print(knitr::kable(constraint.table, row.names = FALSE))
-}
-if(length(constraint.rows) == 0L)
-	cat("No detected dependents remain outside the proposed removal set.\n")
-```
-
-This is particularly relevant to `perpendicular.line()` and `pt.to.segment()`: removing the former requires a decision about the latter's implementation. The underlying nearest-point calculation may still be useful even if its present helper chain is not worth keeping.
-
-# Technical checks
-
-The following examples run the functions loaded from the evaluated commit. They use small points and lines for which the expected results can be calculated directly. Chunks that demonstrate errors retain those errors in the document and allow the remaining examples to run.
-
-## Distances and the ImageJ conversion
-
-The distance between `(0,0)` and `(3,4)` is 5. The perpendicular distance from `(0,1)` to `y = x` is $1/\sqrt{2}$; the distance from `(5,5)` to the vertical line `x = 0` is 5.
-
-```{r}
-#| label: ordinary-distances
-
-with(code.env, xydist(0, 0, 3, 4))
-with(code.env, perpendicular.distance(0, 1, 0, 1))
-with(code.env, perpendicular.distance(0, Inf, 5, 5))
-```
-
-The vector interfaces described for `xydistvect()` and `xydistmat()` do not work with vectors: both functions index their inputs as two-dimensional objects.
-
-```{r}
-#| label: distance-vector-errors
-#| error: true
-
-with(code.env, xydistvect(c(0, 0), c(3, 4)))
-with(code.env, xydistmat(c(0, 0, 3, 4)))
-```
-
-For a tree at `(5,5)` in a perfect ten-unit rectangle, the three distances to the left side should all be 5, giving a mean of 5 and CV of zero. Instead, `distance.to.side()` warns about non-numeric input and fails when calculating the standard deviation.
-
-```{r}
-#| label: imagej-distance-error
-#| error: true
-
-with(code.env, distance.to.side(c(5, 5), c(0, Inf), c(10, 0), c(0, 0)))
-```
-
-`intersection.of.lines()` returns a data frame. `distance.to.side()` passes `intersect[1]` and `intersect[2]`, which remain one-column data frames, into `xydist()`. The combined distances are consequently not the numeric vector expected by `mean()` and `sd()`. This prevents conversion of ordinary tree records. The four-corner-only case returns before this calculation, so successfully processing an empty map would not validate the conversion.
-
-## Lines, intersections and point alignment
-
-The second line in the first example should be vertical through `x = 3`; it instead receives intercept 2. In the next example, a vertical line should intersect `y = 0` and `y = 1` at `(2,0)` and `(2,1)`, but the second x coordinate is missing. Distinct parallel lines have no intersection, and two identical points do not define a line; these cases also need explicit handling.
-
-```{r}
-#| label: line-cases
-
-with(code.env, parallel.line(c(0, 0), c(1, Inf), c(2, 3), c(4, 5)))
-with(code.env, intersection.of.lines(2, Inf, c(0, 1), c(0, 0)))
-with(code.env, intersection.of.lines(0, 0, 1, 0))
-with(code.env, pts.to.interceptslope(c(1, 1), c(1, 1)))
-with(code.env, perpendicular.line(0, 0, 2, 3))
-```
-
-For `pt.to.segment()` below, the closest of the two input points is `(2,0)` and the closest segment endpoint is `(1,0)`, at distance 1. The function finds the distance but returns missing endpoint coordinates because it confuses point and segment indexes.
-
-```{r}
-#| label: nearest-segment
-
-with(code.env, pt.to.segment(c(10, 2), c(0, 0), 0, 0, 1, 0))
-```
-
-`is.between()` assumes collinearity. Its treatment of endpoints also depends on segment orientation: compare the reversed diagonal and horizontal segments below. A segment calculation needs one consistent boundary rule.
-
-```{r}
-#| label: segment-boundaries
-
-with(code.env, c(is.between(1, 1, 1, 1, 0, 0),
-                 is.between(0, 0, 1, 1, 0, 0)))
-with(code.env, c(is.between(1, 0, 1, 0, 0, 0),
-                 is.between(0, 0, 1, 0, 0, 0)))
-```
-
-The two-point line wrapper fails because `line.intersection()` is not defined. The implementation also reverses intercept and slope arguments, so fixing the function name alone would not make it reliable.
-
-```{r}
-#| label: line-wrapper-error
-#| error: true
-
-with(code.env, line.intersection.pts(
-	data.frame(x = c(0, 1), y = c(0, 1)),
-	data.frame(x = c(0, 1), y = c(1, 0))))
-```
-
-## Rectangle membership and coverage
-
-`insideRectangle()` gives `TRUE` at the lower boundary, `FALSE` at the upper boundary, and `FALSE` for a missing coordinate. This is a useful half-open convention for assigning points to adjacent rectangles. In contrast, `inside.rect()` implements inclusive overlap between rectangles. The crossing rectangles in the second example overlap even though neither has a corner inside the other; its description of corner inclusion is therefore misleading.
-
-```{r}
-#| label: rectangle-predicates
-
-with(code.env, insideRectangle(c(0, 1, NA), c(0, 1, 0), c(0, 1), c(0, 1)))
-with(code.env, inside.rect(c(0, 4, 1, 2), c(1, 2, 0, 4)))
-```
-
-The other two rectangle functions fail through the misspelled `insideRectange()`. There are further problems: `are.ptsinside()` indexes vector bounds as a matrix, while `ispt.inside()` writes to `logical[i]` rather than `inside[i]` and returns an unfilled result instead of the fraction described in its documentation. The intended coverage calculation in `selectrandomquad3()` and `coverage.diag()` needs to be reviewed with these helpers.
-
-```{r}
-#| label: rectangle-wrapper-errors
-#| error: true
-
-with(code.env, are.ptsinside(data.frame(x = .5, y = .5), c(0, 0, 1, 1)))
-with(code.env, ispt.inside(c(.5, .5),
-                          data.frame(xlo = 0, ylo = 0, xhi = 1, yhi = 1)))
-```
-
-## Curves and polar coordinates
-
-When some x values are valid, `circle()` and `ellipse()` preserve invalid positions as `NA`. When all x values lie outside their domains, they return an empty vector instead. `fullcircle()` then fails to construct its data frame.
-
-```{r}
-#| label: curve-domains
-#| error: true
-
-with(code.env, circle(c(0, 6), radius = 5))
-with(code.env, circle(c(6, 7), radius = 5))
-with(code.env, ellipse(c(0, 8), radius = c(7, 5)))
-with(code.env, ellipse(c(8, 9), radius = c(7, 5)))
-with(code.env, fullcircle(c(6, 7), radius = 5))
-```
-
-The polar conversion loses quadrant information. Converting `(-1,1)` to polar coordinates and back returns `(1,-1)`. The error is in `cartesian.to.polar()` and its use of `atan(y/x)`; the inverse trigonometric formulas themselves are sound. Base `atan2(y,x)` preserves quadrant information.
-
-```{r}
-#| label: polar-round-trip
-
-polar.coordinates <- with(code.env, cartesian.to.polar(-1, 1))
-with(code.env, polar.to.cartesian(polar.coordinates$r, polar.coordinates$theta))
-```
-
-## Map sections and a dependent prediction function
-
-With ten-unit sections, the upper-right suffix `_3` adds 10 to both coordinates. An unknown suffix silently leaves coordinates unchanged, which could place an incorrectly named section at the origin.
-
-```{r}
-#| label: section-offsets
-
-section.coordinates <- data.frame(tag = "example", lx = 2, ly = 3)
-section.suffixes = c("_1", "_2", "_3", "_4")
-
-with(code.env, SectionCorrection(section.coordinates, "_3",
-                                  c(10, 10), section.suffixes))
-with(code.env, SectionCorrection(section.coordinates, "unknown",
-                                  c(10, 10), section.suffixes))
-```
-
-The retained prediction chain also has an interface error. `linearmodel.bin.set()` passes the data-frame coefficients returned by `pts.to.interceptslope()` to `linear.model()`, whose matrix multiplication expects numeric coefficients. Its presence in the dependency graph therefore needs a review of the caller as well as the geometry helper.
-
-```{r}
-#| label: prediction-interface-error
-#| error: true
-
-with(code.env, linearmodel.bin.set(c(-1, 1), c(1, 2, 0), 0))
-```
-
-# Alternatives and usefulness
-
-Most elementary geometry here can be expressed directly in base R. Keeping a short shared distance or rectangle predicate can still be useful, especially when its boundary convention matters to callers. In contrast, several drawing and polar-coordinate wrappers add little beyond standard functions.
-
-ImageJ and [Fiji](https://imagej.net/software/fiji/downloads) remain available. The [ImageJ tools guide](https://imagej.net/ij/docs/guide/146-19.html) and [analysis guide](https://imagej.net/ij/docs/guide/146-30.html) describe point coordinates, calibration and y-origin inversion. The [modified PointPicker archive](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip) also remains available, with Java source and compiled classes. However, compatibility of that particular plugin with current ImageJ and Java has not been established. Availability of the editor does not validate the old R conversion.
-
-For calibration, the transformation should follow the map and imaging process. A similarity transformation allows translation, rotation and uniform scale; an affine fit allows unequal scaling and shear; a projective transformation can account for perspective. Four corners do not characterize arbitrary distortion of damaged or warped paper. The current side-distance ratios should not be assumed equivalent to any of these alternatives.
-
-| Task | Alternative to evaluate | What needs to be preserved or checked |
-|------------------------|------------------------|------------------------|
-| Paired distances and rectangle membership | Short base-R calculations | Coordinate units, row pairing, boundary inclusion and missing-value policy. |
-| Polar coordinates | Base [`atan2()` and trigonometric functions](https://stat.ethz.ch/R-manual/R-devel/library/base/html/Trig.html) | Radians, quadrant information and the origin convention. |
-| Flat maps with translation, rotation and uniform scale | Similarity/Helmert transformation | Control-point orientation and whether unequal scaling is present. |
-| Unequal scaling or shear | Affine fit using, for example, base [`qr.solve()`](https://stat.ethz.ch/R-manual/R-devel/library/base/html/qr.html) | At least three non-collinear controls; extra controls allow residual checks. Residuals do not establish accuracy between controls. |
-| Perspective or more complex map distortion | [QGIS Georeferencer](https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/georeferencer.html) | Choose the appropriate model and inspect control-point residuals. Projective and thin-plate-spline transformations solve different problems. |
-| Spatial features and geographic coordinate systems | [`sf`](https://r-spatial.github.io/sf/articles/sf3.html) | CRS conversion does not estimate pixel registration. A spatial dependency is unnecessary for a one-line distance. |
-| Local-to-global plot coordinates | Explicit quadrat origins or [`fgeo.tool` coordinate helpers](https://github.com/forestgeo/fgeo.tool/blob/a90a9d3be2ead265489a0ecc09e8f063540db929/R/add_var.R) | Quadrat naming, dimensions and origins. Global plot axes are not geographic coordinates. |
-
-I see potential value in preserving the ability to recover local coordinates from historical ImageJ exports. The case for maintaining the exact old API is less clear. Before selecting a replacement, we need an authentic export and accepted local coordinates: they would allow a comparison of the old method, a corrected implementation and a specified alternative transformation. The `ctfs` [development notes](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/NEWS.md#L611-L638) already noted missing example inputs. The tutorials describe local map files but do not provide the corresponding export and accepted output; the mathematical examples above cannot establish end-to-end compatibility.
-
-# Current evaluation and recommendations
-
-Of the **`r nrow(candidate.table)` functions**, I recommend keeping **`r counts["keep"]`**, removing **`r counts["remove"]`**, and reviewing **`r counts["review"]`**.
-
-I would keep `xydist()`, `perpendicular.distance()` and `insideRectangle()`. They are short, understandable calculations with current callers. Their valid input ranges, coordinate units and boundary conventions should remain explicit.
-
-The removal recommendations concern mostly redundant adapters, unused drawing functions and elementary curve or polar wrappers. They do not justify removing either source script wholesale. In particular, the dependency between `perpendicular.line()` and `pt.to.segment()` needs to be resolved together.
-
-The ImageJ functions need further review. Their operational purpose is documented, but their implementation cannot reliably convert ordinary tree records in its present form. The next useful steps are to obtain an authentic export with accepted coordinates, establish whether sites still need this conversion, and define how calibration should handle skewed maps, invalid corners and points outside the boundary. The section conventions and the meaning of the error summaries also need to be settled.
-
-The broken rectangle helpers and the bin-prediction caller require decisions about the calculations they support. A current dependency is a reason to examine the affected workflow, not sufficient reason to retain a broken implementation. Likewise, code age and the absence of these names from later `fgeo` packages are not sufficient reasons to discard a documented map-conversion workflow.
-
-## R session
-
-```{r}
-#| label: session-information
-
-sessionInfo()
-```
