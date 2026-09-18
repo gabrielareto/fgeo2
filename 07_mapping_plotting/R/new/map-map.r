@@ -115,12 +115,12 @@ pdf.allplot <- function(splitdata = bci.split6, spplist = bci.spptable, elev = c
     path = "/home/condit/data/maps/bci/") {
     on.exit(graphics.off())
     if (singlefile) 
-        pdf(file = pst(path, "allsppMap.pdf"), width = w, height = h)
+        pdf(file = paste0(path, "allsppMap.pdf"), width = w, height = h)
     
     allspp <- names(splitdata)
     for (i in 1:length(allspp)) {
         if (!singlefile & export) 
-            pdf(file = pst(path, allspp[i], "Map.pdf"), width = 10, height = 8)
+            pdf(file = paste0(path, allspp[i], "Map.pdf"), width = 10, height = 8)
         map(splitdata, species = allspp[i], spplist = spplist, elevdata = elev, plotdim = plotdim, cutoff = cutoff, size = size, 
             deadtree = deadtree, bw = bw, topoclr = topoclr, bty = bty, symbols = symbols, legsize = legsize, legpos = legpos, 
             plotside = plotside, topoint = topoint, export = "no")
@@ -203,8 +203,8 @@ define.graphwindow <- function(export = "no", w, h, file) {
 get.filename <- function(file, path, exp, species, type = "Map.") {
     if (is.null(file)) {
         if (length(species) == 1) 
-            filename <- pst(path, species, type, exp) else filename <- pst(path, "multispp", type, exp)
-    } else filename <- pst(path, file, ".", exp)
+            filename <- paste0(path, species, type, exp) else filename <- paste0(path, "multispp", type, exp)
+    } else filename <- paste0(path, file, ".", exp)
     
     return(filename)
 }
@@ -223,7 +223,7 @@ maptopo <- function(elevmat, plotdim, add = FALSE, new = FALSE, export = "no", i
     if (new) 
         X11(width = wd, height = ht)
     if (export == "pdf") {
-        filename <- pst(filepath, "topomap.pdf")
+        filename <- paste0(filepath, "topomap.pdf")
         pdf(filename, width = wd, height = ht)
     }
     
@@ -357,11 +357,11 @@ setsize <- function(n, s) {
 
 # </description> <arguments> </arguments> <sample> </sample> <source>
 map2species <- function(spp, data = list(bci3.spp, korup.spp), spplist = list(plotspp$bci, plotspp$korup), elev = list(ctfs.elev$bci, 
-    ctfs.elev$korup), path = "spp", export = pdf, file = pst(spp[1], spp[2], "map.pdf"), ptsize = c(0.6, 0.6), topo = c(2, 4), 
+    ctfs.elev$korup), path = "spp", export = pdf, file = paste0(spp[1], spp[2], "map.pdf"), ptsize = c(0.6, 0.6), topo = c(2, 4),
     ht = 11, wd = 8.5, plotside = 4) {
     if (!is.null(export)) {
         on.exit(graphics.off())
-        export(height = ht, width = wd, file = pst(path, file))
+        export(height = ht, width = wd, file = paste0(path, file))
     } else x11(height = ht, width = wd, xpos = 725)
     
     oldpar <- par(mfcol = c(2, 1), mai = c(1, 0.85, 0.1, 0.35), mgp = c(2, 1, 0), cex = 1.4)

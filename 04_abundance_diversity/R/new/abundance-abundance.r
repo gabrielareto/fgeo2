@@ -259,7 +259,7 @@ abund.manycensus <- function(allcns = list(bci.full1, bci.full2, bci.full3), min
     if (type == "abund") 
         symb <- "N" else if (type == "agb") 
         symb <- "AGB" else symb <- "BA"
-    getcol <- pst(symb, ".", as.character(1:2))
+    getcol <- paste0(symb, ".", as.character(1:2))
     
     result <- assemble.demography(pop.change(allcns[[1]], allcns[[2]], split1 = allcns[[1]]$sp, mindbh = mindbh, dbhunit = dbhunit, 
         type = type), type = innertype)
@@ -267,8 +267,8 @@ abund.manycensus <- function(allcns = list(bci.full1, bci.full2, bci.full3), min
     colnames(final) <- getcol
     
     if (nocns > 2) 
-        for (j in 2:(nocns - 1)) final[, pst(symb, as.character(j + 1))] <- assemble.demography(pop.change(allcns[[j]], allcns[[j + 
-            1]], split1 = allcns[[1]]$sp, mindbh = mindbh, dbhunit = dbhunit, type = type), type = innertype)[, pst(symb, ".2")]
+        for (j in 2:(nocns - 1)) final[, paste0(symb, as.character(j + 1))] <- assemble.demography(pop.change(allcns[[j]], allcns[[j +
+            1]], split1 = allcns[[1]]$sp, mindbh = mindbh, dbhunit = dbhunit, type = type), type = innertype)[, paste0(symb, ".2")]
     
     if (!is.null(excludespp)) {
         exclude <- unidentified.species(rownames(final), exactstr = excludespp)

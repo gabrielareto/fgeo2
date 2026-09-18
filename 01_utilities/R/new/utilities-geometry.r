@@ -87,7 +87,7 @@ perpendicular.line <- function(b, m, x, y) {
 parallel.line <- function(b, m, x, y) {
     minf <- is.infinite(m)
     
-    len <- IfElse(length(b) > length(x), length(b), length(x))
+    len <- max(length(b), length(x))
     
     if (length(m) == 1) 
         slope <- rep(m, len) else slope <- m
@@ -104,7 +104,7 @@ parallel.line <- function(b, m, x, y) {
 # for both slopes being infinite (vertical lines).  This is vectorized: either pair can be vector if other pair is atomic, or
 # both can be same length vectors.  </description> <arguments> </arguments> <sample> </sample> <source>
 intersection.of.lines <- function(b1, m1, b2, m2) {
-    len <- IfElse(length(b2) > length(b1), length(b2), length(b1))
+    len <- max(length(b2), length(b1))
     
     m1inf <- (is.infinite(m1) & !is.infinite(m2))
     m2inf <- (is.infinite(m2) & !is.infinite(m1))
@@ -196,7 +196,7 @@ pts.to.interceptslope <- function(pt1, pt2) {
         y2 <- pt2[, 2]
     }
     
-    len <- IfElse(length(x2) > length(x1), length(x2), length(x1))
+    len <- max(length(x2), length(x1))
     exact <- (x1 == x2)
     
     slope <- (y2 - y1)/(x2 - x1)
@@ -282,7 +282,7 @@ angleBisector <- function(corners) {
     # avgtravel=parallel.line(b=NA,m=tan(slope),x=corners[2,1],y=corners[2,2]) if(length(which(QIII))>0 & length(which(QII))>0)
     # browser()
     
-    return(drp(as.matrix(result)))
+    return(drop(as.matrix(result)))
 }
 # </source> </function>
 
@@ -316,7 +316,7 @@ ispt.inside <- function(pt, coord) {
     norect <- dim(coord)[1]
     inside <- logical(norect)
     
-    for (i in seq_len(norect)) inside[i] <- are.ptsinside(t(pt), drp(coord[i, ]))
+    for (i in seq_len(norect)) inside[i] <- are.ptsinside(t(pt), drop(as.matrix(coord[i, ])))
     
     return(mean(inside))
 }

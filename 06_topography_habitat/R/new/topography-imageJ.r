@@ -41,8 +41,8 @@ fullplot.imageJ <- function(path = "", outfile = "plotLxLy.txt", delim = ",", in
     
     # Screen the files for those that have quadrat names, and the specified prefix and suffix.
     quadfiles <- character()
-    for (q in allquad) quadfiles <- c(quadfiles, filelist[logical.grep(q, filelist) & logical.grep(prefix, filelist) & logical.grep(suffix, 
-        filelist)])
+    for (q in allquad) quadfiles <- c(quadfiles, filelist[(grepl(q, filelist, fixed = TRUE) %in% TRUE) & (grepl(prefix, filelist, fixed = TRUE) %in% TRUE) & (grepl(suffix,
+        filelist, fixed = TRUE) %in% TRUE)])
     
     nofiles <- length(quadfiles)
     
@@ -100,7 +100,7 @@ fullplot.imageJ <- function(path = "", outfile = "plotLxLy.txt", delim = ",", in
     if (!is.null(outfile)) {
         if (path == ".") 
             path <- ""
-        output <- pst(path, outfile)
+        output <- paste0(path, outfile)
         write.table(fullresult, file = output, quote = FALSE, sep = "\t", row.names = FALSE, col.names = TRUE)
     }
     

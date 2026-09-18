@@ -295,8 +295,8 @@ regress.loglog=function(x,y,xlog=TRUE,ylog=TRUE,addone=NULL,graphit=TRUE,xrange=
  if(graphit)
   {
    logaxs=""
-   if(xlog) logaxs=pst(logaxs,"x")
-   if(ylog) logaxs=pst(logaxs,"y")
+   if(xlog) logaxs=paste0(logaxs,"x")
+   if(ylog) logaxs=paste0(logaxs,"y")
 
    if(add & !is.null(pts)) points(x,y,pch=pts,col=clr,cex=ptsize,cex.lab=ptsize,cex.axis=ptsize)
 

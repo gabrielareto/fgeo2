@@ -262,11 +262,11 @@ AGB.dbtable <- function(df, dbname, plot, code, censusno) {
     db <- odbcConnect("mysql")
     on.exit(odbcClose(db))
     
-    qry <- pst("SELECT censusID FROM ", dbname, ".Census JOIN ", dbname, ".Site USING(PlotID) WHERE PlotCensusNumber=", censusno, 
+    qry <- paste0("SELECT censusID FROM ", dbname, ".Census JOIN ", dbname, ".Site USING(PlotID) WHERE PlotCensusNumber=", censusno,
         " AND PlotName='", plot, "'")
     censusID <- sqlQuery(db, qry)[1, 1]
     
-    agbqry <- pst("SELECT treeID, stemID, AGB AS agb FROM agb.", code, " WHERE censusID=", censusID)
+    agbqry <- paste0("SELECT treeID, stemID, AGB AS agb FROM agb.", code, " WHERE censusID=", censusID)
     agb <- sqlQuery(db, agbqry)
     
     merged.agb <- merge(df, agb, by = c("treeID", "stemID"), all.x = TRUE)

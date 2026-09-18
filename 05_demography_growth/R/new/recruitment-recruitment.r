@@ -74,8 +74,8 @@ recruitment <- function(census1, census2, mindbh = 10, alivecode = c("A", "AB", 
     upper.rate[lower.ci == 0] <- Inf
     rec.rate[N2 == 0] <- lower.rate[N2 == 0] <- upper.rate[N2 == 0] <- NA
     
-    result <- list(N2 = drp(N2), R = drp(N2 - S), rate = drp(rec.rate), lower = drp(lower.rate), upper = drp(upper.rate), time = drp(timeint), 
-        date1 = drp(startdate), date2 = drp(enddate))
+    result <- list(N2 = drop(as.matrix(N2)), R = drop(as.matrix(N2 - S)), rate = drop(as.matrix(rec.rate)), lower = drop(as.matrix(lower.rate)), upper = drop(as.matrix(upper.rate)), time = drop(as.matrix(timeint)),
+        date1 = drop(as.matrix(startdate)), date2 = drop(as.matrix(enddate)))
     
     return(result)
 }
@@ -91,4 +91,3 @@ recruitment.eachspp <- function(census1, census2, mindbh = 10, alivecode = c("A"
     return(result)
 }
 # </source> </function>
-

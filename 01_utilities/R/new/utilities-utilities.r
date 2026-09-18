@@ -226,26 +226,6 @@ merge.data <- function(listdata, showOutput = NULL) {
 
 
 
-# </source> </function> <function> <name> pst </name> <description> A version of paste with sep=''.  </description> <arguments>
-# </arguments> <sample> </sample> <source>
-pst <- function(...) {
-    s <- list(...)
-    len <- length(s)
-    
-    if (len == 0) 
-        return(NA)
-    
-    result <- s[[1]]
-    if (len == 1) 
-        return(s[[1]])
-    
-    for (i in 2:len) result <- paste(result, s[[i]], sep = "")
-    
-    return(result)
-}
-
-
-
 # </source> </function> <function> <name> detachfiles </name> <description> detachs from the searchpath files matching a
 # submitted vector of names.
 
@@ -567,19 +547,7 @@ which.vmatch <- function(v) {
 
 
 
-# </source> </function> <function> <name> logical.grep </name> <description> A form of grep returning logical instead of
-# indices (numbers).
-
-# </description> <arguments> </arguments> <sample> </sample> <source>
-logical.grep <- function(needle, haystack) {
-    result <- rep(FALSE, length(haystack))
-    result[grep(needle, haystack, fixed = TRUE)] <- TRUE
-    return(result)
-}
-# </source> </function>
-
-
-# <function> <name> nhd </name> <description> A version of head with only 6 columns shown.
+# </source> </function> <function> <name> nhd </name> <description> A version of head with only 6 columns shown.
 
 # </description> <arguments> </arguments> <sample> </sample> <source>
 nhd <- function(d, w = 1:6, h = 8) print(head(d, h)[, w])
@@ -659,33 +627,14 @@ attach_if_needed <- function(datafiles) {
 }
 
 
-# </source> </function> <function> <name> IfElse </name> <description> A more convenient version of the R function ifelse in
-# cases where test, a, and b are atomic.  </description> <arguments> </arguments> <sample> </sample> <source>
-IfElse <- function(test, a, b) {
-    if (test) 
-        return(a) else return(b)
-}
-
-#  <function> <name> vectToCommas </name> <description> Given a vector of character variables, collapse
+# </source> </function> <function> <name> vectToCommas </name> <description> Given a vector of character variables, collapse
 # into a single string with quotes, separated by commas </description> <arguments> </arguments> <sample> </sample> <source>
 vectToCommas <- function(v) {
     withquotes <- paste("'", v, "'", sep = "")
     return(paste(withquotes, collapse = ","))
 }
 
-# </source> </function>
-
-
-# <function> <name> drp </name> <description> A version of drop which includes as.matrix. Without it, drop does not serve its
-# purpose. This is necessary in many many situations where a single row is taken out of a dataframe, but must be passed as a
-# vector.  </description> <arguments> </arguments> <sample> </sample> <source>
-drp <- function(x) {
-    return(drop(as.matrix(x)))
-}
-
-# </source> </function>
-
-# <function> <name> randomRow </name> <description> Return a random row from a dataframe </description> <arguments>
+# </source> </function> <function> <name> randomRow </name> <description> Return a random row from a dataframe </description> <arguments>
 # </arguments> <sample> </sample> <source>
 randomRow <- function(data) {
     size <- dim(data)[1]
@@ -759,8 +708,8 @@ graphFilledBand <- function(x, y1, y2, fillcol = "gray", add = TRUE, linecol = "
 make.CredIntervalVect <- function(y, digits = c(3, 3), CIonly = FALSE) {
     if (length(digits) == 1) 
         digits <- rep(digits, 2)
-    CI <- pst("  (", decimal.form(y[2], digits[2]), ",", decimal.form(y[3], digits[2]), ")")
-    result <- pst(decimal.form(y[1], digits[1]), CI)
+    CI <- paste0("  (", decimal.form(y[2], digits[2]), ",", decimal.form(y[3], digits[2]), ")")
+    result <- paste0(decimal.form(y[1], digits[1]), CI)
     
     if (CIonly) 
         return(CI)

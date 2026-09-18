@@ -66,9 +66,9 @@ mortality <- function(census1, census2, alivecode = c("A", "AB", "AS"), split1 =
     
     m <- mortality.calculation(N = as.matrix(N), S = as.matrix(S), meantime = as.matrix(meantime))
     
-    # ord=order(drp(meandbh))
-    result <- list(N = drp(m$N), D = drp(m$D), rate = drp(m$rate), lower = drp(m$lowerCI), upper = drp(m$upperCI), time = drp(m$time), 
-        date1 = drp(startdate), date2 = drp(enddate), dbhmean = drp(meandbh))
+    # ord=order(drop(as.matrix(meandbh)))
+    result <- list(N = drop(as.matrix(m$N)), D = drop(as.matrix(m$D)), rate = drop(as.matrix(m$rate)), lower = drop(as.matrix(m$lowerCI)), upper = drop(as.matrix(m$upperCI)), time = drop(as.matrix(m$time)),
+        date1 = drop(as.matrix(startdate)), date2 = drop(as.matrix(enddate)), dbhmean = drop(as.matrix(meandbh)))
     
     return(result)
 }
@@ -147,5 +147,4 @@ find.climits <- function(N, D, alpha = 0.05, kind = "upper") {
     
 }
 # </source> </function>
-
 

@@ -11,7 +11,7 @@
 # CTFSplot(plot='sinharaja,census=3,type='stem',path='C:/SinharajaRDataTables') </sample> <source>
 CTFSplot <- function(plot, census = 1, type = "full", path = "CTFSRPackage", remove = FALSE, includespp = TRUE) {
     if (includespp) {
-        spfile <- pst(path, "/species/", plot, ".spptable.rdata")
+        spfile <- paste0(path, "/species/", plot, ".spptable.rdata")
         if (remove) 
             detachfiles(spfile) else attach_if_needed(spfile)
     }

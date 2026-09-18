@@ -76,11 +76,11 @@ growth <- function(census1, census2, rounddown = FALSE, method = "I", stdev = FA
     ci.grow[N == 0] <- NA
     ci.grow[N > 0] <- sd.grow[N > 0] * qt(0.975, N[N > 0])/sqrt(N[N > 0])
     
-    # ord=order(drp(meandbh))
+    # ord=order(drop(as.matrix(meandbh)))
     if (!stdev) 
-        result <- list(rate = drp(mean.grow), N = drp(N), clim = drp(ci.grow), dbhmean = drp(meandbh), time = drp(interval), date1 = drp(startdate), 
-            date2 = drp(enddate)) else result <- list(rate = drp(mean.grow), N = drp(N), sd = drp(sd.grow), dbhmean = drp(meandbh), time = drp(interval), date1 = drp(startdate), 
-        date2 = drp(enddate))
+        result <- list(rate = drop(as.matrix(mean.grow)), N = drop(as.matrix(N)), clim = drop(as.matrix(ci.grow)), dbhmean = drop(as.matrix(meandbh)), time = drop(as.matrix(interval)), date1 = drop(as.matrix(startdate)),
+            date2 = drop(as.matrix(enddate))) else result <- list(rate = drop(as.matrix(mean.grow)), N = drop(as.matrix(N)), sd = drop(as.matrix(sd.grow)), dbhmean = drop(as.matrix(meandbh)), time = drop(as.matrix(interval)), date1 = drop(as.matrix(startdate)),
+        date2 = drop(as.matrix(enddate)))
     
     return(result)
 }
@@ -128,7 +128,7 @@ biomass.growth <- function(census1, census2, rounddown = FALSE, stdev = FALSE, m
     startdate <- fill.dimension(startdate, class1, class2, fill = NA)
     enddate <- fill.dimension(enddate, class1, class2, fill = NA)
     
-    # ord=order(drp(meandbh))
+    # ord=order(drop(as.matrix(meandbh)))
     result <- list(net = netgain, N = N, agbmean = meanagb, dbhmean = meandbh, time = interval, date1 = startdate, date2 = enddate)
     
     return(result)
