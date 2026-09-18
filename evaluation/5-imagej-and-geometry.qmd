@@ -568,54 +568,25 @@ Therefore, the main recommendation should be to use the homography transformatio
 
 # Evaluation of geometry functions
 
-Most geometry functions seem part of a complicated network of helpers to imageJ code, and, at first glance, they should be removed. The 2016-2017 review of the code recommended complete removal. In addition to this general view, the current evaluation identifies specific problems/bugs, and the specific alternatives in well-maintained R.
+Most geometry functions seem part of a complicated sub-network of helpers to imageJ code, and, at first glance, they should be removed as part of the replacement of the old imageJ workflow. The 2016-2017 review of the code recommended complete removal. In addition to this general view, the current evaluation identifies specific problems/bugs, and the specific alternatives in well-maintained R.
 
 ## Euclidean and line distances
 
-`xydist()`, `xydistvect()` and `xydistmat()` calculate Euclidean distances between paired Cartesian coordinates. `perpendicular.distance()` calculates the distance from a point to an infinite line, while `pt.to.segment()` attempts to calculate the shortest distance to a finite line segment and return the nearest point.
-
-The underlying operations are potentially useful, but the first three functions are elementary adapters, and the more complicated functions have unclear or unreliable behavior in important cases.
-
-```{r}
-# xydist() correctly calculates an ordinary Euclidean distance.
-xydist(
-	x1 = 0,
-	y1 = 0,
-	x2 = 3,
-	y2 = 4
-)
-```
+`xydist()`, `xydistvect()` and `xydistmat()` calculate Euclidean distances between paired Cartesian coordinates. According to the criterion that a small repetition is better than a small dependency, these simple distance functions should be substituted by simple code like `sqrt((x1 - x2)^2 + (y1 - y2)^2)`. When performance is important, there are specific implementations like **`Rfast::Dist()`** or **`parallelDist::parDist()`**. Besides, `xydistvect()` and `xydistmat()` fail with vectors, clearly a potential source of bugs when 1-row matrices are converted into vectors automatically by R:
 
 ```{r}
 #| error: true
-
-# The documented vector interface of xydistvect() fails.
-xydistvect(
-    xy1 = c(0, 0),
-    xy2 = c(3, 4)
-)
+xydistvect(pt1 = c(0, 0), pt2 = c(3, 4))
+xydistmat(pts = c(0, 0, 3, 4))
 ```
 
-```{r}
-#| error: true
-
-# xydistmat() is documented for an apply-style row containing
-# the coordinates of two points, but this input fails.
-xydistmat(
-    xy = c(0, 0, 3, 4)
-)
-```
+`perpendicular.distance()` calculates the distance from a point to an infinite line, while `pt.to.segment()` attempts to calculate the shortest distance to a finite line segment and return the nearest point. These functions have unclear or unreliable behavior in important cases.
 
 ```{r}
 # An extremely steep line produces NaN rather than a distance.
 # The true distance from (1, 0) to this near-vertical line
 # should be approximately 1.
-perpendicular.distance(
-    b = 0,
-    m = 1e308,
-    x = 1,
-    y = 0
-)
+perpendicular.distance(b = 0, m = 1e308, x = 1, y = 0)
 ```
 
 ```{r}
@@ -631,34 +602,17 @@ pt.to.segment(
 )
 ```
 
-Ordinary paired distances are clearer as a direct base-R expression:
-
-```{r}
-x1 = 0
-y1 = 0
-x2 = 3
-y2 = 4
-
-distance <- sqrt(
-    (x1 - x2)^2 +
-    (y1 - y2)^2
-)
-
-distance
-```
-
 For spatial objects, `sf` provides maintained implementations:
 
 ```{r}
 #| eval: false
-
 sf::st_distance(point, segment)
 sf::st_nearest_points(point, segment)
 ```
 
-If a future point-pattern analysis requires explicit projection onto segments, `spatstat.geom::project2segment()` is another maintained alternative.
+If a future point-pattern analysis requires explicit projection onto segments, `spatstat.geom::project2segment()` is a well-maintained alternative.
 
-**Recommendation.** Remove `xydist()`, `xydistvect()`, `xydistmat()` and `pt.to.segment()`. Retain `perpendicular.distance()` temporarily because it is used by `minum.perpdist()` and, indirectly, `majoraxisreg()`. Review that regression chain against maintained major-axis implementations such as `smatr::ma()` before removing it.
+**Recommendation:** Remove `xydist()`, `xydistvect()`, `xydistmat()` and `pt.to.segment()`. Retain `perpendicular.distance()` temporarily because it is used by `minum.perpdist()` and, indirectly, `majoraxisreg()`. Review that regression chain against maintained major-axis implementations such as `smatr::ma()` before removing it.
 
 ## Construction of lines
 
@@ -670,12 +624,7 @@ If a future point-pattern analysis requires explicit projection onto segments, `
 #
 # Instead, the function approximates it with a very large
 # finite slope and intercept.
-perpendicular.line(
-    b = 0,
-    m = 0,
-    x = 2,
-    y = 3
-)
+perpendicular.line(b = 0, m = 0, x = 2, y = 3)
 ```
 
 ```{r}
@@ -693,23 +642,23 @@ parallel.line(
 
 ```{r}
 # Coincident points do not define a unique line.
-# The function nevertheless returns a vertical line.
-pts.to.interceptslope(
-    pt1 = c(1, 1),
-    pt2 = c(1, 1)
-)
+# The function nevertheless returns a vertical line with infinite slope.
+l <- pts.to.interceptslope( pt1 = c(1, 1), pt2 = c(1, 1))
+l
 ```
 
 ```{r}
 # This mixed scalar/data-frame input describes two lines.
 # The second should be vertical at x = 1, but its intercept is NA.
-pts.to.interceptslope(
+l <- pts.to.interceptslope(
     pt1 = c(1, 0),
     pt2 = data.frame(
         x = c(2, 1),
         y = c(1, 2)
     )
 )
+
+l
 ```
 
 For a finite slope, the intercept of a parallel line through a known point requires only:
@@ -723,15 +672,13 @@ b <- y - m * x
 b
 ```
 
-For more general calculations, point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes. General spatial intersections and distances can instead be delegated to `sf`.
+It seems the treatment of lines in CTFS code is flawed by design – perhaps contaminated by the way linear models are represented. Point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes, and are more general and better representations. General spatial intersections and distances can be delegated to `sf`.
 
-**Recommendation.** Remove `perpendicular.line()`: its only remaining caller is `pt.to.segment()`, which should also be removed. Retain `parallel.line()` temporarily because it is called by `constant.linear()`. Retain `pts.to.interceptslope()` temporarily because it is called by `linearmodel.bin.set()` and its downstream modeling functions. Review those callers before removing the helpers; their dependency does not justify preserving the current geometry API permanently.
+**Recommendation:** Remove `perpendicular.line()`: its only remaining caller is `pt.to.segment()`, which should also be removed. Retain `parallel.line()` temporarily because it is called by `constant.linear()`. Retain `pts.to.interceptslope()` temporarily because it is called by `linearmodel.bin.set()` and its downstream modeling functions.
 
 ## Line and segment intersections
 
-`intersection.of.lines()` calculates intersections between slope-intercept lines. `intersection.line.curve()` attempts to locate intersections between a line and a piecewise curve. `is.between()` tests whether coordinates fall within the bounding ranges of a segment, and `line.intersection.pts()` attempts to construct an intersection from endpoint representations.
-
-These functions form a bespoke intersection system with inconsistent treatment of vertical, parallel and coincident lines.
+`intersection.of.lines()` calculates intersections between slope-intercept lines. `intersection.line.curve()` attempts to locate intersections between a line and a piecewise curve. `is.between()` tests whether coordinates fall within the bounding ranges of a segment, and `line.intersection.pts()` attempts to construct an intersection from endpoint representations. These functions form a intersection system with inconsistent treatment of vertical, parallel and coincident lines:
 
 ```{r}
 # A vertical line at x = 2 intersects both horizontal
@@ -779,6 +726,7 @@ intersection.line.curve(
 #
 # is.between() therefore tests a bounding box rather than
 # actual membership in the segment.
+# This behaviour is counter-intuitive and scripts using this function can end being very wrong.
 is.between(
     x = 0.5,
     y = 0.2,
@@ -832,37 +780,18 @@ For a tightly bounded calculation, an intersection can be implemented directly w
 
 ```{r}
 #| eval: false
-
 sf::st_intersection(line1, line2)
 sf::st_intersects(line1, line2)
 ```
 
-**Recommendation.** Remove `intersection.of.lines()`, `intersection.line.curve()`, `is.between()` and `line.intersection.pts()`. Once the ImageJ workflow is deprecated, none has a remaining external dependency that warrants temporary retention.
+**Recommendation:** Remove `intersection.of.lines()`, `intersection.line.curve()`, `is.between()` and `line.intersection.pts()`. Once the ImageJ workflow is deprecated, none has a remaining external dependency that warrants temporary retention.
 
 ## Drawing helpers and angle bisectors
 
-`segmentPt()` draws a segment between two points, while `drawrectangle()` draws a quadrilateral from supplied vertices. `angleBisector()` constructs a line intended to bisect the angle defined by three points.
+`segmentPt()` draws a segment between two points, while `drawrectangle()` draws a quadrilateral from supplied vertices. These are small wrappers around base graphics, and clearly not needed. Base graphics already provides direct drawing primitives: `segments()`, `polygon()`, `rect()`, ...
 
-The drawing functions are thin wrappers around base graphics. The angle-bisector implementation uses complicated slope and quadrant logic and fails a simple hand-checkable example.
-
-```{r}
-#| error: true
-
-# The documented matrix representation of four vertices fails.
-drawrectangle(
-    coord = matrix(
-        c(
-            0, 0,
-            1, 0,
-            1, 1,
-            0, 1
-        ),
-        ncol = 2,
-        byrow = TRUE
-    ),
-    add = FALSE
-)
-```
+\
+`angleBisector()` constructs a line intended to bisect the angle defined by three points. The angle-bisector implementation uses complicated slope and quadrant logic and fails a simple hand-checkable example.
 
 ```{r}
 # These points define a right angle at (1, 0).
@@ -881,34 +810,9 @@ angleBisector(
 )
 ```
 
-Base graphics already provides direct drawing primitives:
-
-```{r}
-#| eval: false
-
-graphics::segments(
-    x0 = 0,
-    y0 = 0,
-    x1 = 1,
-    y1 = 1
-)
-
-graphics::polygon(
-    x = c(0, 1, 1, 0),
-    y = c(0, 0, 1, 1)
-)
-
-graphics::rect(
-    xleft = 0,
-    ybottom = 0,
-    xright = 1,
-    ytop = 1
-)
-```
-
 A bisector can be calculated more reliably by converting both rays to unit direction vectors and adding them. `atan2()` should be used whenever a quadrant-aware angle is needed.
 
-**Recommendation.** Remove `segmentPt()`, `drawrectangle()` and `angleBisector()`. They have no unresolved downstream callers that justify preserving them.
+**Recommendation:** Remove `segmentPt()`, `drawrectangle()` and `angleBisector()`. They have no unresolved downstream dependencies.
 
 ## Rectangle membership and overlap
 
@@ -1016,7 +920,7 @@ inside.rect(
 
 For one half-open rectangle, the complete calculation is:
 
-```{r}
+```{r, eval = FALSE}
 inside <- x >= xmin &
           x < xmax &
           y >= ymin &
@@ -1025,16 +929,16 @@ inside <- x >= xmin &
 
 Inclusive rectangle overlap can similarly be expressed directly:
 
-```{r}
+```{r, eval = FALSE}
 overlap <- xmax1 >= xmin2 &
            xmin1 <= xmax2 &
            ymax1 >= ymin2 &
            ymin1 <= ymax2
 ```
 
-For plot quadrats, `assign_points_to_quadrats()` already represents the boundary convention more explicitly and should remain the main interface.
+For plot quadrats, `assign_points_to_quadrats()` already represents the boundary convention more explicitly.
 
-**Recommendation.** Remove `inside.rect()`. Retain `insideRectangle()` temporarily because it is used by `complete.plotmap()`. Retain `are.ptsinside()` temporarily because it is used by `selectrandomquad3()` and `ispt.inside()`. Retain `ispt.inside()` temporarily because it is used by `coverage.diag()`. These callers require future review; the current defects should not be interpreted as a recommendation to repair the helpers before their callers are evaluated.
+**Recommendation:** Remove `inside.rect()`. Retain `insideRectangle()` temporarily because it is used by `complete.plotmap()`. Retain `are.ptsinside()` temporarily because it is used by `selectrandomquad3()` and `ispt.inside()`. Retain `ispt.inside()` temporarily because it is used by `coverage.diag()`. These callers require future review, as the defects of these particular functions.
 
 ## Circles and ellipses
 
@@ -1119,13 +1023,13 @@ ellipse.coordinates <- data.frame(
 
 Base graphics also provides `graphics::symbols()` for plotting circles, while `sf::st_buffer()` is appropriate when circles represent spatial buffers or neighborhoods rather than merely drawn curves.
 
-**Recommendation.** Remove `circle()`, `fullcircle()`, `ellipse()` and `fullellipse()`. They have no current callers, and maintained or elementary alternatives cover their plausible uses more clearly.
+**Recommendation:** Remove `circle()`, `fullcircle()`, `ellipse()` and `fullellipse()`. They have no current dependencies, and maintained or elementary alternatives cover their possible uses more clearly.
 
 ## Cartesian and polar coordinates
 
 `cartesian.to.polar()` converts Cartesian coordinates to radius and angle. `polar.to.cartesian()` performs the inverse conversion.
 
-The inverse calculation is elementary and works for ordinary inputs. The forward calculation derives the angle from a one-argument inverse tangent and therefore loses quadrant information.
+The inverse calculation is elementary and works for ordinary inputs. The forward calculation derives the angle from a one-argument inverse tangent and therefore loses quadrant information. The CTFS implementation is not entirely correct:
 
 ```{r}
 # The point (-1, 1) is in the second quadrant.
@@ -1180,42 +1084,17 @@ x <- r * cos(theta)
 y <- r * sin(theta)
 ```
 
-**Recommendation.** Remove `cartesian.to.polar()` and `polar.to.cartesian()`. The current forward conversion is incorrect across quadrants, and both operations are clearer as direct base-R expressions.
+**Recommendation:** Remove `cartesian.to.polar()` and `polar.to.cartesian()`. The current forward conversion is incorrect across quadrants, and both operations are clearer as direct base-R expressions.
 
-## Overall recommendation
+## Decision
 
-None of the 25 functions should be maintained permanently as a standalone fgeo2 geometry utility.
+None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we took in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. A few functions, however, have clear dependents, and can be left for later. Thus:
 
--   Remove 19 functions.
+-   Temporarily retain six functions:\
+    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed gain when reviewing the regression, binned-model, mapping, random-quadrat and other code that use them.
+-   Remove the other 19 functions: \*\*\*
 
--   Temporarily retain six functions because unresolved non-ImageJ callers still depend on them:\
-    `perpendicular.distance()`, `parallel.line()`, `pts.to.interceptslope()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`.
-
--   Review the regression, binned-model, mapping, random-quadrat and coverage-diagnostic callers before removing those final six functions.
-
--   Do not preserve any function solely for the deprecated ImageJ workflow.
-
--   Add geometry again only when demanded by a concrete ecological workflow, using direct base R for elementary calculations and `sf` for substantive spatial geometry.
-
-| Functions | What and why | Well-maintained alternative |
-|----|----|----|
-| `xydist()`; `xydistvect()`; `xydistmat()` | **Remove.** The calculation is elementary. The two adapters contradict their documented interfaces, and their remaining callers are also removal candidates. | `sqrt((x1 - x2)^2 + (y1 - y2)^2)`; `sf::st_distance()` for spatial objects; `Rfast` package and several other alternatives for large objects |
-| `perpendicular.distance()` | **Retain temporarily.** Required by `minum.perpdist()` → `majoraxisreg()`. Review that regression chain before removal. Distance to an infinite line is otherwise of limited direct ecological value. | Base normal-form distance; review `majoraxisreg()` against `smatr::ma()`. |
-| `pt.to.segment()` | **Remove.** No current caller; ambiguous dual interface and valid inputs can return `NA` nearest coordinates. | `sf::st_distance()` plus `sf::st_nearest_points()`; `spatstat.geom::project2segment()`. |
-| `perpendicular.line()` | **Remove.** Used only by `pt.to.segment()`. Vertical lines are represented inconsistently as extremely large finite slopes. | Direct vector projection or normal-form line algebra. |
-| `parallel.line()` | **Retain temporarily.** Required by `constant.linear()`, which needs future review. Mixed finite and vertical vectors are handled incorrectly. | For finite slopes, `b = y - m * x`; alternatively rewrite `constant.linear()` directly. |
-| `intersection.of.lines()`; `intersection.line.curve()`; `is.between()`; `line.intersection.pts()` | **Remove.** No remaining external dependency after ImageJ removal. The system mishandles vertical, parallel and coincident cases; `is.between()` does not test collinearity; `line.intersection.pts()` calls an undefined function. | Base determinant/vector calculations for simple cases; `sf::st_intersection()` for general geometry. |
-| `pts.to.interceptslope()` | **Retain temporarily.** Required by `linearmodel.bin.set()` → `linearmodel.bin()` → `logisticmodel.bin()`. Review that modeling chain before removal; its current interface already fails. | Direct slope/intercept arithmetic; preferably point-direction or normal-form representation. |
-| `segmentPt()`; `drawrectangle()` | **Remove.** Thin wrappers with no external callers; part of the documented matrix interface fails. | `graphics::segments()`; `graphics::polygon()`; `graphics::rect()` for axis-aligned rectangles. |
-| `angleBisector()` | **Remove.** No caller, fragile slope/quadrant logic, and a simple right-angle example gives the wrong result. | Normalize and add the two direction vectors; use `atan2()` when an angle is required. |
-| `insideRectangle()` | **Retain temporarily.** Required by `complete.plotmap()`, which needs future review. Its boundary convention is already represented more explicitly in `assign_points_to_quadrats()`. | `x >= xmin & x < xmax & y >= ymin & y < ymax`; current quadrat-assignment code. |
-| `are.ptsinside()` | **Retain temporarily.** Required by `selectrandomquad3()` and `ispt.inside()`. Review those functions before removal. The current implementation is broken. | Direct vectorized comparisons; `assign_points_to_quadrats()` when quadrat identity is needed. |
-| `ispt.inside()` | **Retain temporarily.** Required by `coverage.diag()`, which needs future review. The implementation writes into the wrong object and does not return the documented fraction. | Apply an explicit rectangle predicate across rows and calculate `mean(inside)` or `rowMeans()`. |
-| `inside.rect()` | **Remove.** Isolated four-comparison helper; documentation describes corner containment while the code implements inclusive overlap. | `xmax1 >= xmin2 & xmin1 <= xmax2 & ymax1 >= ymin2 & ymin1 <= ymax2`. |
-| `circle()`; `fullcircle()`; `ellipse()`; `fullellipse()` | **Remove.** Plotting-only helpers with no callers and fragile output lengths for coordinates outside the curve. | `x = cx + a * cos(theta)` and `y = cy + b * sin(theta)`; `graphics::symbols()`; `sf::st_buffer()` for spatial neighborhoods. |
-| `cartesian.to.polar()`; `polar.to.cartesian()` | **Remove.** The first loses quadrant information; the second is a trivial isolated wrapper. | `r = sqrt(x^2 + y^2)`; `theta = atan2(y, x)`; `x = r * cos(theta)`; `y = r * sin(theta)`. |
-
-\
+If standard and frequent ecological work requires it, fgeo2 could add geometry again. If that happens, the criteria should be using direct base R for elementary calculations within other functions (small repetition \> small dependency) and `sf` for substantive spatial geometry.
 
 # Due diligence for dependents and dependencies
 
