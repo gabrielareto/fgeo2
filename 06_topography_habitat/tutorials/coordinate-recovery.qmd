@@ -12,49 +12,31 @@ format:
 editor: visual
 ---
 
-# Purpose
+# Goal
 
-Points clicked on a scanned or photographed map are recorded in image coordinates. Control points connect that image to known plot coordinates. The recommended transformation is a **homography**, using the four corners of the mapped quadrat. It corrects photographic perspective and performed almost as well as the affine transformation on flatbed scans in the [coordinate-recovery evaluation](../../evaluation/5-imagej-and-geometry.qmd). Use an **affine transformation** as a fallback for a flat or nearly flat image when one corner is missing or a corner click is unusually unreliable.
-
-These transformations correct one whole planar image. They do not repair folds, tears, uneven stretching or errors in the original field map.
-
-Following the evaluation's MVP decision, this tutorial focuses on one complete paper-to-global-coordinate workflow, not extensive documentation or batch automation for a process being superseded by tablet-based mapping.
+Recover global plot coordinates in metres from a scanned paper map: click labelled points and controls, then use homography (preferred) or affine transformation (Plan B). These transformations assume a planar map; they do not repair folds, tears or errors in the original field mapping.
 
 # Setup
 
-Run this tutorial inside a clone of the fgeo2 repository. Map generation and coordinate transformations use base R. The interactive `point_clicker()` also requires `magick` to read the image.
+Replace the example full paths in each section with your own. No Git repository, particular working directory or shared setup objects are required. Run the code chunks interactively after editing those paths; they are disabled during rendering.
 
-```{r}
-#| label: setup
+Map generation and coordinate transformations use base R. Only the point clicker requires `magick`. Each section loads the script it needs where it is used.
 
-p <- system2("git", c("rev-parse", "--show-toplevel"), stdout = TRUE)
-if(!is.null(attr(p, "status")) || length(p) != 1L)
-	stop("Run this tutorial inside the fgeo2 Git repository.")
-p <- normalizePath(p)
+# Optional helper: create a practice paper map once
 
-source(file.path(
-	p, "06_topography_habitat", "R", "new", "georeference.R"
-))
+Skip this section entirely if you already have a map. Nothing later depends on this code or its R objects.
 
-example.path <- file.path(
-	p, "data_examples", "coordinate_recovery_tutorial"
-)
-```
+The example is a 10 × 10 m map with four 5 × 5 m subquadrats, 40 random interior points and six extra points: two on the outer border, two on internal divisions and two slightly outside. Blank fields and unlabelled points allow handwritten details and identifiers before scanning.
 
-# One-time preparation: generate the practice paper map
+Choose the full output path below; for the fgeo2 example, keep the PDF in `data_examples/coordinate_recovery_tutorial/`. Print it, add the handwritten information and scan it to a separate PDF. The following sections accept any scanned map PDF, whether simulated or real.
 
-This section only creates the example used to develop this tutorial. It is not a routine step when recovering coordinates from existing field maps. The stricter A–F error-evaluation cases remain in the evaluation, not in this workflow.
-
-The map is 10 × 10 m, divided into four 5 × 5 m subquadrats, with 40 random interior points and six extra points (15%): two on the outer border, two on internal divisions and two slightly outside. Points are deliberately unlabelled so that identifiers and field details can be added by hand before scanning.
-
-The output is `data_examples/coordinate_recovery_tutorial/practice-map.pdf`, alongside the future scanned input and clicked coordinates, rather than in the tutorial folder. Print it, fill in the blank fields, label the points by hand and save the scan as `practice-map-scanned.png` in the same directory.
-
-**After creating the PDF, change `#| eval: TRUE` to `#| eval: FALSE` in the `generate-practice-map` chunk below.** This is the switch that stops automatic regeneration; rerunning the enabled chunk replaces the printable PDF, not the scan. The fixed seed makes `practice.points` reproducible without saving another data file.
+**The generator is disabled by default: change `#| eval: FALSE` to `#| eval: TRUE` to enable it for one render, then back to `FALSE` after creating the PDF.** You can also run the chunk manually. Rerunning it replaces the printable PDF, not the separately saved scan.
 
 ```{r}
 #| label: generate-practice-map
-#| eval: TRUE
+#| eval: FALSE
 
+map.pdf = "/full/path/to/maps/practice-map.pdf"
 seed = 123
 number.interior = 40
 set.seed(seed)
@@ -70,8 +52,8 @@ practice.points <- rbind(practice.points, data.frame(
 	y = c(runif(2, 1, 9), runif(1, 1, 9), 5, 3, 7)
 ))
 
-dir.create(example.path, recursive = TRUE, showWarnings = FALSE)
-pdf(file.path(example.path, "practice-map.pdf"), width = 8.27, height = 11.69)
+dir.create(dirname(map.pdf), recursive = TRUE, showWarnings = FALSE)
+pdf(map.pdf, width = 8.27, height = 11.69)
 par(mar = c(1, 1, 1, 1))
 plot(
 	NA, xlim = c(-1.5, 11.5), ylim = c(-3, 16), asp = 1,
@@ -99,36 +81,48 @@ dev.off()
 
 # Obtain clicked coordinates
 
-Run `point_clicker()` interactively in R, not while rendering. Click each corner and enter its label (`corner_A` at the lower left, then B, C and D clockwise); label the mapped points with their handwritten identifiers. Press Esc or **Finish** when done. The function saves a CSV after each point and refuses to overwrite an existing CSV.
+Load the clicker here and run it interactively, not while rendering. Use your scanned map PDF as input. Name the four corners `corner_A`, `corner_B`, `corner_C` and `corner_D`, clockwise from the lower-left corner, and use the handwritten identifiers for the mapped points.
+
+Click a point, type its label in the R console and press Enter. Press Esc or **Finish** when done. The clicker saves columns `label`, `x` and `y` after every point and refuses to overwrite an existing CSV.
 
 ```{r}
 #| label: click-points
-#| eval: false
+#| eval: FALSE
 #| purl: false
 
+source("/full/path/to/georeference.R")
+
+map.pdf = "/full/path/to/maps/map-scanned.pdf"
+clicked.csv = "/full/path/to/maps/map-clicked.csv"
+
 clicked <- point_clicker(
-	image.path = file.path(example.path, "practice-map-scanned.png"),
-	csv.path = file.path(example.path, "practice-map-clicked.csv")
+	image.path = map.pdf,
+	csv.path = clicked.csv
 )
 ```
 
-The transformations do not depend on ImageJ. Any tool that exports matching point identifiers and image x-y coordinates can be used. The direction of the image y-axis does not matter if every corner is identified correctly.
-
 ## Optional: continue using ImageJ
 
-ImageJ or [Fiji](https://imagej.net/software/fiji/downloads) can also export the points. The historical workflow used a modified [PointPicker plugin](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip). Point collection and coordinate recovery are separate steps; ImageJ is not required for either transformation below. Arrange its exported table as `id`, `x` and `y` before using the following code.
+ImageJ or [Fiji](https://imagej.net/software/fiji/downloads) can collect the points instead; the historical workflow used a modified [PointPicker plugin](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip). Save the exported coordinates as a CSV with columns `label`, `x` and `y`, using the same corner labels. Either transformation below can read that CSV. The direction of the image y-axis does not matter if every control is identified correctly.
 
 # Recommended method: homography
 
-The four known corners describe a 10 × 10 m quadrat in global plot coordinates. For this example, the lower-left corner is at `(50, 50)` m. The following scan-dependent chunks are a workflow skeleton and remain disabled until the practice map has been labelled, scanned and clicked.
+Homography uses at least four controls and can correct photographic perspective. Here the four corners describe a 10 × 10 m quadrat whose lower-left corner is at global coordinates `(50, 50)` m. Enter the actual global coordinates for your own map.
+
+This section reads the clicked CSV directly; it does not require the clicker to have been run in the same R session. The result and output CSV contain global coordinates directly, including points outside the mapped quadrat.
 
 ```{r}
-#| label: prepare-example
-#| eval: false
+#| label: apply-homography
+#| eval: FALSE
 
-clicked <- read.csv(file.path(example.path, "practice-map-clicked.csv"))
-# point_clicker() calls the identifier column "label".
+source("/full/path/to/georeference.R")
+
+clicked.csv = "/full/path/to/maps/map-clicked.csv"
+output.csv = "/full/path/to/maps/map-homography-global.csv"
+
+clicked <- read.csv(clicked.csv, colClasses = c(label = "character"))
 names(clicked)[names(clicked) == "label"] <- "id"
+stopifnot(!anyNA(clicked$id), all(nzchar(clicked$id)), !anyDuplicated(clicked$id))
 
 known.controls <- data.frame(
 	id = paste0("corner_", LETTERS[1:4]),
@@ -136,31 +130,16 @@ known.controls <- data.frame(
 	y = c(50, 60, 60, 50)
 )
 
-# Match controls by identifier; do not rely on file row order.
+# Match controls by identifier, not by file row order.
 control.order <- match(known.controls$id, clicked$id)
 stopifnot(!anyNA(control.order))
 
 known.xy.of.controls <- as.matrix(known.controls[, c("x", "y")])
-clicked.xy.of.controls <- as.matrix(
-	clicked[control.order, c("x", "y")]
-)
-rownames(known.xy.of.controls) <- known.controls$id
-rownames(clicked.xy.of.controls) <- clicked$id[control.order]
-stopifnot(identical(
-	rownames(known.xy.of.controls),
-	rownames(clicked.xy.of.controls)
-))
+clicked.xy.of.controls <- as.matrix(clicked[control.order, c("x", "y")])
 
 is.control <- clicked$id %in% known.controls$id
 clicked.xy.of.points <- as.matrix(clicked[!is.control, c("x", "y")])
 rownames(clicked.xy.of.points) <- clicked$id[!is.control]
-```
-
-The result uses the units and coordinate system of `known.xy.of.controls`. Here it is returned directly in global plot coordinates and metres.
-
-```{r}
-#| label: apply-homography
-#| eval: false
 
 homography.xy <- apply_homography_transformation(
 	known.xy.of.controls = known.xy.of.controls,
@@ -175,36 +154,16 @@ recovered <- data.frame(
 	row.names = NULL
 )
 
+write.csv(recovered, output.csv, row.names = FALSE)
 head(recovered)
 ```
 
-## Quick error check
-
-The example was constructed from known points, so it also provides a simple check of the result. Once the handwritten identifiers are available, prepare `known.points` with matching `id`, `x` and `y` in global metres. The generated `practice.points` are local to the quadrat; add the origin `(50, 50)` when preparing that reference table. Do not use the fitted controls to assess recovery error. The reference table and check remain to be connected to the scanned example.
-
-```{r}
-#| label: check-example
-#| eval: false
-
-known.order <- match(recovered$id, known.points$id)
-stopifnot(!anyNA(known.order))
-
-error.cm <- 100 * sqrt(
-	(recovered$global.x - known.points$x[known.order])^2 +
-	(recovered$global.y - known.points$y[known.order])^2
-)
-
-round(c(
-	mean.error.cm = mean(error.cm),
-	median.error.cm = median(error.cm),
-	maximum.error.cm = max(error.cm)
-), 1)
-```
+If controls are declared in local coordinates instead, convert the results with `compile_points_from_quadrats()` from the [quadrat code](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/R/new/quadrats.R), as explained in the [quadrat tutorial](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/tutorials/quadrats.qmd).
 
 ```{r}
 #| label: fig-recovered-points
-#| eval: false
-#| fig-cap: "Recovered coordinates. The square marks the four control locations."
+#| eval: FALSE
+#| fig-cap: "Recovered global coordinates. The square marks the control locations."
 #| fig-width: 5
 #| fig-height: 5
 
@@ -219,22 +178,77 @@ plot(
 polygon(known.controls$x, known.controls$y, border = "red", lwd = 2)
 ```
 
+## Optional quick error check
+
+If independently known reference points are available, supply a CSV with `id`, `x` and `y` in global metres. These can be a subset of the mapped points, but must not be fitted controls. Otherwise skip this check; it does not depend on the practice-map generator.
+
+```{r}
+#| label: check-homography
+#| eval: FALSE
+
+known.points <- read.csv(
+	"/full/path/to/maps/check-points-global.csv",
+	colClasses = c(id = "character")
+)
+check.order <- match(known.points$id, recovered$id)
+stopifnot(
+	nrow(known.points) > 0, !anyDuplicated(known.points$id),
+	!anyNA(check.order), !any(known.points$id %in% known.controls$id)
+)
+
+error.cm <- 100 * sqrt(
+	(recovered$global.x[check.order] - known.points$x)^2 +
+	(recovered$global.y[check.order] - known.points$y)^2
+)
+
+round(c(
+	mean.error.cm = mean(error.cm),
+	median.error.cm = median(error.cm),
+	maximum.error.cm = max(error.cm)
+), 1)
+```
+
 # Plan B: affine transformation
 
-An affine transformation needs at least three non-collinear controls. It is a practical fallback for a flatbed scan when one corner is unavailable. Do not use three controls to correct appreciable photographic perspective. If four or more reliable controls are available, retain them: the affine fit uses all of them by least squares.
+An affine transformation needs at least three non-collinear controls. Use it for a flat or nearly flat image when a corner is missing or unusually unreliable, not for appreciable photographic perspective. If more reliable controls are available, retain them.
 
-This example deliberately omits corner D from the same image.
+This section is independent of the homography section: it loads the script and clicked CSV again, declares global controls and returns global coordinates directly. The example uses A, B and C; add `"corner_D"` to `available.controls` when it is usable.
 
 ```{r}
 #| label: apply-affine
-#| eval: false
+#| eval: FALSE
 
-available.controls <- paste0("corner_", LETTERS[1:3])
-available <- match(available.controls, known.controls$id)
+source("/full/path/to/georeference.R")
+
+clicked.csv = "/full/path/to/maps/map-clicked.csv"
+output.csv = "/full/path/to/maps/map-affine-global.csv"
+available.controls = c("corner_A", "corner_B", "corner_C")
+
+clicked <- read.csv(clicked.csv, colClasses = c(label = "character"))
+names(clicked)[names(clicked) == "label"] <- "id"
+stopifnot(!anyNA(clicked$id), all(nzchar(clicked$id)), !anyDuplicated(clicked$id))
+
+known.controls <- data.frame(
+	id = paste0("corner_", LETTERS[1:4]),
+	x = c(50, 50, 60, 60),
+	y = c(50, 60, 60, 50)
+)
+
+known.order <- match(available.controls, known.controls$id)
+control.order <- match(available.controls, clicked$id)
+stopifnot(!anyNA(known.order), !anyNA(control.order))
+
+known.xy.of.controls <- as.matrix(known.controls[known.order, c("x", "y")])
+clicked.xy.of.controls <- as.matrix(clicked[control.order, c("x", "y")])
+
+# Exclude all corner records, including D when it is not used for fitting.
+is.control <- clicked$id %in% known.controls$id
+clicked.xy.of.points <- as.matrix(clicked[!is.control, c("x", "y")])
+rownames(clicked.xy.of.points) <- clicked$id[!is.control]
 
 affine.xy <- apply_affine_transformation(
-	known.xy.of.controls = known.xy.of.controls[available, ],
-	clicked.xy.of.controls = clicked.xy.of.controls[available, ],
+	known.xy.of.controls = known.xy.of.controls,
+	clicked.xy.of.controls = clicked.xy.of.controls,
 	clicked.xy.of.points = clicked.xy.of.points
 )
 
@@ -245,23 +259,31 @@ affine.recovered <- data.frame(
 	row.names = NULL
 )
 
+write.csv(affine.recovered, output.csv, row.names = FALSE)
 head(affine.recovered)
 ```
 
-## Quick error check
+## Optional quick error check
 
-Compare against the same independently known points as in the homography check, not the controls used in the affine fit.
+Read the independent reference coordinates again; this check does not require the homography section or its error check.
 
 ```{r}
 #| label: check-affine
-#| eval: false
+#| eval: FALSE
 
-affine.known.order <- match(affine.recovered$id, known.points$id)
-stopifnot(!anyNA(affine.known.order))
+known.points <- read.csv(
+	"/full/path/to/maps/check-points-global.csv",
+	colClasses = c(id = "character")
+)
+check.order <- match(known.points$id, affine.recovered$id)
+stopifnot(
+	nrow(known.points) > 0, !anyDuplicated(known.points$id),
+	!anyNA(check.order), !any(known.points$id %in% known.controls$id)
+)
 
 affine.error.cm <- 100 * sqrt(
-	(affine.recovered$global.x - known.points$x[affine.known.order])^2 +
-	(affine.recovered$global.y - known.points$y[affine.known.order])^2
+	(affine.recovered$global.x[check.order] - known.points$x)^2 +
+	(affine.recovered$global.y[check.order] - known.points$y)^2
 )
 
 round(c(
@@ -271,51 +293,9 @@ round(c(
 ), 1)
 ```
 
-# Local and global plot coordinates
-
-The known controls define the output coordinates. Corners such as `(50, 50)`, `(50, 60)`, `(60, 60)` and `(60, 50)` return global plot coordinates directly. Corners entered as `(0, 0)`, `(0, 10)`, `(10, 10)` and `(10, 0)` return coordinates local to that 10 x 10 m quadrat.
-
-If a process must use local controls, convert its results afterwards with `compile_points_from_quadrats()`. The function and a fuller explanation are in the [quadrat source](../../03_spatial/R/new/quadrats.R) and [quadrat tutorial](../../03_spatial/tutorials/quadrats.qmd).
-
-```{r}
-#| label: local-to-global
-
-source(file.path(p, "03_spatial", "R", "new", "quadrats.R"))
-
-local.points <- data.frame(
-	id = c("tree_1", "tree_2"),
-	x = c(2.1, 8.4),
-	y = c(3.7, 6.2)
-)
-
-quadrat.locations <- data.frame(
-	quadrat_id = "q_50_50",
-	xmin = 50,
-	ymin = 50,
-	xmax = 60,
-	ymax = 60
-)
-
-global.points <- compile_points_from_quadrats(
-	inner.x = local.points$x,
-	inner.y = local.points$y,
-	point.id = local.points$id,
-	quadrat.id = rep("q_50_50", nrow(local.points)),
-	quadrat.locations = quadrat.locations
-)
-
-global.points
-```
-
-These are plot-coordinate transformations, not conversions between geographic coordinate reference systems.
-
-## Assemble the full-plot coordinates
-
-Repeat coordinate recovery for each map using its known global controls, then combine the point tables while retaining point and map identifiers. Keep exterior points as recovered; do not clip or fold them into a quadrat. The worked multi-map assembly will be added after reproducing the scanned-map workflow.
-
 # Optional: historical CTFS bug fix
 
-The CTFS/ImageJ conversion is not the recommended pipeline and will not be retained in fgeo2. The archived [`imageJ.r` implementation](../../evaluation/Condit/topography/imageJ.r) remains available with its [geometry dependencies](../../evaluation/Condit/utilities/geometry.r). The original workflow is documented in the 2011 CTFS [PDF tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) and [HTML tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html).
+The CTFS/ImageJ conversion is not the recommended pipeline and will not be retained in fgeo2. The archived [`imageJ.r` implementation](https://github.com/gabrielareto/fgeo2/blob/main/evaluation/Condit/topography/imageJ.r) remains available with its [geometry dependencies](https://github.com/gabrielareto/fgeo2/blob/main/evaluation/Condit/utilities/geometry.r). The original workflow is documented in the 2011 CTFS [PDF tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) and [HTML tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html).
 
 The archived `distance.to.side()` passes one-column data frames instead of numeric intersection coordinates. If the old workflow is still required, run the following session-only replacement after loading the archived CTFS scripts. It fixes that one bug only. It does not fix inconsistent corner defaults, exterior points folded into a quadrat, or other limitations of the legacy workflow. Supply all four corner labels explicitly when calling the old functions.
 
@@ -324,9 +304,8 @@ The archived `distance.to.side()` passes one-column data frames instead of numer
 #| eval: false
 #| purl: false
 
-condit.path <- file.path(p, "evaluation", "Condit")
-source(file.path(condit.path, "startCTFS", "startCTFS.r"))
-startCTFS(condit.path)
+source("/full/path/to/Condit/utilities/geometry.r")
+source("/full/path/to/Condit/topography/imageJ.r")
 
 distance.to.side.original <- distance.to.side
 
