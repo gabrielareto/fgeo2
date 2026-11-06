@@ -46,7 +46,7 @@ In this document I refer to Richard Condit's old script distribution as "CTFS", 
 
 The goal of Condit's algorithm is to reduce the error in tree-level locations using the four corners as control points, going from clicked coordinates to adjusted coordinates. In the adjusted coordinate system, the four corners are mapped to the supplied rectangular dimensions. The rest of the coordinates are transformed accordingly.
 
-Condit's [*Converting ImageJ Output to Local Plot Coordinates Using R*](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) (2011) explains the original workflow. Maps are scanned, corners and trees are marked in ImageJ, and labelled pixel coordinates are exported as text. `fullplot.imageJ()` reads these files, converts coordinates, combines map sections and prepares a table for database upload. Pages 1–4 describe file names, submaps, checking one folder before processing a whole plot, and checking the resulting coordinate ranges. An [HTML version](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html) is also available.
+Condit's [*Converting ImageJ Output to Local Plot Coordinates Using R*](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) (2011) explains the original workflow. Maps are scanned, corners and trees are marked in ImageJ, and labelled pixel coordinates are exported as text. `fullplot.imageJ()` reads these files, converts coordinates, combines map sections and prepares a table for database upload. Pages 1--4 describe file names, submaps, checking one folder before processing a whole plot, and checking the resulting coordinate ranges. An [HTML version](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html) is also available.
 
 `imageJ.to.lxly()` expects columns named `x`, `y` and `label`. Four records identify the corners, in physical order lower-left, upper-left, upper-right and lower-right. Labels are compared without case. `fullplot.imageJ()` defaults to `corners = c("p1", "p2", "p3", "p4")` in that order and passes them explicitly to the converter. A direct call to `imageJ.to.lxly()` instead defaults to `P2`, `P1`, `P4`, `P3`. These differing defaults make it particularly important to match corner labels to the actual maps. The remaining records identify trees. Image pixels can have a top-left origin and downward-positive y; the named corners define the intended local orientation. Incorrect corner identities can therefore reverse or reflect the coordinates.
 
@@ -65,19 +65,19 @@ The reported `lefterror` and `bottomerror` use coefficients of variation among t
 
 There is an ambiguity in the 2011 tutorial: it describes four 10 × 10 m submaps within a 20 × 20 m quadrat, but the worked calls use `gridsize = c(20,20)` with four suffixes. `SectionCorrection()` offsets by the supplied grid dimensions, so those literal arguments do not place four 10 × 10 m sections inside a 20 × 20 m quadrat. The dimensions and suffixes need to be checked against the actual maps.
 
-## Should we keep the ImageJ workflow?
+## Should we keep the workflow?
 
 \[*Note: we call it the "ImageJ workflow" because clicking has traditionally been done in ImageJ software, and that label has been inherited into the R functions. The algorithm itself operates just on numerical coordinates tables in R. ImageJ is not a strict requirement.*\]
 
-The workflow addresses a real error-correction step because digitizing hand-drawn paper maps does not produce perfectly registered coordinates. Paper maps, scanning and manual digitization remain practical at some sites. The problematic part is the custom algorithm and complicated geometry helpers used for the correction. Dependency on ImageJ or external software is not strict — and should remain like that. Any practical tool useful to get labelled sets of coordinates should suffice.
+The workflow addresses a needed error-correction step because digitizing hand-drawn paper maps does not produce perfectly registered coordinates. Paper maps, scanning and manual digitization remain practical at some sites. The problematic part is the custom algorithm and complicated geometry helpers used for the correction. Dependency on ImageJ or external software is not strict. Any practical tool useful to get labelled sets of coordinates should work fine.
 
 The original CTFS workflow returns local coordinates that identify a position within a quadrat. A second step is required to obtain global or plot-level coordinates. As discussed in the evaluation of quadrat-related code, this separation is a point of vulnerability. It is not a major weakness, though.
 
 This evaluation covers 29 functions. Coordinate recovery uses only a subset of them, but its chain of ImageJ and geometry helpers still adds substantial maintenance. A short replacement would make the code easier to understand and maintain.
 
-The problematic or obsolete nature of this code were recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
+The problematic or obsolete nature of this code was recognized almost 10 years ago. The earlier function-by-function evaluation, discussed during development of `ctfs` and `fgeo` in 2016-2017, suggested deprecating the ImageJ functions and all the listed geometry functions. That evaluation involved Sean McMahon, Stuart Davies, Mauro Lepore and myself (Gabriel Arellano). The results of that discussion were stored in a table edited directly by McMahon and Arellano; see [`evaluation/old-evaluation-table.xlsx`](https://github.com/gabrielareto/fgeo2/blob/c053ae2740c942244b222f05893a190faca2187a/evaluation/old-evaluation-table.xlsx).
 
-However, there are also reasons to preserve the workflow, with or without updates to specific functions. Although the workflow and tutorial are more than 15 years old, there are more recent documented applications using the original CTFS code, conventions and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39–41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022) demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps. La Planada ForestGEO site, in Colombia, plans to use paper maps during the full census and the click-based digitization process (Stuart J. Davies, personal communication, September 2026).
+However, there are also reasons to preserve the workflow, with or without updates to specific functions. Although the workflow and tutorial are more than 15 years old, there are more recent documented applications using the original CTFS code, conventions and instructions. The 2022 [*ForestGEO Database Handbook*, version 03.31.22](https://forestgeo.si.edu/sites/default/files/database_handbook-final.pdf), page 23 and Appendix E (pages 39--41), still describes this workflow, including the modified PointPicker plugin and the CTFS conversion code. Jiménez, Quintanar and Guevara's [*Uso de ImageJ y R para la digitalización de datos de ubicación de árboles en inventarios forestales*](https://ridda2.utp.ac.pa/handle/123456789/15628) (also 2022) demonstrates `fullplot.imageJ()` and reports R 4.2.0. The [Harvard Forest hf253 dataset methods](https://harvardforest1.fas.harvard.edu/exist/apps/datasets/showData.html?id=hf253) (used at least in 2019, possibly later) describe use of ImageJ 1.46 and CTFS code to obtain stem coordinates from scanned census maps. La Planada ForestGEO site, in Colombia, plans to use paper maps during the full census and the click-based digitization process (Stuart J. Davies, personal communication, September 2026).
 
 These sources are not enough to estimate how many sites use this workflow now, but they suggest that it may still be in use at different sites. At least, the old CTFS script-based distribution and the associated tutorials should remain available in easy-to-access repositories. Feasible replacements, more robust or easy to maintain, must be considered.
 
@@ -244,7 +244,7 @@ These three papers were then:
 -   scanned with not much care; and
 -   photographed with a cell phone, by hand, while sitting: not perfectly from the top but not using an absurd unrealistic angle either.
 
-Cases A–C are scans and cases D–F are photographs. Within each group, the first case is the untreated paper, the second is the crumpled paper, and the third is the paper that was broken and reassembled.
+Cases A--C are scans and cases D--F are photographs. Within each group, the first case is the untreated paper, the second is the crumpled paper, and the third is the paper that was broken and reassembled.
 
 ```{r}
 #| label: fig-coordinate-recovery-cases
@@ -274,10 +274,7 @@ for(i in seq_along(pdf.paths))
 {
 	case <- LETTERS[i]
 
-	map.image <- magick::image_read(
-		pdf.paths[i],
-		density = "300x300"
-	)[1]
+	map.image <- magick::image_read_pdf(pdf.paths[i], pages = 1, density = 300)
 
 	map.raster <- as.raster(map.image)
 
@@ -326,7 +323,7 @@ stopifnot(exists("imageJ.to.lxly"),
           exists("distance.to.side"))
 ```
 
-The archived `distance.to.side()` passes one-column data frames to a numerical distance calculation and therefore fails for ordinary points. The following repair changes only the extraction of the intersection coordinates. The original function remains available as `distance.to.side.original`.
+The archived `distance.to.side()` passes one-column data frames to a numerical distance calculation and therefore fails for ordinary points. The following repair changes only the extraction of the intersection coordinates.
 
 ```{r}
 #| label: repair-condit-distance
@@ -550,12 +547,12 @@ The entire workflow is or will be soon obsolete. Clearly, work in tablets is sup
 
 Condit's algorithm works well with the "inside" and "edge" points, but it has no place in a light and easy-to-maintain version of the code. Affine and homography transformations do the same, better, for a lower cost:
 
--   Condit’s method requires many custom geometry helpers; affine and homography need only short, standard linear-algebra calculations.
+-   Condit's method requires many custom geometry helpers; affine and homography need only short, standard linear-algebra calculations.
 -   Inconsistent corner defaults: `fullplot.imageJ()` and `imageJ.to.lxly()` assume different corner orders, potentially reflecting the map or creating other practical vulnerabilities.
 -   Known implementation bug: `distance.to.side()` fails without correcting how intersection coordinates are extracted.
 -   Incorrect exterior behavior: unsigned distances fold outside points inside, potentially producing duplicate valid-looking records in adjacent quadrats. Affine and homography preserve exterior positions, treating corners as controls, not constraints.
 -   Corners vs. controls: affine and homography can benefit from any number of control points, including internal quadrats of known location or reference trees with well-validated coordinates from previous censuses. Condit's algorithm can use only four corners, which are treated both as controls and constraints.
--   Condit's algorithm returns local coordinates: the local-to-global conversion introduces additional opportunities for errors. The proposed affine / homography implementation returns global coordinates directly, and skips entirely the problematic dichotomy between local and global coordinates. Why this discussed in detail in the evaluation of quadrat-related code).
+-   Condit's algorithm returns local coordinates: the local-to-global conversion introduces additional opportunities for errors. The proposed affine / homography implementation returns global coordinates directly, and skips entirely the problematic dichotomy between local and global coordinates. Why this is important is discussed in detail in the evaluation of quadrat-related code.
 -   Condit's implementation cannot process images from photographs well, performing substantially worse than the homography transformation.
 
 For back-compatibility and as a perk for those who want to still use Condit's algorithm, the tutorial should include a quick fix or warning regarding its known bug. But fgeo2 will not retain Condit's algorithm neither complicate things by trying to retain everything.
@@ -564,7 +561,7 @@ For back-compatibility and as a perk for those who want to still use Condit's al
 
 Homography is clearly superior in images with perspective (photographs) and only marginally worse than affine transformation for flatbed scans. The affine transformation does have theoretical properties that makes it better behaved in the \[four corners\] + \[clicking error\] case: it uses least squares fit, while homography fits exactly through the clicked (erroneous) corners as if they were total truth. In practice, this is not a serious issue for the homography transformation: added error to tree locations should be small (several cm) even for large clicking errors in corners (1/2 m), relative to the error in the affine transformation. Such inferior performance is of smaller magnitude than field error in mapping stems.\
 \
-Therefore, the main recommendation should be to use the homography transformation in general, with affine as a plan B when there is a missing corner, or there is unusually large error in clicked corner location. The tutorial can include another small test to confirm this, with the case of more than 4 points of control.
+Therefore, the main recommendation should be to use the homography transformation in general, with affine as a plan B when there is a missing corner, or there is unusually large error in clicked corner location.
 
 # Evaluation of geometry functions
 
@@ -672,7 +669,7 @@ b <- y - m * x
 b
 ```
 
-It seems the treatment of lines in CTFS code is flawed by design – perhaps contaminated by the way linear models are represented. Point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes, and are more general and better representations. General spatial intersections and distances can be delegated to `sf`.
+It seems the treatment of lines in CTFS code is flawed by design -- perhaps contaminated by the way linear models are represented. Point-direction or normal-form line representations avoid treating vertical lines as exceptional slopes, and are more general and better representations. General spatial intersections and distances can be delegated to `sf`.
 
 **Recommendation:** Remove `perpendicular.line()`, `parallel.line()` and `pts.to.interceptslope()`. In the current `R/new` code, every caller of these functions is also marked for removal below. The former modeling dependents of `parallel.line()` and `pts.to.interceptslope()` are no longer present in `R/new`.
 
@@ -1088,7 +1085,7 @@ y <- r * sin(theta)
 
 ## Decision
 
-None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we took in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. Four functions, however, still have dependents and can be left for later. Thus:
+None of the 25 functions reviewed should be maintained permanently as a standalone fgeo2 geometry utility. This conclusion is the same that the one we reached in 2016-2017 during the development of `ctfs` and `fgeo` from CTFS code. Four functions, however, still have dependents and can be left for later. Thus:
 
 -   Temporarily retain four functions:\
     `perpendicular.distance()`, `insideRectangle()`, `are.ptsinside()` and `ispt.inside()`. They will be reviewed again when reviewing the regression, mapping, random-quadrat and other code that use them.
