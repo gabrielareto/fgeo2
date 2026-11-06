@@ -12,303 +12,174 @@ format:
 editor: visual
 ---
 
-# Goal
+# Overview
 
-Recover global plot coordinates in metres from a scanned paper map: click labelled points and controls, then use homography (preferred) or affine transformation (Plan B). These transformations assume a planar map; they do not repair folds, tears or errors in the original field mapping.
+This tutorial covers the process of recovering global plot coordinates from a scanned paper map. The process has two steps:
 
-# Setup
+-   First, click labelled points and controls;
+-   then, use homography (preferred) or affine transformation (plan B).
 
-Replace the example full paths in each section with your own. No Git repository, particular working directory or shared setup objects are required. Run the code chunks interactively after editing those paths; they are disabled during rendering.
+The old CTFS workflow required using imageJ. The current version of the code includes a native R point clicker with minimal dependency (only requires base and `magick` R package).
 
-Map generation and coordinate transformations use base R. Only the point clicker requires `magick`. Each section loads the script it needs where it is used.
+As the old CTFS algorithm, the homography/affine transformations assume a planar map. They do not repair folds, tears or errors in the original field mapping. Previous simulations (see "evaluation" folder) have demonstrated that these algorithms have low error in practice: lower than old CTFS algorithm, and lower than mapping/clicking human errors.
 
-# Optional helper: create a practice paper map once
-
-Skip this section entirely if you already have a map. Nothing later depends on this code or its R objects.
-
-The example is a 10 × 10 m map with four 5 × 5 m subquadrats, 40 random interior points and six extra points: two on the outer border, two on internal divisions and two slightly outside. Blank fields and unlabelled points allow handwritten details and identifiers before scanning.
-
-Choose the full output path below; for the fgeo2 example, keep the PDF in `data_examples/coordinate_recovery_tutorial/`. Print it, add the handwritten information and scan it to a separate PDF. The following sections accept any scanned map PDF, whether simulated or real.
-
-**The generator is disabled by default: change `#| eval: FALSE` to `#| eval: TRUE` to enable it for one render, then back to `FALSE` after creating the PDF.** You can also run the chunk manually. Rerunning it replaces the printable PDF, not the separately saved scan.
-
-```{r}
-#| label: generate-practice-map
-#| eval: FALSE
-
-map.pdf = "/full/path/to/maps/practice-map.pdf"
-seed = 123
-number.interior = 40
-set.seed(seed)
-
-practice.points <- data.frame(
-	x = runif(number.interior, 0.3, 9.7),
-	y = runif(number.interior, 0.3, 9.7)
-)
-
-# Two outer-border points, two internal-border points and two exterior points.
-practice.points <- rbind(practice.points, data.frame(
-	x = c(0, 10, 5, runif(1, 1, 9), -0.3, 10.3),
-	y = c(runif(2, 1, 9), runif(1, 1, 9), 5, 3, 7)
-))
-
-dir.create(dirname(map.pdf), recursive = TRUE, showWarnings = FALSE)
-pdf(map.pdf, width = 8.27, height = 11.69)
-par(mar = c(1, 1, 1, 1))
-plot(
-	NA, xlim = c(-1.5, 11.5), ylim = c(-3, 16), asp = 1,
-	axes = FALSE, xlab = "", ylab = "", xaxs = "i", yaxs = "i"
-)
-
-text(-1, 15.3, "Practice field map: 10 x 10 m", adj = 0, font = 2)
-text(-1, 14.2, "Plot: __________________    Quadrat: __________________", adj = 0)
-text(-1, 13.2, "Mapped by: ______________    Checked by: ______________", adj = 0)
-text(-1, 12.2, "Date: __________________    Census: __________________", adj = 0)
-
-rect(0, 0, 10, 10, lwd = 1.5)
-segments(5, 0, 5, 10, lty = 2, col = "grey60")
-segments(0, 5, 10, 5, lty = 2, col = "grey60")
-axis(1, at = c(0, 5, 10), labels = c("0", "5", "10 m"), pos = 0)
-axis(2, at = c(0, 5, 10), labels = c("0", "5", "10 m"), pos = 0, las = 1)
-points(practice.points$x, practice.points$y, pch = 20, cex = 0.7)
-text(c(-0.8, -0.8, 10.7, 10.7), c(-1.1, 10.5, 10.5, -1.1), LETTERS[1:4])
-arrows(10.7, 10.7, 10.7, 11.5, length = 0.08)
-text(10.7, 11.8, "N")
-text(-1, -1.8, "Notes: __________________________________________________", adj = 0)
-text(-1, -2.6, "_________________________________________________________", adj = 0)
-dev.off()
-```
+Replace the example full paths in each section with your own. No Git repository, particular working directory or shared setup objects are required.
 
 # Obtain clicked coordinates
 
-Load the clicker here and run it interactively, not while rendering. Use your scanned map PDF as input. Name the four corners `corner_A`, `corner_B`, `corner_C` and `corner_D`, clockwise from the lower-left corner, and use the handwritten identifiers for the mapped points.
+There are different ways to obtain the clicked coordinates in a scanned paper map, like ImageJ or [Fiji](https://imagej.net/software/fiji/downloads). The historical CTFS workflow used a modified [PointPicker plugin](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip). Here we use a native R alternative.
 
-Click a point, type its label in the R console and press Enter. Press Esc or **Finish** when done. The clicker saves columns `label`, `x` and `y` after every point and refuses to overwrite an existing CSV.
+Load the clicker here and run it interactively, not while rendering. Use your scanned map as input. Declare where to store results as a CSV file. The input map can be in any file format that `magick::image_read()` can read.
+
+Click a point, type its label in the R console, and press Enter. I recommend keyboard shortcuts to go from one window to the other. Press Esc or Finish when done. The clicker saves columns `id`, `x` and `y` after every point.
+
+Unlike old CTFS algorithm, homography and affine transformations can leverage more than four control points, using least squares fit when needed. Thus, you can store as many control points as practical: four corners, and anything else you trust. Label them carefully in ways that you can use later to differentiate individual control points. In our example, I will label control points as the paper map shows: four corners as A, B, C and D, and five additional control points as C0, C1, C2, C3 and C4.
 
 ```{r}
 #| label: click-points
 #| eval: FALSE
 #| purl: false
 
-source("/full/path/to/georeference.R")
+# Full paths to the georeference code, the input map, and where to store output.
+# (Update as needed):
 
-map.pdf = "/full/path/to/maps/map-scanned.pdf"
-clicked.csv = "/full/path/to/maps/map-clicked.csv"
+path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2/"
 
+path.to.code = paste0(path.to.fgeo2, "06_topography_habitat/R/new/georeference.R")
+path.to.map = paste0(path.to.fgeo2, "data_examples/example-map.jpeg")
+path.to.csv = paste0(path.to.fgeo2, "data_examples/example-map-clicked-coor.csv")
+
+# Load and run georeferencing code:
+source(path.to.code)
+
+grDevices::quartz(width = 8, height = 8) # probably needed if running within .qmd
 clicked <- point_clicker(
-	image.path = map.pdf,
-	csv.path = clicked.csv
+	image.path = path.to.map,
+	csv.path = path.to.csv
 )
 ```
 
-## Optional: continue using ImageJ
+# Homography and affine transformations
 
-ImageJ or [Fiji](https://imagej.net/software/fiji/downloads) can collect the points instead; the historical workflow used a modified [PointPicker plugin](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip). Save the exported coordinates as a CSV with columns `label`, `x` and `y`, using the same corner labels. Either transformation below can read that CSV. The direction of the image y-axis does not matter if every control is identified correctly.
+Homography is the recommended method. It can correct perspective in an angled photo of a flat map. It requires four reliable control points, though. Affine transformation only needs three control points and it is the plan B for when a corner is missing or unusually unreliable. See the corresponding evaluation file for more details.
 
-# Recommended method: homography
+This section reads the clicked CSV directly. It does not require the clicker to have been run in the same R session. The within-image coordinates could have been obtained by imageJ or other methods too.
 
-Homography uses at least four controls and can correct photographic perspective. Here the four corners describe a 10 × 10 m quadrat whose lower-left corner is at global coordinates `(50, 50)` m. Enter the actual global coordinates for your own map.
+The code below implements these steps:
 
-This section reads the clicked CSV directly; it does not require the clicker to have been run in the same R session. The result and output CSV contain global coordinates directly, including points outside the mapped quadrat.
+1.  reads code and the CSV with within-image coordinates;
+2.  splits coordinates into control points vs. tree locations;
+3.  declare the known coordinates of the control points, relative to the whole plot, as in the paper map;
+4.  runs the transformations to infer the tree locations relative to the whole plot.
 
 ```{r}
 #| label: apply-homography
 #| eval: FALSE
 
-source("/full/path/to/georeference.R")
+# Full paths to the georeference code and clicked coordinates.
+# (Update as needed):
 
-clicked.csv = "/full/path/to/maps/map-clicked.csv"
-output.csv = "/full/path/to/maps/map-homography-global.csv"
+path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2/"
 
-clicked <- read.csv(clicked.csv, colClasses = c(label = "character"))
-names(clicked)[names(clicked) == "label"] <- "id"
+path.to.code = paste0(path.to.fgeo2, "06_topography_habitat/R/new/georeference.R")
+path.to.csv = paste0(path.to.fgeo2, "data_examples/example-map-clicked-coor.csv")
+
+# Load code and clicked coordinates:
+source(path.to.code)
+
+clicked <- read.csv(path.to.csv., colClasses = c(id = "character"))
 stopifnot(!anyNA(clicked$id), all(nzchar(clicked$id)), !anyDuplicated(clicked$id))
 
-known.controls <- data.frame(
-	id = paste0("corner_", LETTERS[1:4]),
-	x = c(50, 50, 60, 60),
-	y = c(50, 60, 60, 50)
+head(clicked, 15) # we should see all controls and some trees
+
+
+# Split the set of clicked coordinates into controls vs. trees
+control.ids <- c("A", "B", "C", "D", "C0", "C1", "C2", "C3", "C4") # in my example
+
+controls <- clicked[which(clicked$id %in% control.ids),]
+trees <- clicked[which(!clicked$id %in% control.ids),]
+
+# Declare known / true locations of the control points
+# (usually pre-defined by convention, from quadrat-level info, from the map itself...)
+
+known.controls <- rbind(
+  data.frame(id = "A", x = 20, y = 50),
+  data.frame(id = "B", x = 20, y = 60),
+  data.frame(id = "C", x = 30, y = 60),
+  data.frame(id = "D", x = 30, y = 50),
+  data.frame(id = "C0", x = 25, y = 55),
+  data.frame(id = "C1", x = 25 , y = 50),
+  data.frame(id = "C2", x = 20, y = 55),
+  data.frame(id = "C3", x = 25, y = 60),
+  data.frame(id = "C4", x = 30, y = 55)
 )
 
-# Match controls by identifier, not by file row order.
-control.order <- match(known.controls$id, clicked$id)
-stopifnot(!anyNA(control.order))
+# Just keep {x, y}, make sure order is right
+rownames(controls) <- controls$id
+rownames(known.controls) <- known.controls$id
+known.controls <- known.controls[rownames(controls),]
+rownames(trees) <- trees$id
+controls <- as.matrix(controls[, c("x", "y")])
+known.controls <- as.matrix(known.controls[, c("x", "y")])
+trees <- as.matrix(trees[, c("x", "y")])
 
-known.xy.of.controls <- as.matrix(known.controls[, c("x", "y")])
-clicked.xy.of.controls <- as.matrix(clicked[control.order, c("x", "y")])
 
-is.control <- clicked$id %in% known.controls$id
-clicked.xy.of.points <- as.matrix(clicked[!is.control, c("x", "y")])
-rownames(clicked.xy.of.points) <- clicked$id[!is.control]
-
+# Homography (recommended method)
 homography.xy <- apply_homography_transformation(
-	known.xy.of.controls = known.xy.of.controls,
-	clicked.xy.of.controls = clicked.xy.of.controls,
-	clicked.xy.of.points = clicked.xy.of.points
+	known.xy.of.controls = known.controls,
+	clicked.xy.of.controls = controls,
+	clicked.xy.of.points = trees
 )
 
-recovered <- data.frame(
-	id = rownames(homography.xy),
-	global.x = homography.xy[, "x"],
-	global.y = homography.xy[, "y"],
-	row.names = NULL
-)
+#all(rownames(homography.xy) == rownames(trees)) # should be TRUE
 
-write.csv(recovered, output.csv, row.names = FALSE)
-head(recovered)
-```
-
-If controls are declared in local coordinates instead, convert the results with `compile_points_from_quadrats()` from the [quadrat code](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/R/new/quadrats.R), as explained in the [quadrat tutorial](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/tutorials/quadrats.qmd).
-
-```{r}
-#| label: fig-recovered-points
-#| eval: FALSE
-#| fig-cap: "Recovered global coordinates. The square marks the control locations."
-#| fig-width: 5
-#| fig-height: 5
-
-plot(
-	recovered$global.x,
-	recovered$global.y,
-	asp = 1,
-	xlab = "Global plot x (m)",
-	ylab = "Global plot y (m)",
-	pch = 20
-)
-polygon(known.controls$x, known.controls$y, border = "red", lwd = 2)
-```
-
-## Optional quick error check
-
-If independently known reference points are available, supply a CSV with `id`, `x` and `y` in global metres. These can be a subset of the mapped points, but must not be fitted controls. Otherwise skip this check; it does not depend on the practice-map generator.
-
-```{r}
-#| label: check-homography
-#| eval: FALSE
-
-known.points <- read.csv(
-	"/full/path/to/maps/check-points-global.csv",
-	colClasses = c(id = "character")
-)
-check.order <- match(known.points$id, recovered$id)
-stopifnot(
-	nrow(known.points) > 0, !anyDuplicated(known.points$id),
-	!anyNA(check.order), !any(known.points$id %in% known.controls$id)
-)
-
-error.cm <- 100 * sqrt(
-	(recovered$global.x[check.order] - known.points$x)^2 +
-	(recovered$global.y[check.order] - known.points$y)^2
-)
-
-round(c(
-	mean.error.cm = mean(error.cm),
-	median.error.cm = median(error.cm),
-	maximum.error.cm = max(error.cm)
-), 1)
-```
-
-# Plan B: affine transformation
-
-An affine transformation needs at least three non-collinear controls. Use it for a flat or nearly flat image when a corner is missing or unusually unreliable, not for appreciable photographic perspective. If more reliable controls are available, retain them.
-
-This section is independent of the homography section: it loads the script and clicked CSV again, declares global controls and returns global coordinates directly. The example uses A, B and C; add `"corner_D"` to `available.controls` when it is usable.
-
-```{r}
-#| label: apply-affine
-#| eval: FALSE
-
-source("/full/path/to/georeference.R")
-
-clicked.csv = "/full/path/to/maps/map-clicked.csv"
-output.csv = "/full/path/to/maps/map-affine-global.csv"
-available.controls = c("corner_A", "corner_B", "corner_C")
-
-clicked <- read.csv(clicked.csv, colClasses = c(label = "character"))
-names(clicked)[names(clicked) == "label"] <- "id"
-stopifnot(!anyNA(clicked$id), all(nzchar(clicked$id)), !anyDuplicated(clicked$id))
-
-known.controls <- data.frame(
-	id = paste0("corner_", LETTERS[1:4]),
-	x = c(50, 50, 60, 60),
-	y = c(50, 60, 60, 50)
-)
-
-known.order <- match(available.controls, known.controls$id)
-control.order <- match(available.controls, clicked$id)
-stopifnot(!anyNA(known.order), !anyNA(control.order))
-
-known.xy.of.controls <- as.matrix(known.controls[known.order, c("x", "y")])
-clicked.xy.of.controls <- as.matrix(clicked[control.order, c("x", "y")])
-
-# Exclude all corner records, including D when it is not used for fitting.
-is.control <- clicked$id %in% known.controls$id
-clicked.xy.of.points <- as.matrix(clicked[!is.control, c("x", "y")])
-rownames(clicked.xy.of.points) <- clicked$id[!is.control]
-
+# Affine (plan B)
 affine.xy <- apply_affine_transformation(
-	known.xy.of.controls = known.xy.of.controls,
-	clicked.xy.of.controls = clicked.xy.of.controls,
-	clicked.xy.of.points = clicked.xy.of.points
+	known.xy.of.controls = known.controls,
+	clicked.xy.of.controls = controls,
+	clicked.xy.of.points = trees
 )
 
-affine.recovered <- data.frame(
-	id = rownames(affine.xy),
-	global.x = affine.xy[, "x"],
-	global.y = affine.xy[, "y"],
-	row.names = NULL
-)
+#all(rownames(homography.xy) == rownames(trees)) # should be TRUE
 
-write.csv(affine.recovered, output.csv, row.names = FALSE)
-head(affine.recovered)
+
+# Visualize and compare with paper map:
+plot(homography.xy, asp = 1, las = 1,
+     xlab = "Global plot x (m)",
+     ylab = "Global plot y (m)", col = 0)
+text(homography.xy, rownames(homography.xy))
+
+abline(v = c(20, 30), h = c(50, 60))
+abline(v = 25, h = 55, lty = 3)
+
+points(known.controls, pch = 20, col = "red")
+text(known.controls, rownames(known.controls), col = "red", xpd = TRUE)
+
+
+# Compare both methods. They should differ minimally in normal conditions.
+# In my case, mean absolute error is <1 cm.
+#mean(abs(homography.xy - affine.xy)) 
+
+# Store results wherever you want
+# ...
 ```
 
-## Optional quick error check
+If controls are declared in local coordinates instead of global coordinates, convert the results with `compile_points_from_quadrats()` from the [quadrat code](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/R/new/quadrats.R), as explained in the [quadrat tutorial](https://github.com/gabrielareto/fgeo2/blob/main/03_spatial/tutorials/quadrats.qmd).
 
-Read the independent reference coordinates again; this check does not require the homography section or its error check.
-
-```{r}
-#| label: check-affine
-#| eval: FALSE
-
-known.points <- read.csv(
-	"/full/path/to/maps/check-points-global.csv",
-	colClasses = c(id = "character")
-)
-check.order <- match(known.points$id, affine.recovered$id)
-stopifnot(
-	nrow(known.points) > 0, !anyDuplicated(known.points$id),
-	!anyNA(check.order), !any(known.points$id %in% known.controls$id)
-)
-
-affine.error.cm <- 100 * sqrt(
-	(affine.recovered$global.x[check.order] - known.points$x)^2 +
-	(affine.recovered$global.y[check.order] - known.points$y)^2
-)
-
-round(c(
-	mean.error.cm = mean(affine.error.cm),
-	median.error.cm = median(affine.error.cm),
-	maximum.error.cm = max(affine.error.cm)
-), 1)
-```
-
-# Optional: historical CTFS bug fix
+# Historical CTFS bug fix
 
 The CTFS/ImageJ conversion is not the recommended pipeline and will not be retained in fgeo2. The archived [`imageJ.r` implementation](https://github.com/gabrielareto/fgeo2/blob/main/evaluation/Condit/topography/imageJ.r) remains available with its [geometry dependencies](https://github.com/gabrielareto/fgeo2/blob/main/evaluation/Condit/utilities/geometry.r). The original workflow is documented in the 2011 CTFS [PDF tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/files/tutorials/imageJTutorial/imageJ.pdf) and [HTML tutorial](https://ctfs.si.edu/ctfsdev/CTFSRPackageNew/index.php/web/tutorials/imageJTutorial/index.html).
 
-The archived `distance.to.side()` passes one-column data frames instead of numeric intersection coordinates. If the old workflow is still required, run the following session-only replacement after loading the archived CTFS scripts. It fixes that one bug only. It does not fix inconsistent corner defaults, exterior points folded into a quadrat, or other limitations of the legacy workflow. Supply all four corner labels explicitly when calling the old functions.
+The archived `distance.to.side()` passes one-column data frames instead of numeric intersection coordinates. The function below is a replacement that fixes that one bug only. It does not fix inconsistent corner defaults, exterior points folded into a quadrat, or other limitations of the legacy workflow.
 
 ```{r}
 #| label: legacy-ctfs-fix
 #| eval: false
 #| purl: false
 
-source("/full/path/to/Condit/utilities/geometry.r")
-source("/full/path/to/Condit/topography/imageJ.r")
+# distance.to.side.original <- distance.to.side # to keep both versions
 
-distance.to.side.original <- distance.to.side
-
+# Fix bug
 distance.to.side <- function(pt, target, side1, side2)
 {
 	perpendicular <- perpendicular.distance(
