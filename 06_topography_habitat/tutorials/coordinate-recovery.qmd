@@ -29,11 +29,11 @@ Replace the example full paths in each section with your own. No Git repository,
 
 There are different ways to obtain the clicked coordinates in a scanned paper map, like ImageJ or [Fiji](https://imagej.net/software/fiji/downloads). The historical CTFS workflow used a modified [PointPicker plugin](https://ctfs.si.edu/Public/DatabaseSetup/Resources/imageJ/pointpicker-modified3.zip). Here we use a native R alternative.
 
-Load the clicker here and run it interactively, not while rendering. Use your scanned map as input. Declare where to store results as a CSV file. The input map can be in any file format that `magick::image_read()` can read.
+Run the clicker code in the R console, not while rendering. The input map can be in any format that `magick::image_read()` can read. On macOS, uncomment `quartz()` if you need a separate graphics window.
 
 Click a point, type its label in the R console, and press Enter. I recommend keyboard shortcuts to go from one window to the other. Press Esc or Finish when done. The clicker saves columns `id`, `x` and `y` after every point.
 
-Note: the point clicker refuses to overwrite existing CSVs. If the code has run before and created one, you have to either delete it or use a different name for it.
+To follow the transformation example with the supplied `example-map-clicked-coor.csv`, skip this chunk. To click the map yourself, save to a new CSV, then use that file in the next section. The clicker refuses to overwrite existing CSVs.
 
 Unlike old CTFS algorithm, homography and affine transformations can leverage more than four control points, using least squares fit when needed. Thus, you can store as many control points as practical: four corners, and anything else you trust. Label them carefully in ways that you can use later to differentiate individual control points. In our example, I will label control points as the paper map shows: four corners as A, B, C and D, and five additional control points as C0, C1, C2, C3 and C4.
 
@@ -45,16 +45,16 @@ Unlike old CTFS algorithm, homography and affine transformations can leverage mo
 # Full paths to the georeference code, the input map, and where to store output.
 # (Update as needed):
 
-path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2/"
+path.to.fgeo2 = "/path/to/fgeo2/"
 
 path.to.code = paste0(path.to.fgeo2, "06_topography_habitat/R/new/georeference.R")
 path.to.map = paste0(path.to.fgeo2, "data_examples/example-map.jpeg")
-path.to.csv = paste0(path.to.fgeo2, "data_examples/example-map-clicked-coor.csv")
+path.to.csv = paste0(path.to.fgeo2, "data_examples/my-clicked-coor.csv")
 
 # Load and run georeferencing code:
 source(path.to.code)
 
-grDevices::quartz(width = 8, height = 8) # probably needed if running within .qmd
+# grDevices::quartz(width = 8, height = 8) # Optional on macOS
 clicked <- point_clicker(
 	image.path = path.to.map,
 	csv.path = path.to.csv
@@ -81,7 +81,7 @@ The code below implements these steps:
 # Full paths to the georeference code and clicked coordinates.
 # (Update as needed):
 
-path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2/"
+path.to.fgeo2 = "/path/to/fgeo2/"
 
 path.to.code = paste0(path.to.fgeo2, "06_topography_habitat/R/new/georeference.R")
 path.to.csv = paste0(path.to.fgeo2, "data_examples/example-map-clicked-coor.csv")
