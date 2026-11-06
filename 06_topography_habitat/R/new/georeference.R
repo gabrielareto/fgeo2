@@ -41,7 +41,7 @@ point_clicker <- function(image.path,
   box()
   
   clicked.points <- data.frame(
-    label = character(),
+    id = character(),
     x = numeric(),
     y = numeric()
   )
@@ -74,7 +74,7 @@ point_clicker <- function(image.path,
     clicked.points <- rbind(
       clicked.points,
       data.frame(
-        label = point.label,
+        id = point.label,
         x = clicked.point$x,
         y = clicked.point$y
       )
