@@ -159,7 +159,7 @@ text(known.controls, rownames(known.controls), col = "red", xpd = TRUE)
 
 
 # Compare both methods. They should differ minimally in normal conditions.
-# In my case, mean absolute error is <1 cm.
+# In my case, mean absolute difference between methods is <1 cm.
 #mean(abs(homography.xy - affine.xy)) 
 
 # Store results wherever you want
