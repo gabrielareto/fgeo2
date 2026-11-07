@@ -1,0 +1,131 @@
+---
+title: "Evaluation of topography-related functions"
+author: "Gabriel Arellano"
+date: today
+format:
+  pdf:
+    code-overflow: wrap
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
+editor: visual
+---
+
+# Goal
+
+Start with elevations on a survey grid and obtain terrain layers that can be used in plot analyses. Keep the published ForestGEO quadrat metrics available for comparisons. Evaluate also the older step from pairwise survey differences to elevations, since the code is in the same module and still describes a real field workflow.
+
+Here, CTFS is Richard Condit's original distribution of scripts, `ctfs` is the R package, and `fgeo` is the later family of packages. I checked the [CTFS archive in fgeo2](https://github.com/gabrielareto/fgeo2/tree/c16e235/evaluation/Condit/topography), [`ctfs` at `cc32c7c`](https://github.com/forestgeo/ctfs/tree/cc32c7c2a3959ef60b13144f956e99d3a0515322), [`fgeo.analyze` at `d69bfe7`](https://github.com/forestgeo/fgeo.analyze/tree/d69bfe711263305fcbaf322d402eba2f1edfb084), and [fgeo2 at `c16e235`](https://github.com/gabrielareto/fgeo2/tree/c16e235/06_topography_habitat/R). ImageJ and coordinate recovery were evaluated [separately](5-imagej-and-geometry.qmd).
+
+# Uses in practice
+
+| Use | Evidence |
+|---|---|
+| **Adjust a survey and draw contours.** | The CTFS Manaus tutorial uses a real 49 ha survey. It calls `rearrangeSurveyData()` and `solve.topo()`, sorts the resulting elevations by coordinates, and plots contours. Condit (1998) gives the least-squares calculation and an Ituri example. Interpolation is a separate step. [CTFS tutorial, sections 1–4](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/) · [Condit 1998, ch. 2.1](https://forestgeo.si.edu/sites/default/files/condit_1998_censusplotsmethodsbook.pdf) |
+| **Describe habitats with the legacy metrics.** | Sinharaja used elevation, slope, and convexity to define eight habitats. The paper gives both convexity rules. At Ailaoshan, Song et al. report using the CTFS R package for 20 m terrain variables and use terrain for habitat classes and as continuous covariates in a seedling recruitment study. The paper gives the methods but no individual function names. [Gunatilleke et al. 2006, Methods and Fig. 2](https://ctfs.si.edu/Public/pdfs/Gunatilleke_etal_2006_JTropEcol.pdf) · [Song et al. 2018, sections 2.2.3 and 2.3](https://doi.org/10.1016/j.foreco.2018.07.038) |
+| **Combine terrain and soil at different scales.** | At Tyson, four terrain variables and 13 soil variables were used to describe a continuous environmental gradient. The analysis used 20 m quadrats for adults and saplings, and 10 m subquadrats for seeds and seedlings. [LaManna et al. 2016, Supplemental Methods, p. 1](https://repository.si.edu/bitstreams/7354160e-6174-480d-a3ef-b212341e223f/download) |
+| **Summarize a DEM around individual trees.** | A Luquillo study used a 1 m DEM to summarize elevation, slope, curvature, and wetness in 20 m radius buffers around trees. The resulting variables are available in the study data. This is a direct use of terrain layers with a different spatial unit. [Ankori-Karlinsky et al. 2025, Methods, “Tree architecture”](https://doi.org/10.1111/nph.70294) · [Data and README](https://doi.org/10.5061/dryad.zw3r228fq) |
+
+The `fgeo.analyze` habitat tutorial builds classes with `fgeo_habitat()` and then uses the map in `tt_test()`. The papers and tutorials above show why the calculations matter. The tutorial calls and Song et al.'s package attribution are direct evidence of code use. The other papers document the methods or the resulting variables. [`fgeo.analyze` habitat tutorial](https://forestgeo.github.io/fgeo.analyze/articles/siteonly/tt_test.html)
+
+# Evaluation of CTFS, ctfs, and fgeo
+
+## Elevation input and quadrat topography
+
+- **`readelevdata()` and `elev.to.list()`.** CTFS and `ctfs` fill a matrix in incoming row order. The input must be sorted by `x`, then `y`, on a complete regular grid starting at zero. `readelevdata()` can also read a tab-delimited file. `elev.to.list()` returns the input table alongside the matrix. `allquadratslopes()` uses the table and builds its own matrix. Replace the implicit matrix fill with coordinate-based grid construction. [CTFS source](https://github.com/gabrielareto/fgeo2/blob/c16e235/evaluation/Condit/topography/slope.r) · [`ctfs` source](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/R/slope.R)
+- **`allquadratslopes()`.** For each square quadrat, mean elevation is the mean of the four corners. Slope is the mean inclination of the four planes obtained by dropping one corner at a time. Interior convexity is the focal corner mean minus the mean of the eight adjacent quadrat means, diagonals included. On the perimeter, `edgecorrect = TRUE` uses **measured center minus corner mean**. With `FALSE`, it uses the available neighbors. These are different definitions at the perimeter. Preserve both for reproducibility and name the chosen rule. [CTFS source](https://github.com/gabrielareto/fgeo2/blob/c16e235/evaluation/Condit/topography/slope.r#L100) · [`fgeo2` source](https://github.com/gabrielareto/fgeo2/blob/c16e235/06_topography_habitat/R/new/topography-slope.r#L49)
+- **`quadslope()` and `calcslope()`.** The latter gives the inclination in degrees of a plane through three corners of a right isosceles triangle. The former returns the mean and SD across the four facet inclinations. The SD describes variation among facets within the quadrat. The main routine only uses the mean. Preserve the mean calculation in the legacy comparison. [`ctfs` source](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/R/slope.R#L361)
+- **Changes in `fgeo`.** `fgeo.analyze::fgeo_topography()` accepts a data frame or ForestGEO list and adds `gx` and `gy` to the results. It contains its own versions of the slope and neighbor calculations, with quadrat index conversions from `fgeo.tool`. There are published Luquillo and BCI test fixtures. A Tian Tong user report shows the default failure when the survey provides corners without centers. `edgecorrect = FALSE` worked for that case. [Source](https://github.com/forestgeo/fgeo.analyze/blob/d69bfe711263305fcbaf322d402eba2f1edfb084/R/fgeo_topography.R) · [Tests](https://github.com/forestgeo/fgeo.analyze/blob/d69bfe711263305fcbaf322d402eba2f1edfb084/tests/testthat/test-fgeo_topography.R) · [Tian Tong report](https://github.com/forestgeo/fgeo.tool/issues/59)
+- **Changes in fgeo2.** The current version uses `make_quadrats_fast()` and `FNN` for neighbors. It checks for one center record per perimeter quadrat when requested. It still fills the corner matrix by input row order and returns metrics without IDs. Also, the grid constructor can return clipped quadrats, while the terrain calculation filters coordinates by exact multiples of the nominal side and uses that side in the slope formula. For the legacy method, require full aligned squares and join by explicit quadrat IDs. [Terrain source](https://github.com/gabrielareto/fgeo2/blob/c16e235/06_topography_habitat/R/new/topography-slope.r#L49) · [Grid constructor](https://github.com/gabrielareto/fgeo2/blob/c16e235/03_spatial/R/new/quadrats.R#L252)
+
+## Facet gradient and flow
+
+`calc.gradient()` and `calc.directionslope()` return directions and slopes for eight triangular facets in a 3 × 3 window. The matrix convention in the gradient code treats rows as `x` and columns as `y`, opposite to the elevation readers. Also, the side-elevation vector reads `[2, 3]` twice and omits `[3, 2]`. Changing the omitted elevation leaves the output identical in the check below. The two functions stop at facet geometry. Seibert and McGlynn's method also routes flow and accumulates upslope area. Use a maintained implementation for that workflow. [fgeo2 facet code](https://github.com/gabrielareto/fgeo2/blob/c16e235/06_topography_habitat/R/new/topography-slope.r#L232) · [Seibert and McGlynn 2007, algorithm and Fig. 1](https://doi.org/10.1029/2006WR005128)
+
+## Elevations from survey differences
+
+- **`solve.topo()`, called `solve_topo()` in `ctfs`.** Estimate stake elevations from signed height differences. Fix one elevation and solve an equal-weight least-squares problem over a connected network. Replicate sightings enter as separate measurements. The code forms a dense system and computes its inverse. It requires a valid anchor and a connected set of stakes. [CTFS solver](https://github.com/gabrielareto/fgeo2/blob/c16e235/evaluation/Condit/topography/solvetopo.r) · [`ctfs` solver](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/R/solvetopo.R)
+- **Two errors to fix before recommending it.** A nonzero `baseelev` is only assigned to the anchor row. The other estimates are still relative to zero. The solver also rebuilds the input as a three-column table and then uses the original column positions. Swapping the first two input columns can reverse the sign of the estimated differences. [fgeo2 solver](https://github.com/gabrielareto/fgeo2/blob/c16e235/06_topography_habitat/R/new/topography-solvetopo.r#L25)
+- **`getTopoLinks()` and `rearrangeSurveyData()`.** The first assembles links for the current solver. The second assigns stake IDs to coordinate pairs and uses `match.dataframe()` from utilities. Retain the field workflow. A later repair should solve the anchored system directly, check connectivity, and expose residuals for survey QA. Keep this step upstream of terrain derivation. Users with elevations can start from their elevation grid. [Survey source](https://github.com/gabrielareto/fgeo2/blob/c16e235/06_topography_habitat/R/new/topography-solvetopo.r#L82)
+
+## Boundary with environmental extraction
+
+I found elevation-table preparation and plotting adapters in the reviewed code. `fgeo.tool::fgeo_elevation()` standardizes an elevation table. `extract_from_habitat.R` infers grid size and plot dimensions. `maptopo()` draws contours, and `coldata.to.imagemat()` arranges values for display. These are distinct from sampling arbitrary raster or vector layers at points or summarizing them over polygons. Leave generalized extraction to its own evaluation. Plotting can use the terrain layers in `07_mapping_plotting`. [Elevation helper](https://github.com/forestgeo/fgeo.tool/blob/main/R/fgeo_elevation.R) · [Habitat grid helpers](https://github.com/forestgeo/fgeo.tool/blob/main/R/extract_from_habitat.R) · [Mapping scripts](https://github.com/gabrielareto/fgeo2/tree/c16e235/07_mapping_plotting/R/new)
+
+# Small checks
+
+I ran these checks with R 4.5.0 and FNN 1.1.4.1, loading the archived `fgeo.x` elevation data directly. The code chunks are disabled for rendering. Run from the repository root or the `evaluation` directory against the versions listed above.
+
+## Corner elevations, row order, and perimeter
+
+A plane on a 5 m grid gives four equal slopes of about 74.50°. Swapping just two input rows changes the first quadrat mean from 112.5 to 125 and its slope from 74.50° to 81.16°. Default edge correction stops on this corner-only grid.
+
+```{r}
+#| eval: false
+path <- if (dir.exists("06_topography_habitat")) "." else ".."
+current <- new.env()
+sys.source(file.path(path, "06_topography_habitat/R/new/topography-slope.r"), current)
+sys.source(file.path(path, "06_topography_habitat/R/new/topography-solvetopo.r"), current)
+sys.source(file.path(path, "03_spatial/R/new/quadrats.R"), current)
+
+grid <- expand.grid(y = seq(0, 10, 5), x = seq(0, 10, 5))
+grid$elev <- 100 + 2 * grid$x + 3 * grid$y
+shuffled <- grid[c(9, 2:8, 1), ]
+
+a <- current$allquadratslopes(list(col = grid), 5, c(10, 10), edgecorrect = FALSE)
+b <- current$allquadratslopes(list(col = shuffled), 5, c(10, 10), edgecorrect = FALSE)
+stopifnot(isTRUE(all.equal(a$slope, rep(atan(sqrt(13)) * 180 / pi, 4))))
+cbind(a[1, ], b[1, ])
+
+try(current$allquadratslopes(list(col = grid), 5, c(10, 10)))
+
+facet <- matrix(0, 3, 3)
+changed <- facet
+changed[3, 2] <- 10
+identical(current$calc.gradient(facet), current$calc.gradient(changed))
+```
+
+## Survey datum and column order
+
+For a chain with two height differences of 2 and 3 m, the results should be `0, 2, 5` at datum zero and `100, 102, 105` at datum 100. The current solver returns `100, 2, 5`. Swapping the column order at datum zero gives `0, -2, -5`.
+
+```{r}
+#| eval: false
+survey <- data.frame(pt1 = c("1", "2"), pt2 = c("2", "3"), htdiff = c(2, 3))
+rbind(
+  zero = current$solve.topo(survey)$elev,
+  datum = current$solve.topo(survey, baseelev = 100)$elev,
+  reordered = current$solve.topo(survey[c("pt2", "pt1", "htdiff")])$elev
+)
+```
+
+## Agreement on one real grid
+
+With ordered Luquillo elevations and the legacy perimeter rule, the archived CTFS and current fgeo2 code give identical values for mean elevation, slope, and convexity across all 400 quadrats. This checks one standard case. The input has 5 m survey spacing and the output uses 20 m quadrats. [`fgeo.x` elevation data](https://github.com/forestgeo/fgeo.x/blob/64e9a4be80c84518223a87a45901e4a056b71bc8/data/elevation.rda)
+
+```{r}
+#| eval: false
+legacy <- new.env()
+sys.source(file.path(path, "evaluation/Condit/topography/slope.r"), legacy)
+sys.source(file.path(path, "evaluation/Condit/spatial/quadfunc.r"), legacy)
+elevation <- fgeo.x::elevation
+elevation$col <- as.data.frame(elevation$col)
+plot.dim <- c(elevation$xdim, elevation$ydim)
+
+a <- legacy$allquadratslopes(elevation, 20, plot.dim, edgecorrect = TRUE)
+b <- current$allquadratslopes(elevation, 20, plot.dim, edgecorrect = TRUE)
+stopifnot(nrow(b) == 400L, identical(a, b))
+```
+
+# Design principles for new code
+
+1. **Ask for elevations and their geometry.** Start with `{x, y, elevation}` on a regular grid, or an existing DEM. Match coordinates explicitly. Check duplicates, gaps, units, and grid spacing. Specify how survey nodes become raster centers and keep plot bounds explicit. Use a declared planar coordinate system for plot-local work and a known CRS where georeferenced. Keep interpolation separate. A complete survey grid can be indexed directly. Compare interpolation methods only where an estimated surface is needed. [fgeo2 design principles](../README.md#design-principles) · [`terra::rast()`](https://rspatial.github.io/terra/reference/rast.html) · [`gstat::krige()`](https://r-spatial.github.io/gstat/reference/krige.html)
+2. **Use standard terrain objects.** Return a `terra::SpatRaster` with named layers per aligned grid. Use GeoTIFF for saved rasters. Document the units, method, and neighborhood behind each layer. A user can plot the raster or export a table using standard tools. Keep the corner-based outputs in a table keyed by `quadrat_id`. [`terra::writeRaster()`](https://rspatial.github.io/terra/reference/writeRaster.html) · [OGC GeoTIFF](https://www.ogc.org/standards/geotiff/)
+3. **Keep the metric and its scale visible.** Evaluate elevation, slope, aspect and its north/east components, local topographic position, ruggedness, and curvature. Record the reference direction for aspect and leave it undefined on flats. Horn slope uses a raster neighborhood. The legacy slope averages corner facets. Raster TPI compares a focal cell with nearby cells, while legacy convexity uses quadrat means and has a separate perimeter rule. Give these quantities different names. Use direct package calls where they express the operation. [`terra::terrain()`](https://rspatial.github.io/terra/reference/terrain.html) · [WhiteboxTools curvature definitions](https://jblindsay.github.io/wbt_book/available_tools/geomorphometric_analysis.html#plancurvature)
+4. **Treat wetness as a drainage workflow.** TWI needs specific contributing area and slope. Decide and document flow routing, treatment of depressions and flats, and the extent contributing flow. Route on that extent before clipping to the plot. Evaluate WhiteboxTools as an optional route for flow accumulation and TWI. Method choices can change agreement with field measurements. [WhiteboxTools flow accumulation](https://whiteboxr.gishub.org/reference/wbt_md_inf_flow_accumulation.html) · [Wetness index](https://jblindsay.github.io/wbt_book/available_tools/geomorphometric_analysis.html#wetnessindex) · [TauDEM on edge contamination](https://hydrology.usu.edu/taudem/taudem5/help53/DInfinityContributingArea.html) · [Sørensen et al. 2006](https://doi.org/10.5194/hess-10-101-2006)
+
+Build the elevation grid from coordinates first. Verify the legacy metrics on the reference grid and derive the first set of named raster layers. Use a flat surface, a plane, and a curved surface to check units, orientation, and differences between methods before expanding the list. The terrain layers are the handoff to extraction and mapping. Habitat assignment can use their extracted values along with other environmental data. [Topography issue #13](https://github.com/gabrielareto/fgeo2/issues/13) · [Habitat issue #12](https://github.com/gabrielareto/fgeo2/issues/12)
