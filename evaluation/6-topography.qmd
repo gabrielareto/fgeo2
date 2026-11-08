@@ -17,11 +17,16 @@ editor: visual
 
 # Goal
 
-The workflow has two parts. Estimate point elevations from observed differences if needed. Then use known elevations to calculate terrain variables. The CTFS quadrat metrics remain useful for comparing results with published work.
+There are two topography scripts in the old CTFS distribution.
 
-Here, CTFS is Richard Condit's original distribution of scripts, `ctfs` is the R package, and `fgeo` is the later family of packages. Sources reviewed include the [CTFS archive in fgeo2](https://github.com/gabrielareto/fgeo2/tree/c16e235/evaluation/Condit/topography), [`ctfs` at `cc32c7c`](https://github.com/forestgeo/ctfs/tree/cc32c7c2a3959ef60b13144f956e99d3a0515322), [`fgeo.analyze` at `d69bfe7`](https://github.com/forestgeo/fgeo.analyze/tree/d69bfe711263305fcbaf322d402eba2f1edfb084), and [fgeo2 at `c16e235`](https://github.com/gabrielareto/fgeo2/tree/c16e235/06_topography_habitat/R). ImageJ and coordinate recovery have a [separate evaluation](5-imagej-and-geometry.qmd).
+-   `solvetopo.r` estimates elevations from differences measured between pairs of points.
+-   `slope.r` starts from known elevations and calculates mean elevation, slope and convexity by quadrat. There is also some code to calculate slope and direction on individual facets.
 
-I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run them from the repository root or the `evaluation` directory.
+I want to decide what needs a function in fgeo2 and what can go in a tutorial using standard R tools. The old quadrat calculations are useful for comparing results with earlier studies.
+
+I use CTFS for Rick Condit's original set of scripts, `ctfs` for the R package that distributes them, and `fgeo` for the later set of R packages. I focus on the CTFS scripts and use `ctfs` and `fgeo` to check for changes in functionality. [CTFS scripts](https://github.com/gabrielareto/fgeo2/tree/c16e235/evaluation/Condit/topography) · [`ctfs` at `cc32c7c`](https://github.com/forestgeo/ctfs/tree/cc32c7c2a3959ef60b13144f956e99d3a0515322) · [`fgeo.analyze` at `d69bfe7`](https://github.com/forestgeo/fgeo.analyze/tree/d69bfe711263305fcbaf322d402eba2f1edfb084) · [fgeo2 at `c16e235`](https://github.com/gabrielareto/fgeo2/tree/c16e235/06_topography_habitat/R)
+
+The ImageJ and coordinate recovery code has a separate evaluation. [ImageJ and geometry](5-imagej-and-geometry.qmd)
 
 # Point elevations from observed differences
 
@@ -39,6 +44,8 @@ I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for
 - **`getTopoLinks()`** assembles the incoming or outgoing observations for one point. It provides the counts and signed differences used to fill the solver's system. [CTFS helper](https://github.com/gabrielareto/fgeo2/blob/c16e235/evaluation/Condit/topography/solvetopo.r#L115)
 
 ## Small check
+
+I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run them from the repository root or the `evaluation` directory.
 
 For a chain with two elevation differences of 2 and 3 m, the results should be `0, 2, 5` at datum zero and `100, 102, 105` at datum 100. The current solver returns `100, 2, 5` at datum 100. Swapping the input columns at datum zero gives `0, -2, -5`.
 
