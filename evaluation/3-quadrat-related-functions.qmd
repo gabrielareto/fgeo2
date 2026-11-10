@@ -46,14 +46,9 @@ In this document I will often refer to the old script-based distribution of code
 
 # Load code
 
-Older CTFS code is within local scripts. We declare paths to the project (watched by git), load two specific versions of the code, and source auxiliary functions.
+We load the scripts from two fixed fgeo2 commits and source auxiliary functions.
 
 ```{r}
-
-# This is my local path to the project (being watched by git)
-# You may have to adapt this.
-path <- normalizePath(system2("git", c("rev-parse", "--show-toplevel"), stdout = TRUE)[1])
-knitr::opts_knit$set(root.dir = path) # global wd, instead of within-chunk wd as setwd()
 
 # Load packages:
 library(igraph, quietly = TRUE)
@@ -63,51 +58,32 @@ library(ctfs, quietly = TRUE)
 library(fgeo, quietly = TRUE)
 
 # Source useful functionality:
-source(paste0(path, "/evaluation/0-code-to-source.r"))
+source("https://raw.githubusercontent.com/gabrielareto/fgeo2/7d8d17208e05f1644d185e9085194ddaa6352456/evaluation/0-code-to-source.r")
 
 # Exact points before and after the work described in this document:
 pre_work_commit  <- "8b1c13366dba84a757fb08ebd9cf5d813c0d1668"
 post_work_commit <- "9f3ad4bfc3391ceaf60d2671e2f2e6b3e7e3dfd0"
 
-modules <- c("01_utilities", "02_biomass", "03_spatial", "04_abundance_diversity",
-             "05_demography_growth", "06_topography_habitat", "07_mapping_plotting")
-
 # Evaluate one commit without mixing its functions with another commit.
-evaluate_snapshot <- function(path, commit, target_script, modules)
+evaluate_snapshot <- function(commit, target_script)
 {
-  historical_path <- make_dir_to_point_in_history(path, commit)
-  on.exit({
-    if(dir.exists(historical_path))
-    {
-      cleanup <- try(
-        remove_dir_to_point_in_history(path, historical_path),
-        silent = TRUE
-      )
-      if(inherits(cleanup, "try-error"))
-        warning("Could not remove temporary worktree: ", historical_path)
-    }
-  }, add = TRUE)
+  code_env <- new.env(parent = .GlobalEnv)
+  snapshot <- load_github_snapshot(commit = commit, envir = code_env)
 
-  scripts <- unique(unlist(lapply(modules, function(m) {
-    list.files(file.path(historical_path, m, "R/new"),
-               full.names = TRUE, pattern = "\\.R$", ignore.case = TRUE)
-  })))
-
-  target_file <- scripts[
-    tolower(basename(scripts)) == tolower(target_script)
+  target_file <- snapshot$scripts[
+    tolower(basename(snapshot$scripts)) == tolower(target_script)
   ]
   if(length(target_file) != 1)
     stop("Could not identify one target script named '", target_script, "'")
 
-  code_env <- new.env(parent = .GlobalEnv)
-  for(f in scripts)
-    sys.source(f, envir = code_env)
+  target_url <- paste0("https://raw.githubusercontent.com/gabrielareto/fgeo2/",
+                       snapshot$commit, "/", target_file)
 
   edges <- get_all_dependencies(envir = code_env)
   edges <- edges[, c("from_function", "to_function")]
   colnames(edges) <- c("from", "to")
 
-  quadrat_functions <- functions_in_script(target_file)
+  quadrat_functions <- functions_in_script(target_url)
   direct_downstream <- unique(edges$to[
     edges$from %in% quadrat_functions &
       !(edges$to %in% quadrat_functions)
@@ -166,15 +142,13 @@ make_dependency_graph <- function(snapshot)
 }
 
 before <- evaluate_snapshot(
-  path = path,
   commit = pre_work_commit,
-  target_script = "spatial-quadfunc.r",
-  modules = modules
+  target_script = "spatial-quadfunc.r"
 )
 
 ```
 
-The original evaluation date (2026-05-29) is represented here by the exact commit `8b1c133`. The exact hash makes the result independent of later commits on the same date. Each snapshot is sourced into its own environment, and its temporary Git worktree is removed before `evaluate_snapshot()` returns.
+The original evaluation date (2026-05-29) is represented here by the exact commit `8b1c133`. The exact hash makes the result independent of later commits on the same date. Each snapshot is sourced directly from GitHub into its own environment.
 
 # Map dependencies
 
@@ -624,10 +598,8 @@ The sections above record the evaluation that guided the work. This section eval
 ```{r}
 
 after <- evaluate_snapshot(
-  path = path,
   commit = post_work_commit,
-  target_script = "quadrats.R",
-  modules = modules
+  target_script = "quadrats.R"
 )
 
 count_internal_edges <- function(snapshot)

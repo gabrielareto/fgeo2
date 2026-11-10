@@ -180,43 +180,12 @@ The dependency structure below uses every R script in the `R/new` directory of a
 
 ```{r}
 
-path <- normalizePath(system2("git", c("rev-parse", "--show-toplevel"),
-                              stdout = TRUE)[1])
-
 library(igraph, quietly = TRUE)
-source(file.path(path, "evaluation/0-code-to-source.r"))
+source("https://raw.githubusercontent.com/gabrielareto/fgeo2/7d8d17208e05f1644d185e9085194ddaa6352456/evaluation/0-code-to-source.r")
 
 pre_work_commit <- "040b73e0cd9a0d55d64c1639b22159d5c6cbd20e"
-
-modules <- c(
-  "01_utilities", "02_biomass", "03_spatial",
-  "04_abundance_diversity", "05_demography_growth",
-  "06_topography_habitat", "07_mapping_plotting"
-)
-
-all_files <- system2(
-  "git",
-  c("-C", shQuote(path), "ls-tree", "-r", "--name-only", pre_work_commit),
-  stdout = TRUE
-)
-
-module_pattern <- paste(modules, collapse = "|")
-scripts <- all_files[
-  grepl(paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"), all_files)
-]
-
 code_env <- new.env(parent = .GlobalEnv)
-
-for(file in scripts)
-{
-  code <- system2(
-    "git",
-    c("-C", shQuote(path), "show", paste0(pre_work_commit, ":", file)),
-    stdout = TRUE
-  )
-
-  eval(parse(text = paste(code, collapse = "\n")), envir = code_env)
-}
+load_github_snapshot(commit = pre_work_commit, envir = code_env)
 
 objects <- mget(
   ls(code_env, all.names = TRUE),
@@ -410,31 +379,11 @@ After removals, this is the structure of fgeo2:
 ```{r}
 #| out-width: "100%"
 
-post_work_commit <- "4f9a619"
+post_work_commit <- "4f9a619d7c6751b6085708898111315e65fe6376"
 post_work_date <- as.Date("2026-09-02")
 
-post_all_files <- system2(
-  "git",
-  c("-C", shQuote(path), "ls-tree", "-r", "--name-only", post_work_commit),
-  stdout = TRUE
-)
-
-post_scripts <- post_all_files[
-  grepl(paste0("^(", module_pattern, ")/R/new/.*\\.[Rr]$"), post_all_files)
-]
-
 post_code_env <- new.env(parent = .GlobalEnv)
-
-for(file in post_scripts)
-{
-  code <- system2(
-    "git",
-    c("-C", shQuote(path), "show", paste0(post_work_commit, ":", file)),
-    stdout = TRUE
-  )
-
-  eval(parse(text = paste(code, collapse = "\n")), envir = post_code_env)
-}
+load_github_snapshot(commit = post_work_commit, envir = post_code_env)
 
 post_objects <- mget(
   ls(post_code_env, all.names = TRUE),
@@ -454,9 +403,12 @@ g.after <- graph_from_data_frame(post_edges, directed = TRUE)
 subnet <- components(g.after, mode = "weak")
 V(g.after)$color <- hcl.colors(subnet$no, "Dark 3")[subnet$membership]
 
+results_dir <- "results"
+if(file.exists("evaluation/4-obsolete-modeling.qmd"))
+  results_dir <- file.path("evaluation", results_dir)
+
 post_work_pdf <- file.path(
-  path,
-  "evaluation/results",
+  results_dir,
   paste0(
     "fgeo2-dependencies-", substr(post_work_commit, 1, 7), "-",
     format(post_work_date, "%Y-%m-%d"), ".pdf"
@@ -486,8 +438,7 @@ plot(
 
 dev.off()
 
-post_work_pdf_relative <- file.path("results", basename(post_work_pdf))
-knitr::include_graphics(post_work_pdf_relative)
+knitr::include_graphics(post_work_pdf)
 
 ```
 

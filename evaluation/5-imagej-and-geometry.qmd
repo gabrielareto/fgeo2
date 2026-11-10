@@ -1104,21 +1104,13 @@ The dependency analysis uses [commit `e44f9fd`](https://github.com/gabrielareto/
 
 library(igraph, quietly = TRUE)
 
-path <- system2("git", c("rev-parse", "--show-toplevel"), stdout = TRUE)
-if(!is.null(attr(path, "status")) || length(path) != 1L)
-	stop("Run this evaluation inside the fgeo2 Git repository.")
-path <- normalizePath(path)
-
-source(file.path(path, "evaluation/0-code-to-source.r"))
+source(paste0(
+	"https://raw.githubusercontent.com/gabrielareto/fgeo2/",
+	"7d8d17208e05f1644d185e9085194ddaa6352456/evaluation/0-code-to-source.r"
+))
 
 evaluation.commit <- "e44f9fd273f1557ef934a2cb7f614312bff212ea"
 evaluation.date <- as.Date("2026-09-18")
-
-modules <- c(
-	"01_utilities", "02_biomass", "03_spatial",
-	"04_abundance_diversity", "05_demography_growth",
-	"06_topography_habitat", "07_mapping_plotting"
-)
 
 geometry.functions.to.remove <- c(
 	"xydist",
@@ -1163,34 +1155,18 @@ stopifnot(
 	!anyDuplicated(functions.to.remove)
 )
 
-all.files <- system2("git",
-                     c("-C", shQuote(path), "ls-tree", "-r",
-                       "--name-only", evaluation.commit),
-                     stdout = TRUE)
-if(!is.null(attr(all.files, "status")))
-	stop("The evaluation commit is not available in this clone.")
-
-module.pattern <- paste(modules, collapse = "|")
-scripts <- sort(all.files[grepl(paste0("^(", module.pattern,
-                                     ")/R/new/.*\\.[Rr]$"), all.files)])
-
 code.env <- new.env(parent = .GlobalEnv)
+snapshot <- load_github_snapshot(commit = evaluation.commit, envir = code.env)
+scripts <- snapshot$scripts
+
+raw.url <- paste0("https://raw.githubusercontent.com/gabrielareto/fgeo2/",
+                  evaluation.commit, "/")
 definition.rows <- list()
 
 for(file in scripts)
 {
-	code <- system2("git",
-	                c("-C", shQuote(path), "show",
-	                  paste0(evaluation.commit, ":", file)),
-	                stdout = TRUE)
-	if(!is.null(attr(code, "status"))) stop("Cannot read ", file)
-
-	# Record each script's definitions using the shared helper.
-	connection <- textConnection(code)
-	script.functions <- functions_in_script(connection)
-	close(connection)
-
-	eval(parse(text = paste(code, collapse = "\n")), envir = code.env)
+	# Record the definitions, including names that may occur in multiple scripts.
+	script.functions <- functions_in_script(paste0(raw.url, file))
 	definition.rows[[file]] <- data.frame(Function = script.functions,
 	                                      Script = file)
 }
@@ -1369,35 +1345,9 @@ This figure shows all connected functions remaining under `R/new` at commit `29f
 post.work.commit <- "29f4f7d4a69000d19e25283550231ccd4e269355"
 post.work.date <- as.Date("2026-09-18")
 
-post.all.files <- system2(
-	"git",
-	c("-C", shQuote(path), "ls-tree", "-r", "--name-only",
-	  post.work.commit),
-	stdout = TRUE
-)
-if(!is.null(attr(post.all.files, "status")))
-	stop("The post-work commit is not available in this clone.")
-
-post.scripts <- sort(post.all.files[
-	grepl(paste0("^(", module.pattern, ")/R/new/.*\\.[Rr]$"),
-	      post.all.files)
-])
-
 post.code.env <- new.env(parent = .GlobalEnv)
-
-for(file in post.scripts)
-{
-	code <- system2(
-		"git",
-		c("-C", shQuote(path), "show",
-		  paste0(post.work.commit, ":", file)),
-		stdout = TRUE
-	)
-	if(!is.null(attr(code, "status"))) stop("Cannot read ", file)
-
-	eval(parse(text = paste(code, collapse = "\n")),
-	     envir = post.code.env)
-}
+post.snapshot <- load_github_snapshot(commit = post.work.commit, envir = post.code.env)
+post.scripts <- post.snapshot$scripts
 
 post.objects <- mget(
 	ls(post.code.env, all.names = TRUE),
@@ -1453,9 +1403,14 @@ V(g.after)$color <- hcl.colors(
 	"Dark 3"
 )[subnet$membership]
 
+# Use the evaluation directory from the full render, if available.
+evaluation.path <- if(dir.exists("evaluation")) "evaluation" else "."
+if(exists("p", inherits = FALSE) && dir.exists(file.path(p, "evaluation")))
+	evaluation.path <- file.path(p, "evaluation")
+
 post.work.pdf <- file.path(
-	path,
-	"evaluation/results",
+	evaluation.path,
+	"results",
 	paste0(
 		"fgeo2-dependencies-", substr(post.work.commit, 1, 7), "-",
 		format(post.work.date, "%Y-%m-%d"), ".pdf"
@@ -1485,11 +1440,7 @@ plot(
 title("fgeo2 dependencies after ImageJ and geometry removals")
 dev.off()
 
-post.work.pdf.relative <- file.path(
-	"results",
-	basename(post.work.pdf)
-)
-knitr::include_graphics(post.work.pdf.relative)
+knitr::include_graphics(post.work.pdf)
 ```
 
 The figure is saved in `evaluation/results/`, with the post-work commit and date in its filename.

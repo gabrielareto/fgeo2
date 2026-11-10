@@ -50,22 +50,15 @@ There are two helpers to this function:
 
 A nonzero `baseelev` is applied only to the reference row. The other estimates are still relative to zero. The function also rebuilds the input in a fixed column order and then indexes it using the original column positions. Swapping the first two columns can reverse the estimated differences.
 
-I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run this setup first from the repository root or the `evaluation` directory. It reads the scripts from [fgeo2 commit `a89081e`](https://github.com/gabrielareto/fgeo2/commit/a89081ed2e6da798f492d80b4fbb8c80618285b8).
+I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run this setup first. The checks read the scripts directly from [fgeo2 commit `a89081e`](https://github.com/gabrielareto/fgeo2/commit/a89081ed2e6da798f492d80b4fbb8c80618285b8).
 
 ```{r}
 #| eval: false
-path <- if (dir.exists("06_topography_habitat")) "." else ".."
+source(paste0(
+  "https://raw.githubusercontent.com/gabrielareto/fgeo2/",
+  "7d8d17208e05f1644d185e9085194ddaa6352456/evaluation/0-code-to-source.r"
+))
 snapshot.commit = "a89081ed2e6da798f492d80b4fbb8c80618285b8"
-
-source_snapshot <- function(file, envir)
-{
-  revision <- paste0(snapshot.commit, ":", file)
-  code <- system2("git", c("-C", shQuote(path), "show", shQuote(revision)), stdout = TRUE)
-  if (!is.null(attr(code, "status")))
-    stop("Cannot read ", file, " at commit ", snapshot.commit, call. = FALSE)
-
-  eval(parse(text = code), envir = envir)
-}
 ```
 
 For a chain with two elevation differences of 2 and 3 m, the results should be `0, 2, 5` at datum zero and `100, 102, 105` at datum 100. The solver at this commit returns `100, 2, 5` at datum 100. Swapping the input columns at datum zero gives `0, -2, -5`.
@@ -73,7 +66,11 @@ For a chain with two elevation differences of 2 and 3 m, the results should be `
 ```{r}
 #| eval: false
 current <- new.env()
-source_snapshot("06_topography_habitat/R/new/topography-solvetopo.r", current)
+load_github_snapshot(
+  commit = snapshot.commit,
+  scripts = "06_topography_habitat/R/new/topography-solvetopo.r",
+  envir = current
+)
 
 survey <- data.frame(pt1 = c("1", "2"), pt2 = c("2", "3"), htdiff = c(2, 3))
 rbind(
@@ -114,8 +111,12 @@ A plane on a 5 m grid gives four equal slopes of about 74.50°. Swapping just tw
 ```{r}
 #| eval: false
 current <- new.env()
-source_snapshot("06_topography_habitat/R/new/topography-slope.r", current)
-source_snapshot("03_spatial/R/new/quadrats.R", current)
+load_github_snapshot(
+  commit = snapshot.commit,
+  scripts = c("06_topography_habitat/R/new/topography-slope.r",
+              "03_spatial/R/new/quadrats.R"),
+  envir = current
+)
 
 grid <- expand.grid(y = seq(0, 10, 5), x = seq(0, 10, 5))
 grid$elev <- 100 + 2 * grid$x + 3 * grid$y
@@ -141,8 +142,12 @@ With ordered Luquillo elevations and the legacy perimeter rule, archived CTFS an
 ```{r}
 #| eval: false
 legacy <- new.env()
-source_snapshot("evaluation/Condit/topography/slope.r", legacy)
-source_snapshot("evaluation/Condit/spatial/quadfunc.r", legacy)
+load_github_snapshot(
+  commit = snapshot.commit,
+  scripts = c("evaluation/Condit/topography/slope.r",
+              "evaluation/Condit/spatial/quadfunc.r"),
+  envir = legacy
+)
 elevation <- fgeo.x::elevation
 elevation$col <- as.data.frame(elevation$col)
 plot.dim <- c(elevation$xdim, elevation$ydim)
