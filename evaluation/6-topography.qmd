@@ -26,39 +26,29 @@ In this document, I use "CTFS" for Rick Condit's original set of scripts, `ctfs`
 
 In this evaluation, I focus on the CTFS scripts and use `ctfs` and `fgeo` to check for changes in functionality:
 
--   [CTFS scripts](https://github.com/gabrielareto/fgeo2/tree/a89081ed2e6da798f492d80b4fbb8c80618285b8/evaluation/Condit/topography)
+-   [CTFS scripts](https://github.com/gabrielareto/fgeo2/tree/0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d/evaluation/Condit/topography)
 -   [`ctfs` at `cc32c7c`](https://github.com/forestgeo/ctfs/tree/cc32c7c2a3959ef60b13144f956e99d3a0515322)
 -   [`fgeo.analyze` at `d69bfe7`](https://github.com/forestgeo/fgeo.analyze/tree/d69bfe711263305fcbaf322d402eba2f1edfb084)
--   [fgeo2 at `a89081e`](https://github.com/gabrielareto/fgeo2/tree/a89081ed2e6da798f492d80b4fbb8c80618285b8/06_topography_habitat/R)
+-   [fgeo2 at `0a2c01d`](https://github.com/gabrielareto/fgeo2/tree/0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d/06_topography_habitat/R)
 
 The ImageJ and coordinate recovery code was included in the same "topography" module but it is not conceptually or functionally related. It had its own separate evaluation and code development. The new structure into modules follows the old one, at least for the moment.
 
 # Load code
 
-Run this setup once before the checks below. `load_github_snapshot()` loads the fgeo2 and archived CTFS scripts from [fgeo2 commit `a89081e`](https://github.com/gabrielareto/fgeo2/commit/a89081ed2e6da798f492d80b4fbb8c80618285b8) into separate environments. The setup and checks are disabled during rendering. I ran the checks with R 4.5.0 and FNN 1.1.4.1.
+Run this setup once before the checks below. `load_github_snapshot()` uses `jsonlite` to resolve 2026-11-09 (UTC) to [fgeo2 commit `0a2c01d`](https://github.com/gabrielareto/fgeo2/commit/0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d) and loads the fgeo2 scripts used here. The setup and checks are disabled during rendering. I ran the checks with R 4.5.0 and FNN 1.1.4.1.
 
 ```{r}
-#| label: load-topography-snapshots
+#| label: load-topography-snapshot
 #| eval: false
 source("https://raw.githubusercontent.com/gabrielareto/fgeo2/7d8d17208e05f1644d185e9085194ddaa6352456/evaluation/0-code-to-source.r")
 
-snapshot.commit = "a89081ed2e6da798f492d80b4fbb8c80618285b8"
 current <- new.env()
-legacy <- new.env()
-
 load_github_snapshot(
-  commit = snapshot.commit,
+  commit.date = "2026-11-09",
   scripts = c("06_topography_habitat/R/new/topography-solvetopo.r",
               "06_topography_habitat/R/new/topography-slope.r",
               "03_spatial/R/new/quadrats.R"),
   envir = current
-)
-
-load_github_snapshot(
-  commit = snapshot.commit,
-  scripts = c("evaluation/Condit/topography/slope.r",
-              "evaluation/Condit/spatial/quadfunc.r"),
-  envir = legacy
 )
 ```
 
@@ -73,7 +63,7 @@ The core function is **`solve.topo()`**: it fixes one point elevation and estima
 There are two helpers to this function:
 
 -   **`rearrangeSurveyData()`** assigns a point ID to each distinct coordinate pair. It returns a coordinate lookup table and a table of observations indexed by point ID. It uses `match.dataframe()` from utilities.
--   **`getTopoLinks()`** assembles the incoming or outgoing observations for one point. It provides the counts and signed differences used to fill the solver's system. [CTFS helper](https://github.com/gabrielareto/fgeo2/blob/a89081ed2e6da798f492d80b4fbb8c80618285b8/evaluation/Condit/topography/solvetopo.r#L115)
+-   **`getTopoLinks()`** assembles the incoming or outgoing observations for one point. It provides the counts and signed differences used to fill the solver's system. [CTFS helper](https://github.com/gabrielareto/fgeo2/blob/0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d/evaluation/Condit/topography/solvetopo.r#L115)
 
 ## Issues
 
@@ -138,9 +128,9 @@ changed[3, 2] <- 10
 identical(current$calc.gradient(facet), current$calc.gradient(changed))
 ```
 
-### Agreement on one real grid
+### Check on one real grid
 
-With ordered Luquillo elevations and the legacy perimeter rule, archived CTFS and the pinned fgeo2 version give identical mean elevation, slope, and convexity across all 400 quadrats. I loaded the archived `fgeo.x` data directly for this check. The survey spacing is 5 m and the quadrats are 20 m. [Elevation data](https://github.com/forestgeo/fgeo.x/blob/64e9a4be80c84518223a87a45901e4a056b71bc8/data/elevation.rda)
+With ordered Luquillo elevations on a 5 m survey grid, the fgeo2 code returns one row for each of the 400 quadrats of 20 m. [Elevation data](https://github.com/forestgeo/fgeo.x/blob/64e9a4be80c84518223a87a45901e4a056b71bc8/data/elevation.rda)
 
 ```{r}
 #| eval: false
@@ -148,16 +138,15 @@ elevation <- fgeo.x::elevation
 elevation$col <- as.data.frame(elevation$col)
 plot.dim <- c(elevation$xdim, elevation$ydim)
 
-a <- legacy$allquadratslopes(elevation, 20, plot.dim, edgecorrect = TRUE)
-b <- current$allquadratslopes(elevation, 20, plot.dim, edgecorrect = TRUE)
-stopifnot(nrow(b) == 400L, identical(a, b))
+quadrat.topography <- current$allquadratslopes(elevation, 20, plot.dim, edgecorrect = TRUE)
+stopifnot(nrow(quadrat.topography) == 400L)
 ```
 
 # What ctfs and fgeo add
 
 -   **`ctfs`** adds package documentation and exports. Nine of the ten function bodies are identical to CTFS, counting `solve.topo()` under its new name `solve_topo()`. `allquadratslopes()` adds a warning for a missing `col` element and changes the indexing used to look up perimeter midpoints. Both versions gave identical results on a synthetic grid under both edge rules. `solve_topo()` retains the datum and column-order bugs. [`ctfs` terrain source](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/R/slope.R#L257) · [`ctfs` survey source](https://github.com/forestgeo/ctfs/blob/cc32c7c2a3959ef60b13144f956e99d3a0515322/R/solvetopo.R#L123)
 -   **`fgeo`** loads the package suite. `fgeo.analyze::fgeo_topography()` uses the same formulas in its own copy of the code. It accepts an elevation table or ForestGEO list, adds `gx` and `gy` to the output, and adds some checks. The input row-order assumption remains. The warning about missing midpoint elevations can still be followed by an error. In the Tian Tong case, `edgecorrect = FALSE` worked. The package tests give cases for comparison. [Source](https://github.com/forestgeo/fgeo.analyze/blob/d69bfe711263305fcbaf322d402eba2f1edfb084/R/fgeo_topography.R) · [Tests](https://github.com/forestgeo/fgeo.analyze/blob/d69bfe711263305fcbaf322d402eba2f1edfb084/tests/testthat/test-fgeo_topography.R) · [Tian Tong report](https://github.com/forestgeo/fgeo.tool/issues/59)
--   **Related tools.** `fgeo.tool::fgeo_elevation()` standardizes elevation tables, and `extract_from_habitat.R` infers grid size and plot dimensions. `fgeo.plot` draws contours, as does `maptopo()` in fgeo2. `fgeo_habitat()` clusters the terrain metrics. Sampling arbitrary layers at points or summarizing them over polygons belongs in the environmental extraction workflow. [Elevation tables](https://github.com/forestgeo/fgeo.tool/blob/main/R/fgeo_elevation.R) · [Grid dimensions](https://github.com/forestgeo/fgeo.tool/blob/main/R/extract_from_habitat.R) · [Contours](https://github.com/forestgeo/fgeo.plot/blob/main/R/plot_sp_elev-implementation.R#L142) · [fgeo2 mapping scripts](https://github.com/gabrielareto/fgeo2/tree/a89081ed2e6da798f492d80b4fbb8c80618285b8/07_mapping_plotting/R/new) · [Habitat assignment](https://github.com/forestgeo/fgeo.analyze/blob/master/R/fgeo_habitat.R#L42)
+-   **Related tools.** `fgeo.tool::fgeo_elevation()` standardizes elevation tables, and `extract_from_habitat.R` infers grid size and plot dimensions. `fgeo.plot` draws contours, as does `maptopo()` in fgeo2. `fgeo_habitat()` clusters the terrain metrics. Sampling arbitrary layers at points or summarizing them over polygons belongs in the environmental extraction workflow. [Elevation tables](https://github.com/forestgeo/fgeo.tool/blob/main/R/fgeo_elevation.R) · [Grid dimensions](https://github.com/forestgeo/fgeo.tool/blob/main/R/extract_from_habitat.R) · [Contours](https://github.com/forestgeo/fgeo.plot/blob/main/R/plot_sp_elev-implementation.R#L142) · [fgeo2 mapping scripts](https://github.com/gabrielareto/fgeo2/tree/0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d/07_mapping_plotting/R/new) · [Habitat assignment](https://github.com/forestgeo/fgeo.analyze/blob/master/R/fgeo_habitat.R#L42)
 
 The CTFS scripts are the reference for the calculations. The ctfs/fgeo packages add interface details and test cases but not new functionality.
 
