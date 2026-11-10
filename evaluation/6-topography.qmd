@@ -50,15 +50,30 @@ There are two helpers to this function:
 
 A nonzero `baseelev` is applied only to the reference row. The other estimates are still relative to zero. The function also rebuilds the input in a fixed column order and then indexes it using the original column positions. Swapping the first two columns can reverse the estimated differences.
 
-I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run them from the repository root or the `evaluation` directory.
-
-For a chain with two elevation differences of 2 and 3 m, the results should be `0, 2, 5` at datum zero and `100, 102, 105` at datum 100. The current solver returns `100, 2, 5` at datum 100. Swapping the input columns at datum zero gives `0, -2, -5`.
+I ran the checks below with R 4.5.0 and FNN 1.1.4.1. The chunks are disabled for rendering. Run this setup first from the repository root or the `evaluation` directory. It reads the scripts from [fgeo2 commit `a89081e`](https://github.com/gabrielareto/fgeo2/commit/a89081ed2e6da798f492d80b4fbb8c80618285b8).
 
 ```{r}
 #| eval: false
 path <- if (dir.exists("06_topography_habitat")) "." else ".."
+snapshot.commit = "a89081ed2e6da798f492d80b4fbb8c80618285b8"
+
+source_snapshot <- function(file, envir)
+{
+  revision <- paste0(snapshot.commit, ":", file)
+  code <- system2("git", c("-C", shQuote(path), "show", shQuote(revision)), stdout = TRUE)
+  if (!is.null(attr(code, "status")))
+    stop("Cannot read ", file, " at commit ", snapshot.commit, call. = FALSE)
+
+  eval(parse(text = code), envir = envir)
+}
+```
+
+For a chain with two elevation differences of 2 and 3 m, the results should be `0, 2, 5` at datum zero and `100, 102, 105` at datum 100. The solver at this commit returns `100, 2, 5` at datum 100. Swapping the input columns at datum zero gives `0, -2, -5`.
+
+```{r}
+#| eval: false
 current <- new.env()
-sys.source(file.path(path, "06_topography_habitat/R/new/topography-solvetopo.r"), current)
+source_snapshot("06_topography_habitat/R/new/topography-solvetopo.r", current)
 
 survey <- data.frame(pt1 = c("1", "2"), pt2 = c("2", "3"), htdiff = c(2, 3))
 rbind(
@@ -98,10 +113,9 @@ A plane on a 5 m grid gives four equal slopes of about 74.50°. Swapping just tw
 
 ```{r}
 #| eval: false
-path <- if (dir.exists("06_topography_habitat")) "." else ".."
 current <- new.env()
-sys.source(file.path(path, "06_topography_habitat/R/new/topography-slope.r"), current)
-sys.source(file.path(path, "03_spatial/R/new/quadrats.R"), current)
+source_snapshot("06_topography_habitat/R/new/topography-slope.r", current)
+source_snapshot("03_spatial/R/new/quadrats.R", current)
 
 grid <- expand.grid(y = seq(0, 10, 5), x = seq(0, 10, 5))
 grid$elev <- 100 + 2 * grid$x + 3 * grid$y
@@ -122,13 +136,13 @@ identical(current$calc.gradient(facet), current$calc.gradient(changed))
 
 ### Agreement on one real grid
 
-With ordered Luquillo elevations and the legacy perimeter rule, archived CTFS and current fgeo2 give identical mean elevation, slope, and convexity across all 400 quadrats. I loaded the archived `fgeo.x` data directly for this check. The survey spacing is 5 m and the quadrats are 20 m. [Elevation data](https://github.com/forestgeo/fgeo.x/blob/64e9a4be80c84518223a87a45901e4a056b71bc8/data/elevation.rda)
+With ordered Luquillo elevations and the legacy perimeter rule, archived CTFS and the pinned fgeo2 version give identical mean elevation, slope, and convexity across all 400 quadrats. I loaded the archived `fgeo.x` data directly for this check. The survey spacing is 5 m and the quadrats are 20 m. [Elevation data](https://github.com/forestgeo/fgeo.x/blob/64e9a4be80c84518223a87a45901e4a056b71bc8/data/elevation.rda)
 
 ```{r}
 #| eval: false
 legacy <- new.env()
-sys.source(file.path(path, "evaluation/Condit/topography/slope.r"), legacy)
-sys.source(file.path(path, "evaluation/Condit/spatial/quadfunc.r"), legacy)
+source_snapshot("evaluation/Condit/topography/slope.r", legacy)
+source_snapshot("evaluation/Condit/spatial/quadfunc.r", legacy)
 elevation <- fgeo.x::elevation
 elevation$col <- as.data.frame(elevation$col)
 plot.dim <- c(elevation$xdim, elevation$ydim)
