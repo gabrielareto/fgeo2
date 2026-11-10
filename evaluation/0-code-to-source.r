@@ -466,6 +466,101 @@ functions_in_script <- function(file) {
 # evaluation scripts, as the code itself will be
 # updated.
 
+# Source all R/new scripts from the latest commit on the default branch.
+# load_github_snapshot()
+#
+# Source a specific script from a full commit SHA into the current environment.
+# load_github_snapshot(commit = "a89081ed2e6da798f492d80b4fbb8c80618285b8",
+#                      scripts = "03_spatial/R/new/quadrats.R")
+#
+# Use the latest commit through a date (UTC) and load into a separate environment.
+# historical <- new.env()
+# load_github_snapshot(commit.date = "2026-11-06", envir = historical)
+#
+# Save selected files under destination/<commit>/, preserving their paths.
+# load_github_snapshot(scripts = "03_spatial/R/new/quadrats.R",
+#                      destination = "~/fgeo2-snapshots")
+#
+# Use repo = "owner/name" for another public repository.
+# Install jsonlite to look up a commit or discover script paths.
+
+load_github_snapshot <- function(repo = "gabrielareto/fgeo2", commit = NULL,
+                                 commit.date = NULL, scripts = NULL,
+                                 destination = NULL, envir = parent.frame())
+{
+	if(!is.null(commit) && !is.null(commit.date))
+		stop("Set either commit or commit.date, not both.")
+	if(!is.null(commit) && (length(commit) != 1L || !grepl("^[0-9a-fA-F]{40}$", commit)))
+		stop("commit must be a full 40-character SHA.")
+	if(is.null(destination) && !is.environment(envir))
+		stop("envir must be an R environment.")
+
+	api.url <- paste0("https://api.github.com/repos/", repo)
+	if(is.null(commit))
+	{
+		query <- paste0(api.url, "/commits?per_page=1")
+		if(!is.null(commit.date))
+		{
+			day <- as.Date(commit.date)
+			if(length(day) != 1L || is.na(day)) stop("Use one date in YYYY-MM-DD format.")
+			query <- paste0(query, "&until=", day, "T23:59:59Z")
+		}
+
+		revisions <- jsonlite::fromJSON(query, simplifyVector = FALSE)
+		if(!length(revisions)) stop("No matching commit found for ", repo)
+		commit <- revisions[[1L]]$sha
+	}
+	commit <- tolower(commit)
+
+	if(is.null(scripts))
+	{
+		tree.url <- paste0(api.url, "/git/trees/", commit, "?recursive=1")
+		tree <- jsonlite::fromJSON(tree.url)
+		if(isTRUE(tree$truncated)) stop("GitHub returned an incomplete file list.")
+
+		paths <- tree$tree$path[tree$tree$type == "blob"]
+		scripts <- sort(grep("(^|/)R/new/.*\\.[Rr]$", paths, value = TRUE))
+	}
+
+	if(!is.character(scripts) || !length(scripts) || anyNA(scripts) ||
+	   any(!nzchar(scripts) | grepl("^/|^[A-Za-z]:|\\\\|(^|/)\\.\\.?(/|$)", scripts)))
+		stop("scripts must contain one or more paths relative to the repository root.")
+
+	message(repo, " commit: ", commit)
+	raw.url <- paste0("https://raw.githubusercontent.com/", repo, "/", commit, "/")
+	directory <- NULL
+	if(!is.null(destination))
+	{
+		directory <- file.path(path.expand(destination), commit)
+		temporary <- character()
+		on.exit(unlink(temporary), add = TRUE)
+	}
+
+	for(file in scripts)
+	{
+		parts <- strsplit(file, "/", fixed = TRUE)[[1L]]
+		url.path <- paste(vapply(parts, utils::URLencode, "",
+		                         reserved = TRUE, repeated = TRUE), collapse = "/")
+		url <- paste0(raw.url, url.path)
+
+		if(is.null(directory))
+		{
+			source(url, local = envir, encoding = "UTF-8")
+			next
+		}
+
+		path <- file.path(directory, file)
+		dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+		temporary <- tempfile(tmpdir = dirname(path))
+		status <- utils::download.file(url, temporary, mode = "wb")
+		if(status != 0L || !file.rename(temporary, path))
+			stop("Could not save ", file, " to ", path)
+	}
+
+	invisible(list(commit = commit, scripts = scripts, directory = directory))
+}
+
+
 # Maybe equivalent to gert::git_worktree_add() and gert::git_worktree_remove()
 
 commit_from_date <- function(path, date, ref = "HEAD")
