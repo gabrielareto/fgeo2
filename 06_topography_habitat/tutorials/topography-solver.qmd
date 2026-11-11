@@ -1,0 +1,163 @@
+---
+title: "Point elevations from survey differences"
+author: "Gabriel Arellano"
+format:
+  pdf:
+    code-overflow: wrap
+editor: visual
+---
+
+# Purpose
+
+This solver estimates one elevation per point from measured height differences between pairs of points. It follows Condit's equal-weight least-squares calculation.
+
+Such records can come from establishing a plot grid. A team marks points with stakes and measures the vertical difference between pairs, for example by levelling with an instrument and a graduated staff. The coordinates may also describe other surveyed locations. The solver works on irregularly spaced points and does not require a complete regular grid. [Condit's survey example](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/)
+
+This is a limited tool for pairwise survey records. For a new survey, professional instruments or drone mapping may provide a more detailed elevation model with less manual processing. Drone products can include vegetation, so confirm that the product represents the ground surface. [USGS drone elevation products](https://www.usgs.gov/centers/eros/science/usgs-eros-archive-unmanned-aircraft-systems-uas-dems)
+
+# Read the survey and estimate elevations
+
+The supplied CSV is simulated. It contains 49 points on a 30 by 30 m plot, with repeated measurements, small disagreements and mixed measurement directions. All coordinates and differences are in metres. Change the paths and reference parameters for your survey.
+
+The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
+
+```{r}
+#| label: read-survey
+
+# install.packages(c("Matrix", "igraph", "jsonlite"))
+path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
+# path.to.fgeo2 = "/full/path/to/fgeo2"
+
+# Assign this elevation to the point at these coordinates.
+reference.xy = c(0, 0)
+reference.z = 100  # Use 0 for relative elevations if absolute elevation is unknown.
+
+source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-solver.R"))
+records <- read.csv(file.path(path.to.fgeo2, "data_examples/topography-survey.csv"))
+
+# One row per measured difference. Positive dz means the destination is higher.
+survey <- data.frame(
+	x_i = records$from_x_m,
+	y_i = records$from_y_m,
+	x_j = records$to_x_m,
+	y_j = records$to_y_m,
+	dz = records$height_difference_m
+)
+
+elevations <- estimate_point_elevations(survey, reference.xy, reference.z)
+head(elevations)
+```
+
+Other file layouts must be processed into the same five-column `survey` table. The solver identifies points by exact coordinate pairs, so use consistent coordinates for repeated points. The point IDs in this example file are only used by the old solver below.
+
+Rows and columns can be in any order. Repeated and conflicting measurements receive equal weight. Incomplete rows are omitted with a warning. Missing measurements or missing grid points are acceptable while the remaining observations connect every retained point. Points represented only by omitted rows disappear from the output. The result contains `x`, `y` and `z`; raster construction and interpolation are separate steps.
+
+# Compare with Condit's solver
+
+The old code is read from fgeo2 as it stood through 2026-11-09 (UTC), before this replacement. This avoids depending on copies in the current `R/old` or `evaluation/Condit` folders. The date lookup needs internet access and `jsonlite`.
+
+```{r}
+#| label: load-old-solver
+
+source(file.path(path.to.fgeo2, "evaluation/0-code-to-source.r"))
+old <- new.env()
+load_github_snapshot(
+	commit.date = "2026-11-09",
+	scripts = "06_topography_habitat/R/new/topography-solvetopo.r",
+	envir = old
+)
+
+# If needed, replace the call above with ONE alternative below.
+# source(file.path(path.to.fgeo2, "06_topography_habitat/R/old/topography-solvetopo.r"), local = old)
+# source(file.path(path.to.fgeo2, "evaluation/Condit/topography/solvetopo.r"), local = old)
+# old$solve.topo <- ctfs::solve_topo  # Requires the ctfs package.
+```
+
+First compare relative elevations at datum zero. Both solvers should reconcile the measurements in the same way.
+
+```{r}
+#| label: compare-elevations
+
+# Condit's solver needs point IDs and a coordinate lookup.
+points <- unique(rbind(
+	data.frame(id = records$from_point, x = records$from_x_m, y = records$from_y_m),
+	data.frame(id = records$to_point, x = records$to_x_m, y = records$to_y_m)
+))
+points <- points[order(points$x, points$y), ]
+base.id <- points$id[points$x == reference.xy[1] & points$y == reference.xy[2]]
+
+old.survey <- data.frame(
+	pt1 = records$from_point,
+	pt2 = records$to_point,
+	htdiff = records$height_difference_m
+)
+old.fit <- old$solve.topo(old.survey, basept = base.id, baseelev = 0)
+old.z <- old.fit$elev[match(points$id, old.fit$label)]
+new.fit <- estimate_point_elevations(survey, reference.xy, reference.z = 0)
+
+# Align by coordinates, then check agreement.
+stopifnot(all(points$x == new.fit$x), all(points$y == new.fit$y))
+max(abs(old.z - new.fit$z))
+stopifnot(isTRUE(all.equal(old.z, new.fit$z, tolerance = 1e-8)))
+```
+
+The two panels show the same fitted terrain. `persp()` uses a rectangular grid for this display; the solver itself also accepts irregular point networks. Both panels use the same scales and viewing angles. [R perspective plots](https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/persp.html)
+
+```{r}
+#| label: fig-terrain-comparison
+#| fig-cap: "Relative elevations from the same survey. Condit's solver and the new solver agree."
+#| fig-width: 9
+#| fig-height: 4
+
+x <- sort(unique(new.fit$x))
+y <- sort(unique(new.fit$y))
+old.surface <- new.surface <- matrix(NA_real_, length(x), length(y))
+
+# Matrix rows correspond to x and columns to y.
+old.surface[cbind(match(points$x, x), match(points$y, y))] <- old.z
+new.surface[cbind(match(new.fit$x, x), match(new.fit$y, y))] <- new.fit$z
+z.limits <- range(old.z, new.fit$z)
+
+settings <- par(mfrow = c(1, 2), mar = c(1, 1, 3, 1))
+persp(x, y, old.surface, zlim = z.limits, theta = 35, phi = 25,
+      scale = FALSE, col = "lightblue", shade = 0.4,
+      xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "Condit")
+persp(x, y, new.surface, zlim = z.limits, theta = 35, phi = 25,
+      scale = FALSE, col = "lightblue", shade = 0.4,
+      xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "New solver")
+par(settings)
+```
+
+# Small checks for the old problems
+
+A chain with differences of 2 and 3 m should give elevations 100, 102 and 105 m when its first point is at 100 m. The old code applies the datum only to the first point. It also mishandles reordered columns and propagates a missing difference. These small examples show the fixes.
+
+```{r}
+#| label: check-old-problems
+
+chain <- data.frame(x_i = c(0, 1), y_i = 0, x_j = c(1, 2), y_j = 0, dz = c(2, 3))
+old.chain <- data.frame(pt1 = c("1", "2"), pt2 = c("2", "3"), htdiff = c(2, 3))
+
+# A nonzero datum must shift every point.
+rbind(
+	Condit = old$solve.topo(old.chain, baseelev = 100)$elev,
+	New = estimate_point_elevations(chain, reference.z = 100)$z
+)
+
+# Reordering columns must preserve the direction of the measured differences.
+rbind(
+	Condit = old$solve.topo(old.chain[c("pt2", "pt1", "htdiff")])$elev,
+	New = estimate_point_elevations(chain[c("dz", "x_j", "y_j", "x_i", "y_i")])$z
+)
+
+# An extra row with a missing difference must not contaminate usable measurements.
+rbind(
+	Condit = old$solve.topo(rbind(old.chain, transform(old.chain[1, ], htdiff = NA)))$elev,
+	New = estimate_point_elevations(rbind(chain, transform(chain[1, ], dz = NA)))$z
+)
+
+stopifnot(
+	isTRUE(all.equal(estimate_point_elevations(chain, reference.z = 100)$z, c(100, 102, 105))),
+	isTRUE(all.equal(estimate_point_elevations(chain[2:1, 5:1])$z, c(0, 2, 5)))
+)
+```
