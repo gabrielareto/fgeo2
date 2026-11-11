@@ -1,9 +1,17 @@
 ---
 title: "Point elevations from survey differences"
 author: "Gabriel Arellano"
+date: today
 format:
   pdf:
     code-overflow: wrap
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    number-sections: true
+    number-depth: 2
+    colorlinks: true
+    toccolor: blue
 editor: visual
 ---
 
@@ -11,9 +19,9 @@ editor: visual
 
 This solver estimates one elevation per point from measured height differences between pairs of points. It follows Condit's equal-weight least-squares calculation.
 
-Such records can come from establishing a plot grid. A team marks points with stakes and measures the vertical difference between pairs, for example by levelling with an instrument and a graduated staff. The coordinates may also describe other surveyed locations. The solver works on irregularly spaced points and does not require a complete regular grid. [Condit's survey example](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/)
+Height differences can come from establishing a plot grid. A team marks points with stakes and measures the vertical difference between pairs, with different instruments. The coordinates may also describe other surveyed locations, not necessarily stakes in a regular grid. The solver works on irregularly spaced points and does not require a complete regular grid. See [Condit's survey example](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/) for an overview of the process, using the old tools and conventions.
 
-This is a limited tool for pairwise survey records. For a new survey, professional instruments or drone mapping may provide a more detailed elevation model with less manual processing. Drone products can include vegetation, so confirm that the product represents the ground surface. [USGS drone elevation products](https://www.usgs.gov/centers/eros/science/usgs-eros-archive-unmanned-aircraft-systems-uas-dems)
+This is a limited tool for pairwise survey records, with little consideration for error propagation and so forth. For a new survey, professional teams or drone mapping may provide a more detailed elevation model.
 
 # Read the survey and estimate elevations
 
