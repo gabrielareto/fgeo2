@@ -19,7 +19,7 @@ This tutorial starts with elevations at known coordinates, builds a digital elev
 
 The general input is a table with `x`, `y` and `z`: two horizontal coordinates and elevation. These values may come from a survey, a data provider or other instruments. Section 1 obtains them from the example survey of height differences. It is optional: users who already have elevations can start at section 2. Users with a DEM can skip interpolation as well.
 
-The main workflow uses two packages:
+`derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The function uses two packages:
 
 -   **terra:** raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
 -   **whitebox:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation. Zhang et al. (2025) also used terra and whitebox for tropical forest terrain calculations.
@@ -49,12 +49,16 @@ reference.xy = c(0, 0)
 reference.z = 371
 plot.extent = c(0, 240, 0, 240)  # xmin, xmax, ymin, ymax, in metres.
 cell.size = 5
-interpolation = "idw"          # "idw", "linear" or "akima".
+interpolation = "idw"          # "idw", "linear", "akima" or "bilinear".
 search.radius = 60             # IDW search radius, in metres.
 idw.power = 2                  # Distance weighting: larger values favour nearer points.
 idw.smooth = 0                 # IDW distance-smoothing parameter, in metres.
+min.points = 3                # Minimum points within the IDW search radius.
+max.points = 12               # Maximum points used for IDW.
+slope.neighbors = 8           # 4 or 8 neighbours for slope and aspect.
 smoothing.cells = 3            # Odd window width; 1 means no smoothing.
 position.radius = 20           # TPI neighbourhood radius, in metres.
+flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepared DEM.
 breach.distance.cells = 20     # Maximum search distance for drainage preparation.
 channel.area.m2 = 1000         # Illustrative channel threshold; check in the field.
 
@@ -70,7 +74,7 @@ signed.colors = hcl.colors(51, "Blue-Red 3", rev = TRUE)
 aspect.colors = hcl.colors(36, "Dynamic")
 map.margins = c(3, 3, 2, 4)
 knitr::opts_chunk$set(fig.width = 6, fig.height = 5)
-whitebox::wbt_verbose(FALSE)
+source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-variables.R"))
 ```
 
 # From height differences to point elevations
@@ -109,53 +113,40 @@ plot(elevation.points, "z", pch = 16, cex = 0.6, col = map.colors,
      main = "Point elevations (m)", axes = TRUE, mar = map.margins)
 ```
 
-# Build the DEM
+# Build the DEM and calculate the layers
 
 The DEM represents ground elevation. A surface that follows the canopy is a different input and should not be used as ground topography.
 
-Use one finite elevation per distinct coordinate pair. Resolve missing or conflicting records before interpolation.
+The function accepts an elevation table or a matrix with `x`, `y` and `z`. Incomplete rows are omitted with a warning. Repeated identical points are accepted; conflicting elevations at the same coordinates must be resolved before interpolation.
 
 The main choices are:
 
 -   **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
--   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared above. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp.
--   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. Compare choices before interpreting small ridges or depressions.
+-   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared above. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp. `bilinear` is available when the input points form a complete regular grid.
+-   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. The function defaults to 1, with no smoothing. This example explicitly uses 3. Compare choices before interpreting small ridges or depressions.
 
 Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
 
 ```{r}
 #| label: construct-dem
 
-dem <- rast(xmin = plot.extent[1], xmax = plot.extent[2],
-            ymin = plot.extent[3], ymax = plot.extent[4],
-            resolution = cell.size, crs = "local")
-cell.xy <- xyFromCell(dem, seq_len(ncell(dem)))
-
-if(!interpolation %in% c("idw", "linear", "akima")) stop("Unknown interpolation method.")
-if(interpolation == "idw")
-	dem <- interpIDW(dem, as.matrix(elevations[c("x", "y", "z")]),
-	                  radius = search.radius, power = idw.power, smooth = idw.smooth,
-	                  minPoints = 3, maxPoints = 12)
-if(interpolation %in% c("linear", "akima"))
-	values(dem) <- interp::interp(
-		x = elevations$x, y = elevations$y, z = elevations$z,
-		xo = cell.xy[, 1], yo = cell.xy[, 2],
-		method = interpolation, output = "points"
-	)$z
-
-# A complete regular input grid can instead use bilinear resampling:
-# grid.dem <- rast(elevations[c("x", "y", "z")], type = "xyz", crs = "local")
-# dem <- resample(grid.dem, dem, method = "bilinear")
-
-# Retain only cell centres inside the observed points' convex hull.
-dem <- mask(dem, convHull(elevation.points), touches = FALSE)
-
-if(smoothing.cells > 1)
-	dem <- focal(dem, w = smoothing.cells, fun = "mean", na.rm = TRUE, na.policy = "omit")
-names(dem) <- "elevation_m"
+# The shortest call is: derive_topography(xyz = elevations).
+# Here, pass the choices declared above so they are easy to change.
+topography <- derive_topography(
+	xyz = elevations, resolution = cell.size, extent = plot.extent, crs = "local",
+	interpolation = interpolation, search.radius = search.radius,
+	idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points,
+	smoothing.cells = smoothing.cells, neighbors = slope.neighbors,
+	position.radius = position.radius,
+	flow.preparation = flow.preparation,
+	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
+)
+dem <- topography[["elevation_m"]]
+names(topography)
 ```
 
-The mask leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary. Check the DEM for gaps and interpolation artefacts before continuing. If linear interpolation leaves interior gaps, use IDW or the complete-grid alternative. For larger sites, keep the terrain surrounding the plot until after the calculations.
+The function leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary. Check the DEM for gaps and interpolation artefacts before interpreting the layers. If linear interpolation leaves interior gaps, use IDW or `bilinear` for a complete regular input grid. For larger sites, supply the terrain surrounding the plot and crop the outputs afterwards.
 
 ```{r}
 #| label: fig-dem
@@ -164,13 +155,107 @@ The mask leaves cells outside the observed points' convex hull as `NA`. Smoothin
 plot(dem, col = map.colors, main = "Elevation (m)",
      axes = TRUE, mar = map.margins)
 points(elevation.points, pch = 16, cex = 0.2)
-
-# Alternative entry point when a ground DEM is already available:
-# dem <- rast("/full/path/to/elevation.tif")
-# Keep its actual CRS and native resolution. Derivatives need compatible units.
 ```
 
-The complete workflow below assumes square raster cells and horizontal and vertical units in metres. When using an existing DEM, use an appropriate metre-based projected CRS. Do not label longitude and latitude coordinates as metres.
+
+## Start from a DEM, or request fewer variables
+
+A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
+
+```{r}
+#| label: dem-input-and-variable-selection
+
+# When a ground DEM is already available:
+# supplied.dem <- rast("/full/path/to/elevation.tif")
+# supplied.topography <- derive_topography(dem = supplied.dem)
+
+# Here, reuse the example DEM and request only local variables.
+local.topography <- derive_topography(
+	dem = dem, variables = c("slope", "tpi", "tri"),
+	neighbors = slope.neighbors, position.radius = position.radius
+)
+names(local.topography)
+```
+
+Elevation is always included. Requesting only these local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
+
+## Compare resolutions
+
+These calls use the same point data and interpolation settings, without smoothing. Only raster resolution changes. Both maps use the same colour range; compare patterns rather than expecting cell-by-cell agreement.
+
+```{r}
+#| label: fig-resolution-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope calculated at 5 m and 10 m resolution, with no smoothing."
+
+fine <- derive_topography(
+	xyz = elevations, variables = "slope", resolution = 5, extent = plot.extent,
+	interpolation = interpolation, search.radius = search.radius,
+	idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+)
+coarse <- derive_topography(
+	xyz = elevations, variables = "slope", resolution = 10, extent = plot.extent,
+	interpolation = interpolation, search.radius = search.radius,
+	idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+)
+slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(coarse[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+settings <- par(mfrow = c(1, 2))
+plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "5 m cells", mar = map.margins)
+plot(coarse[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "10 m cells", mar = map.margins)
+par(settings)
+```
+
+## Compare smoothing
+
+Reuse the unsmoothed 5 m DEM, so interpolation does not change. The second calculation applies a 5 by 5 cell mean, covering 25 m. Smoothing can reduce local noise, but it can also remove real terrain features.
+
+```{r}
+#| label: fig-smoothing-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope from the same 5 m DEM, before and after 25 m smoothing."
+
+smoothed <- derive_topography(
+	dem = fine[["elevation_m"]], variables = "slope",
+	smoothing.cells = 5, neighbors = slope.neighbors
+)
+slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(smoothed[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+settings <- par(mfrow = c(1, 2))
+plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "No smoothing", mar = map.margins)
+plot(smoothed[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "25 m smoothing", mar = map.margins)
+par(settings)
+```
+
+## Compare slope neighbourhoods
+
+The same unsmoothed DEM can use four or eight neighbouring cells for slope and aspect. This parameter changes their calculation; it does not change the fixed eight-neighbour definition of TRI, the TPI radius or the curvature fit.
+
+```{r}
+#| label: fig-neighbor-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope calculated from the same DEM with four or eight neighbours."
+
+slope.four <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 4)
+slope.eight <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 8)
+slope.limit <- max(global(slope.four[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(slope.eight[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+settings <- par(mfrow = c(1, 2))
+plot(slope.four[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "Four neighbours", mar = map.margins)
+plot(slope.eight[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "Eight neighbours", mar = map.margins)
+par(settings)
+```
 
 # Derive topographical variables
 
@@ -198,20 +283,19 @@ Elevation is already in the DEM. It can describe broad gradients within a plot, 
 ```{r}
 #| label: fig-elevation-layer
 
-elevation <- dem
+elevation <- topography[["elevation_m"]]
 plot(elevation, col = map.colors, main = "Elevation (m)",
      axes = TRUE, mar = map.margins)
 ```
 
 ## Slope
 
-Slope is the inclination from horizontal, in degrees. It describes steepness and is often used when analysing forest structure or disturbance. Here, terra uses the elevations in the eight neighbouring cells.
+Slope is the inclination from horizontal, in degrees. It describes steepness and is often used when analysing forest structure or disturbance. The example uses the eight neighbouring cells; `neighbors = 4` is an alternative.
 
 ```{r}
 #| label: fig-slope
 
-slope <- terrain(dem, v = "slope", unit = "degrees", neighbors = 8)
-names(slope) <- "slope_deg"
+slope <- topography[["slope_deg"]]
 plot(slope, col = map.colors, main = "Slope (degrees)",
      axes = TRUE, mar = map.margins)
 ```
@@ -227,13 +311,9 @@ Northness and eastness avoid the discontinuity between 359 and 0 degrees: they a
 #| fig-width: 10
 #| fig-height: 4
 
-aspect <- terrain(dem, v = "aspect", unit = "degrees", neighbors = 8)
-aspect[slope == 0] <- NA
-northness <- cos(aspect * pi / 180)
-eastness <- sin(aspect * pi / 180)
-names(aspect) <- "aspect_deg"
-names(northness) <- "northness"
-names(eastness) <- "eastness"
+aspect <- topography[["aspect_deg"]]
+northness <- topography[["northness"]]
+eastness <- topography[["eastness"]]
 
 settings <- par(mfrow = c(1, 3))
 plot(aspect, col = aspect.colors, range = c(0, 360), main = "Aspect (degrees)", mar = map.margins)
@@ -251,11 +331,7 @@ This is analogous to an elevation-difference convexity measure. It does not repr
 ```{r}
 #| label: fig-tpi
 
-radius.cells <- ceiling(position.radius / res(dem)[1])
-weights <- matrix(1, 2 * radius.cells + 1, 2 * radius.cells + 1)
-weights[radius.cells + 1, radius.cells + 1] <- NA  # Exclude the focal cell.
-tpi <- dem - focal(dem, w = weights, fun = "mean", na.rm = FALSE)
-names(tpi) <- "tpi_m"
+tpi <- topography[["tpi_m"]]
 tpi.limit <- global(abs(tpi), "max", na.rm = TRUE)[1, 1]
 plot(tpi, col = signed.colors, range = c(-tpi.limit, tpi.limit),
      main = "Topographic position (m)", axes = TRUE, mar = map.margins)
@@ -268,8 +344,7 @@ This TRI is the mean absolute elevation difference between a cell and its eight 
 ```{r}
 #| label: fig-tri
 
-tri <- terrain(dem, v = "TRI")
-names(tri) <- "tri_m"
+tri <- topography[["tri_m"]]
 plot(tri, col = map.colors, main = "Terrain ruggedness (m)",
      axes = TRUE, mar = map.margins)
 ```
@@ -278,7 +353,7 @@ plot(tri, col = map.colors, main = "Terrain ruggedness (m)",
 
 Plan curvature describes convergence or divergence across the slope. Profile curvature describes how steepness changes downhill. These are second derivatives of elevation and are particularly sensitive to interpolation and smoothing. Detto et al. (2013) used several curvature measures to describe forest canopy structure in Panama.
 
-The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These are not the CTFS convexity measure. The calculation uses a 5 by 5 cell fit; the incomplete boundary is masked below.
+The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These are not the CTFS convexity measure. The calculation uses a 5 by 5 cell fit; the function masks the incomplete boundary.
 
 ```{r}
 #| label: fig-curvature
@@ -286,19 +361,8 @@ The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse me
 #| fig-width: 9
 #| fig-height: 4.5
 
-dem.file <- file.path(output.dir, "elevation.tif")
-plan.file <- file.path(output.dir, "plan-curvature.tif")
-profile.file <- file.path(output.dir, "profile-curvature.tif")
-writeRaster(dem, dem.file, overwrite = TRUE)
-whitebox::wbt_plan_curvature(dem.file, plan.file, log = FALSE, zfactor = 1)
-whitebox::wbt_profile_curvature(dem.file, profile.file, log = FALSE, zfactor = 1)
-plan.curvature <- rast(plan.file)
-profile.curvature <- rast(profile.file)
-support <- focal(!is.na(dem), w = 5, fun = "sum", fillvalue = 0)
-plan.curvature[support < 25] <- NA
-profile.curvature[support < 25] <- NA
-names(plan.curvature) <- "plan_curvature_per_m"
-names(profile.curvature) <- "profile_curvature_per_m"
+plan.curvature <- topography[["plan_curvature_per_m"]]
+profile.curvature <- topography[["profile_curvature_per_m"]]
 plan.limit <- global(abs(plan.curvature), "max", na.rm = TRUE)[1, 1]
 profile.limit <- global(abs(profile.curvature), "max", na.rm = TRUE)[1, 1]
 
@@ -312,9 +376,9 @@ par(settings)
 
 ## Contributing area
 
-Contributing area describes how much upslope terrain supplies flow to a cell. It is an input to TWI. The D-infinity method below can divide flow between neighbouring directions. The specific contributing area (SCA) is area per unit contour width, in metres; multiplying by cell width gives the corresponding area in square metres.
+Contributing area describes how much upslope terrain supplies flow to a cell. It is an input to TWI. The function uses D-infinity accumulation, which can divide flow between neighbouring directions. The specific contributing area (SCA) is area per unit contour width, in metres; multiplying by cell width gives the corresponding area in square metres.
 
-Flow routing needs a draining surface. A separate copy of the DEM is prepared by breaching depressions, with filling where breaching fails. Inspect this choice where depressions are real features. The earlier local terrain layers still use the original DEM.
+Flow routing needs a draining surface. By default, a separate copy of the DEM is prepared by breaching depressions, with filling where breaching fails. `flow.preparation = "fill"` instead raises depressions; use `"none"` for a DEM already prepared for routing. Inspect these choices where depressions are real features. The earlier local terrain layers still use the original DEM.
 
 **The example covers only the plot.** It omits water arriving from outside. The following drainage maps demonstrate the workflow, but are not complete catchment estimates. For ecological analysis, use surrounding terrain and delineated drainage appropriate to the site; Muscarella et al. (2020) explicitly tested DEM extent and resolution.
 
@@ -322,18 +386,7 @@ Flow routing needs a draining surface. A separate copy of the DEM is prepared by
 #| label: fig-contributing-area
 #| results: hide
 
-hydro.file <- file.path(output.dir, "elevation-for-flow.tif")
-sca.file <- file.path(output.dir, "specific-contributing-area.tif")
-whitebox::wbt_breach_depressions_least_cost(
-	dem.file, hydro.file, dist = breach.distance.cells, fill = TRUE
-)
-whitebox::wbt_d_inf_flow_accumulation(
-	input = hydro.file, output = sca.file,
-	out_type = "Specific Contributing Area", log = FALSE
-)
-sca <- rast(sca.file)
-contributing.area <- sca * res(dem)[1]
-names(contributing.area) <- "contributing_area_m2"
+contributing.area <- topography[["contributing_area_m2"]]
 plot(log10(contributing.area), col = map.colors,
      main = "Contributing area: log10(m2)", axes = TRUE, mar = map.margins)
 ```
@@ -342,18 +395,13 @@ plot(log10(contributing.area), col = map.colors,
 
 TWI combines specific contributing area and local slope: `log(SCA / tan(slope))`. Higher values indicate greater topographic potential for water accumulation. It is a proxy, not measured soil moisture. Zhang et al. (2025) used TWI to describe tropical forest canopy dynamics.
 
-Whitebox expects **unlogged SCA and slope in degrees**. It converts the angle internally. Zero-slope cells become `NA`. Here, slope comes from the same DEM used for the local terrain variables; only the flow-routing surface was conditioned.
+The function supplies Whitebox with **unlogged SCA and slope in degrees**. Whitebox converts the angle internally. Zero-slope cells become `NA`. Here, slope comes from the same DEM used for the local terrain variables; only the flow-routing surface was conditioned.
 
 ```{r}
 #| label: fig-twi
 #| results: hide
 
-slope.file <- file.path(output.dir, "slope.tif")
-twi.file <- file.path(output.dir, "twi.tif")
-writeRaster(slope, slope.file, overwrite = TRUE)
-whitebox::wbt_wetness_index(sca.file, slope.file, twi.file)
-twi <- rast(twi.file)
-names(twi) <- "twi"
+twi <- topography[["twi"]]
 plot(twi, col = map.colors, main = "Topographic wetness index",
      axes = TRUE, mar = map.margins)
 ```
@@ -368,18 +416,7 @@ A channel network must first be defined. The example uses a D8 contributing-area
 #| label: fig-drainage-distance
 #| results: hide
 
-d8.area.file <- file.path(output.dir, "d8-contributing-area.tif")
-streams.file <- file.path(output.dir, "drainage.tif")
-distance.file <- file.path(output.dir, "distance-to-drainage.tif")
-whitebox::wbt_d8_flow_accumulation(hydro.file, d8.area.file,
-                                  out_type = "catchment area", log = FALSE)
-whitebox::wbt_extract_streams(d8.area.file, streams.file,
-                             threshold = channel.area.m2, zero_background = TRUE)
-whitebox::wbt_downslope_distance_to_stream(
-	hydro.file, streams.file, distance.file, dinf = FALSE
-)
-drainage.distance <- rast(distance.file)
-names(drainage.distance) <- "drainage_distance_m"
+drainage.distance <- topography[["drainage_distance_m"]]
 plot(drainage.distance, col = map.colors, main = "Downslope distance to drainage (m)",
      axes = TRUE, mar = map.margins)
 ```
@@ -396,26 +433,17 @@ HAND can distinguish terrain near valley bottoms from higher slopes. It is not a
 #| label: fig-height-above-drainage
 #| results: hide
 
-hand.file <- file.path(output.dir, "height-above-drainage.tif")
-whitebox::wbt_elevation_above_stream(hydro.file, streams.file, hand.file)
-hand <- rast(hand.file)
-names(hand) <- "height_above_drainage_m"
+hand <- topography[["height_above_drainage_m"]]
 plot(hand, col = map.colors, main = "Height above drainage (m)",
      axes = TRUE, mar = map.margins)
 ```
 
 # Keep the layers and save GeoTIFF files
 
-These layers share a grid because they were derived from the same DEM. Combine them into one `SpatRaster`, retaining descriptive names and units. GeoTIFF stores the grid, coordinates and values in a format that other GIS tools can read.
+The function returns one `SpatRaster` with descriptive layer names and units. These layers share a grid because they were derived from the same DEM. They may use temporary backing files during the R session. Save a GeoTIFF to retain them: it stores the grid, coordinates and values in a format that other GIS tools can read.
 
 ```{r}
 #| label: save-topography
-
-topography <- c(elevation, slope, aspect, northness, eastness, tpi, tri,
-                 plan.curvature, profile.curvature, contributing.area,
-                 twi, drainage.distance, hand)
-units(topography) <- c("m", "degrees", "degrees", "1", "1", "m", "m",
-                       "1/m", "1/m", "m2", "1", "m", "m")
 
 writeRaster(topography, file.path(output.dir, "topography.tif"),
             datatype = "FLT4S", gdal = "COMPRESS=LZW", overwrite = TRUE)
@@ -430,7 +458,7 @@ names(saved.topography)
 R.version.string
 sapply(c("terra", "whitebox"), function(package) as.character(packageVersion(package)))
 # packageVersion("interp")  # If used for interpolation.
-print(whitebox::wbt_version())
+print(whitebox::wbt_version()[1])
 ```
 
 Use a real persistent `output.dir` to keep these files. The local-coordinate example retains a local Cartesian CRS; it is not a geographically positioned map. A real site's GeoTIFF should retain its actual CRS.
