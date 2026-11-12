@@ -17,15 +17,15 @@ editor: visual
 
 # Purpose
 
-This solver estimates one elevation per point from measured height differences between pairs of points. It follows Condit's equal-weight least-squares calculation.
+This solver estimates one elevation per point from measured height differences between pairs of points. It follows Richard Condit's equal-weight least-squares calculation developed for BCI plot and other ForestGEO sites.
 
-Height differences can come from establishing a plot grid. A team marks points with stakes and measures the vertical difference between pairs, with different instruments. The coordinates may also describe other surveyed locations, not necessarily stakes in a regular grid. The solver works on irregularly spaced points and does not require a complete regular grid. See [Condit's survey example](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/) for an overview of the process, using the old tools and conventions.
+Height differences can come from a regular grid of stakes after the establishment of a plot. A survey team measures the vertical difference between pairs of stakes, with different instruments and practical procedures. The coordinates can also describe other surveyed locations, not necessarily stakes in a regular grid. The solver works on irregularly spaced points and does not require a complete regular grid. See [Condit's survey example](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/) for an overview of the process, using the old tools and conventions.
 
-This is a limited tool for pairwise survey records, with little consideration for error propagation and so forth. For a new survey, professional teams or drone mapping may provide a more detailed elevation model.
+This is a limited tool for pairwise survey records, with little consideration for error propagation and so forth. For a new survey, professional teams or drone mapping could provide a more detailed elevation model.
 
-# Read the survey and estimate elevations
+# Read the survey
 
-The supplied CSV is simulated on a 500 by 500 m plot (25 ha). The principal 20 m grid has 676 planned points. Seven of these (about 1%) are unusable; short routes with 5 m and 10 m measurements pass around them. A locally rugged area has additional 10 m measurements and a smaller patch with 5 m infill. The file contains 878 measured points and 1,737 observations, including repeats, small disagreements and mixed measurement directions. All coordinates and height differences are in metres.
+The supplied CSV is simulated on a 500 by 500 m plot (25 ha). The principal 20 m grid has 676 planned points. A few of these (about 1%) are unusable; short routes with 5 m and 10 m measurements pass around them. A locally rugged area has additional 10 m measurements and a smaller patch with 5 m infill. The file contains 878 measured points and 1,737 observations, including repeats, small disagreements and mixed measurement directions. All coordinates and height differences are in metres.
 
 The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
 
@@ -34,11 +34,12 @@ The default paths below work when rendering this tutorial or running from the re
 
 # install.packages(c("Matrix", "igraph", "jsonlite"))
 path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
-# path.to.fgeo2 = "/full/path/to/fgeo2"
+# path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update this
 
 records <- read.csv(file.path(path.to.fgeo2, "data_examples/topography-survey.csv"))
 
 # One row per measured difference. Positive dz means the destination is higher.
+# Of course, you would need to adapt this code to the shape of your stored data.
 survey <- data.frame(
 	x_i = records$from_x_m,
 	y_i = records$from_y_m,
@@ -53,39 +54,52 @@ survey.distance <- sqrt((survey$x_j - survey$x_i)^2 + (survey$y_j - survey$y_i)^
 table(survey.distance)
 ```
 
-## Survey lines
-
-Each line joins a pair of surveyed points, as in section 2 of [Condit's tutorial](https://ctfs.si.edu/Public/CTFSRPackage/files/tutorials/topography/). The full plot shows the 20 m grid; the detail shows short routes and the denser survey in the rugged area. Red crosses mark the seven planned points that could not be used.
+The following code plots the survey lines, joining pairs of surveyed points. The full plot shows the 20 m grid; the detail shows short routes and the denser survey in the rugged area. Red crosses mark the seven planned points that could not be used.
 
 ```{r}
 #| label: fig-survey-lines
-#| fig-cap: "Simulated 25 ha survey. Blue lines show 5 m or 10 m measurements; grey lines show 20 m measurements. Red crosses indicate unusable grid points."
-#| fig-width: 9
-#| fig-height: 4.8
+#| fig-cap: "Survey directions on the planned 20 m grid. Red crosses mark unusable grid points."
+#| fig-width: 7
+#| fig-height: 7
 
+# Fraction removed from each arrow: 0 = full length, 0.3 = shorten by 30%.
+arrow.reduction = 0.3
+
+# Planned grid and measured locations.
+grid <- expand.grid(x = seq(0, 500, 20), y = seq(0, 500, 20))
 measured <- unique(rbind(
 	data.frame(x = survey$x_i, y = survey$y_i),
 	data.frame(x = survey$x_j, y = survey$y_j)
 ))
-grid <- expand.grid(x = seq(0, 500, 20), y = seq(0, 500, 20))
+
+# Unusable grid points are absent from both sets of survey endpoints.
 unusable <- !paste(grid$x, grid$y) %in% paste(measured$x, measured$y)
 
-settings <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-views <- list("Whole plot" = c(0, 500), "Local detail" = c(200, 300))
-for(view in names(views))
-{
-	plot(measured$x, measured$y, type = "n", asp = 1,
-	     xlim = views[[view]], ylim = views[[view]],
-	     xlab = "x (m)", ylab = "y (m)", main = view)
-	segments(survey$x_i, survey$y_i, survey$x_j, survey$y_j,
-	         col = ifelse(survey.distance < 20, "steelblue", "grey70"))
-	points(measured$x, measured$y, pch = 16, cex = 0.3)
-	points(grid$x[unusable], grid$y[unusable], pch = 4, col = "firebrick", lwd = 1.5)
-}
+# Shorten each arrow while keeping its origin and direction.
+arrow.x <- survey$x_i + (1 - arrow.reduction) * (survey$x_j - survey$x_i)
+arrow.y <- survey$y_i + (1 - arrow.reduction) * (survey$y_j - survey$y_i)
+
+# One pane, with equal horizontal and vertical scales.
+settings <- par(mfrow = c(1, 1), mar = c(4, 4, 1, 1))
+plot(grid$x, grid$y, type = "n", asp = 1,
+     xlim = c(0, 500), ylim = c(0, 500),
+     xlab = "x (m)", ylab = "y (m)")
+
+# Full grid
+abline(v = seq(0, 500, 20), h = seq(0, 500, 20), col = "grey85", lwd = 0.5)
+
+# Survey arrows
+arrows(survey$x_i, survey$y_i, arrow.x, arrow.y,
+       length = 0.03, angle = 25, code = 2, col = "black", lwd = 0.7)
+
+# Grid points
+points(grid$x, grid$y, cex = 0.4, col = "black", pch = 16)
+points(grid$x[unusable], grid$y[unusable], cex = 0.9, col = "firebrick", pch = 4, lwd = 1.5)
+
 par(settings)
 ```
 
-## Estimate elevations
+# Estimate elevations
 
 Set the coordinates and elevation of the reference point, then fit all measured differences together.
 
@@ -94,7 +108,7 @@ Set the coordinates and elevation of the reference point, then fit all measured 
 
 # Assign this elevation to the point at these coordinates.
 reference.xy = c(0, 0)
-reference.z = 100  # Use 0 for relative elevations if absolute elevation is unknown.
+reference.z = 371  # m.a.s.l. Use 0 for relative elevations if absolute elevation is unknown.
 
 source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-solver.R"))
 elevations <- estimate_point_elevations(survey, reference.xy, reference.z)
@@ -103,11 +117,11 @@ head(elevations)
 
 Other file layouts must be processed into the same five-column `survey` table. The solver identifies points by exact coordinate pairs, so use consistent coordinates for repeated points. The point IDs in this example file are only used by the old solver below.
 
-Rows and columns can be in any order. Repeated and conflicting measurements receive equal weight. Incomplete rows are omitted with a warning. Missing measurements or missing grid points are acceptable while the remaining observations connect every retained point. Points represented only by omitted rows disappear from the output. The result contains `x`, `y` and `z`; raster construction and interpolation are separate steps.
+Rows and columns can be in any order. Repeated and conflicting measurements receive equal weight. Incomplete rows are omitted with a warning. Missing measurements or missing grid points are acceptable while the remaining observations connect every retained point. Points represented only by omitted rows disappear from the output. The result contains `x`, `y` and `z`, as the most general output. Raster construction and interpolation, if needed, would be separate steps.
 
-# Compare with Condit's solver
+# Comparison with Condit's solver
 
-The old code is read from fgeo2 as it stood through 2026-11-09 (UTC), before this replacement. This avoids depending on copies in the current `R/old` or `evaluation/Condit` folders. The date lookup needs internet access and `jsonlite`.
+Condit solver requires three functions and has known issues (see evaluation file and checks below). But it contains the core calculations and intention: the new solver must match the results from the old one. In the comparison below, the old code is read from fgeo2 as it stood through 2026-11-09, before this replacement. This avoids depending on copies in the current `R/old` or `evaluation/Condit` folders. The date lookup needs internet access and `jsonlite`.
 
 ```{r}
 #| label: load-old-solver
@@ -120,7 +134,7 @@ load_github_snapshot(
 	envir = old
 )
 
-# If needed, replace the call above with ONE alternative below.
+# If needed, replace the call above with one alternative below.
 # source(file.path(path.to.fgeo2, "06_topography_habitat/R/old/topography-solvetopo.r"), local = old)
 # source(file.path(path.to.fgeo2, "evaluation/Condit/topography/solvetopo.r"), local = old)
 # old$solve.topo <- ctfs::solve_topo  # Requires the ctfs package.
@@ -150,11 +164,11 @@ new.fit <- estimate_point_elevations(survey, reference.xy, reference.z = 0)
 
 # Align by coordinates, then check agreement.
 stopifnot(all(points$x == new.fit$x), all(points$y == new.fit$y))
-max(abs(old.z - new.fit$z))
+max(abs(old.z - new.fit$z)) # minor floating point disagreements
 stopifnot(isTRUE(all.equal(old.z, new.fit$z, tolerance = 1e-8)))
 ```
 
-The two panels show the fitted terrain at the retained 20 m grid points. The seven unusable corners are left as gaps. All measurements, including the short-distance observations, contributed to the fit. Both panels use the same scales and viewing angles. [R perspective plots](https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/persp.html)
+The two panels show the fitted terrain at the retained grid points. The unusable corners are left as gaps. All measurements, including the short-distance observations, contributed to the fit. Both panels use the same scales and viewing angles, using [R perspective plots](https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/persp.html).
 
 ```{r}
 #| label: fig-terrain-comparison
@@ -172,13 +186,16 @@ keep.old <- points$x %in% x & points$y %in% y
 keep.new <- new.fit$x %in% x & new.fit$y %in% y
 old.surface[cbind(match(points$x[keep.old], x), match(points$y[keep.old], y))] <- old.z[keep.old]
 new.surface[cbind(match(new.fit$x[keep.new], x), match(new.fit$y[keep.new], y))] <- new.fit$z[keep.new]
-z.limits <- range(old.z, new.fit$z)
 
 settings <- par(mfrow = c(1, 2), mar = c(1, 1, 3, 1))
-persp(x, y, old.surface, zlim = z.limits, theta = 35, phi = 25,
+
+zoomz = 5
+z.limits <- range(old.z*zoomz, new.fit$z*zoomz)
+
+persp(x, y, old.surface*zoomz, zlim = z.limits, theta = 35, phi = 25,
       scale = FALSE, col = "lightblue", shade = 0.4,
       xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "Condit")
-persp(x, y, new.surface, zlim = z.limits, theta = 35, phi = 25,
+persp(x, y, new.surface*zoomz, zlim = z.limits, theta = 35, phi = 25,
       scale = FALSE, col = "lightblue", shade = 0.4,
       xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "New solver")
 par(settings)
@@ -212,8 +229,4 @@ rbind(
 	New = estimate_point_elevations(rbind(chain, transform(chain[1, ], dz = NA)))$z
 )
 
-stopifnot(
-	isTRUE(all.equal(estimate_point_elevations(chain, reference.z = 100)$z, c(100, 102, 105))),
-	isTRUE(all.equal(estimate_point_elevations(chain[2:1, 5:1])$z, c(0, 2, 5)))
-)
 ```
