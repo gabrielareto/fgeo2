@@ -25,8 +25,6 @@ This is a limited tool for pairwise survey records, with little consideration fo
 
 # Read the survey
 
-The supplied CSV is simulated on a 500 by 500 m plot (25 ha). The principal 20 m grid has 676 planned points. A few of these (about 1%) are unusable; short routes with 5 m and 10 m measurements pass around them. A locally rugged area has additional 10 m measurements and a smaller patch with 5 m infill. The file contains 878 measured points and 1,737 observations, including repeats, small disagreements and mixed measurement directions. All coordinates and height differences are in metres.
-
 The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
 
 ```{r}
@@ -36,6 +34,7 @@ The default paths below work when rendering this tutorial or running from the re
 path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
 # path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update this
 
+# Coordinates and height differences are in metres.
 records <- read.csv(file.path(path.to.fgeo2, "data_examples/topography-survey.csv"))
 
 # One row per measured difference. Positive dz means the destination is higher.
@@ -54,11 +53,9 @@ survey.distance <- sqrt((survey$x_j - survey$x_i)^2 + (survey$y_j - survey$y_i)^
 table(survey.distance)
 ```
 
-The following code plots the survey lines, joining pairs of surveyed points. The full plot shows the 20 m grid; the detail shows short routes and the denser survey in the rugged area. Red crosses mark the seven planned points that could not be used.
-
 ```{r}
 #| label: fig-survey-lines
-#| fig-cap: "Survey directions on the planned 20 m grid. Red crosses mark unusable grid points."
+#| fig-cap: "Simulated survey directions on the planned 20 m grid. Red crosses mark unusable grid points."
 #| fig-width: 7
 #| fig-height: 7
 
@@ -66,7 +63,7 @@ The following code plots the survey lines, joining pairs of surveyed points. The
 arrow.reduction = 0.3
 
 # Planned grid and measured locations.
-grid <- expand.grid(x = seq(0, 500, 20), y = seq(0, 500, 20))
+grid <- expand.grid(x = seq(0, 240, 20), y = seq(0, 240, 20))
 measured <- unique(rbind(
 	data.frame(x = survey$x_i, y = survey$y_i),
 	data.frame(x = survey$x_j, y = survey$y_j)
@@ -82,11 +79,11 @@ arrow.y <- survey$y_i + (1 - arrow.reduction) * (survey$y_j - survey$y_i)
 # One pane, with equal horizontal and vertical scales.
 settings <- par(mfrow = c(1, 1), mar = c(4, 4, 1, 1))
 plot(grid$x, grid$y, type = "n", asp = 1,
-     xlim = c(0, 500), ylim = c(0, 500),
+     xlim = c(0, 240), ylim = c(0, 240),
      xlab = "x (m)", ylab = "y (m)")
 
 # Full grid
-abline(v = seq(0, 500, 20), h = seq(0, 500, 20), col = "grey85", lwd = 0.5)
+abline(v = seq(0, 240, 20), h = seq(0, 240, 20), col = "grey85", lwd = 0.5)
 
 # Survey arrows
 arrows(survey$x_i, survey$y_i, arrow.x, arrow.y,
@@ -176,8 +173,8 @@ The two panels show the fitted terrain at the retained grid points. The unusable
 #| fig-width: 9
 #| fig-height: 4
 
-x <- seq(0, 500, 20)
-y <- seq(0, 500, 20)
+x <- seq(0, 240, 20)
+y <- seq(0, 240, 20)
 old.surface <- new.surface <- matrix(NA_real_, length(x), length(y))
 
 # Show the nominal 20 m grid, leaving unsurveyed corners as NA.
