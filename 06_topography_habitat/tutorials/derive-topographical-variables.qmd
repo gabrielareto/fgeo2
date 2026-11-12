@@ -15,22 +15,28 @@ format:
 editor: visual
 ---
 
-This tutorial starts with elevations at known coordinates, builds a digital elevation model (DEM), and calculates topographical variables used in forest ecology. The outputs describe local terrain, exposure, relative position and potential drainage. They can later be assigned to trees, quadrats or other areas.
+# Introduction
 
-The general input is a table with `x`, `y` and `z`: two horizontal coordinates and elevation. These values may come from a survey, a data provider or other instruments. Section 1 obtains them from the example survey of height differences. It is optional: users who already have elevations can start at section 2. Users with a DEM can skip interpolation as well.
+This tutorial starts with elevations at known coordinates, builds a digital elevation model (DEM), and calculates topographical variables with potential uses in forest ecology. The outputs describe local terrain, exposure, relative position and potential drainage. They can later be assigned to trees, quadrats or other areas.
+
+The general input is a table with `x`, `y` and `z`: two horizontal coordinates and elevation. These values may come from a survey, a data provider or other instruments.
+
+Section 1 obtains {x, y, z} from a simulated example survey of height differences, using the fgeo2 function `estimate_point_elevations()`. It is optional: users who already have elevations can start at section 2. Users with a digital elevation model (DEM) can skip interpolation as well.
 
 `derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The function uses two packages:
 
--   **terra:** raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
--   **whitebox:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation. Zhang et al. (2025) also used terra and whitebox for tropical forest terrain calculations.
+-   `terra`**:** the gold standard for raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
+-   `whitebox`**:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation.
 
-An optional third package, **interp**, provides the linear and spline alternatives shown in section 2. It is not needed for the default interpolation.
+An optional third package, `interp`, provides the linear and spline alternatives shown in section 2. It is not needed for the default interpolation.
 
-Raster layers and GeoTIFF files can also hold other environmental variables. This is useful when topography is later combined with soil, canopy or disturbance data. A separate tutorial will cover combining these sources and extracting values for points or polygons.
+Raster layers and GeoTIFF files are useful in general to store environmental variables. This is useful when topography is later combined with soil, canopy or disturbance data. A separate tutorial will cover combining these sources and extracting values for points or polygons.
 
-**Setup and parameters**
+## **Setup and parameters**
 
-Keep the main choices together. The example uses local coordinates in metres, with `y` increasing northward. These are not longitude and latitude. For a real site, retain its actual coordinate system and check the orientation of its grid.
+Keep the main choices together. The example uses within-plot coordinates in metres.
+
+The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
 
 ```{r}
 #| label: setup-terrain
@@ -43,10 +49,8 @@ Keep the main choices together. The example uses local coordinates in metres, wi
 library(terra)
 
 path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
-# path.to.fgeo2 = "/full/path/to/fgeo2"
+#path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update this
 
-reference.xy = c(0, 0)
-reference.z = 371
 plot.extent = c(0, 240, 0, 240)  # xmin, xmax, ymin, ymax, in metres.
 cell.size = 5
 interpolation = "idw"          # "idw", "linear", "akima" or "bilinear".
@@ -81,12 +85,15 @@ source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-variable
 
 Skip this section if a provider has already supplied an `{x, y, z}` table. The rest of the tutorial does not depend on how those elevations were obtained.
 
-For this example, positive `dz` means that the destination is higher than the origin. The reference point sets the elevation datum. See [the solver tutorial](topography-solver.qmd) for the survey and its checks. The solver also needs Matrix and igraph.
+For this example, positive `dz` means that the destination (point j) is higher than the origin (point i). The reference point sets the elevation datum. See [the solver tutorial](topography-solver.qmd) for the survey and its checks. The solver also needs `Matrix` and `igraph` R packages.
 
 ```{r}
 #| label: survey-to-elevations
 
 records <- read.csv(file.path(path.to.fgeo2, "data_examples/topography-survey.csv"))
+reference.xy = c(0, 0)  # {x,y} coordinates of a reference point
+reference.z = 371 # height or z coordinate of a reference point
+
 survey <- data.frame(
 	x_i = records$from_x_m,
 	y_i = records$from_y_m,
@@ -109,13 +116,13 @@ head(elevations)
 #| fig-cap: "Point elevations used to build the DEM. No regular input grid is required."
 
 elevation.points <- vect(elevations, geom = c("x", "y"), crs = "local")
-plot(elevation.points, "z", pch = 16, cex = 0.6, col = map.colors,
+plot(elevation.points, "z", pch = 15, cex = 2, col = map.colors,
      main = "Point elevations (m)", axes = TRUE, mar = map.margins)
+points(elevations[,c("x", "y")], col = "white", pch = "·")
+
 ```
 
-# Build the DEM and calculate the layers
-
-The DEM represents ground elevation. A surface that follows the canopy is a different input and should not be used as ground topography.
+# Build the DEM
 
 The function accepts an elevation table or a matrix with `x`, `y` and `z`. Incomplete rows are omitted with a warning. Repeated identical points are accepted; conflicting elevations at the same coordinates must be resolved before interpolation.
 
@@ -142,6 +149,7 @@ topography <- derive_topography(
 	flow.preparation = flow.preparation,
 	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
 )
+
 dem <- topography[["elevation_m"]]
 names(topography)
 ```
@@ -156,7 +164,6 @@ plot(dem, col = map.colors, main = "Elevation (m)",
      axes = TRUE, mar = map.margins)
 points(elevation.points, pch = 16, cex = 0.2)
 ```
-
 
 ## Start from a DEM, or request fewer variables
 
@@ -179,87 +186,9 @@ names(local.topography)
 
 Elevation is always included. Requesting only these local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
 
-## Compare resolutions
-
-These calls use the same point data and interpolation settings, without smoothing. Only raster resolution changes. Both maps use the same colour range; compare patterns rather than expecting cell-by-cell agreement.
-
-```{r}
-#| label: fig-resolution-comparison
-#| fig-width: 9
-#| fig-height: 4.5
-#| fig-cap: "Slope calculated at 5 m and 10 m resolution, with no smoothing."
-
-fine <- derive_topography(
-	xyz = elevations, variables = "slope", resolution = 5, extent = plot.extent,
-	interpolation = interpolation, search.radius = search.radius,
-	idw.power = idw.power, idw.smooth = idw.smooth,
-	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
-)
-coarse <- derive_topography(
-	xyz = elevations, variables = "slope", resolution = 10, extent = plot.extent,
-	interpolation = interpolation, search.radius = search.radius,
-	idw.power = idw.power, idw.smooth = idw.smooth,
-	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
-)
-slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
-                   global(coarse[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
-settings <- par(mfrow = c(1, 2))
-plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "5 m cells", mar = map.margins)
-plot(coarse[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "10 m cells", mar = map.margins)
-par(settings)
-```
-
-## Compare smoothing
-
-Reuse the unsmoothed 5 m DEM, so interpolation does not change. The second calculation applies a 5 by 5 cell mean, covering 25 m. Smoothing can reduce local noise, but it can also remove real terrain features.
-
-```{r}
-#| label: fig-smoothing-comparison
-#| fig-width: 9
-#| fig-height: 4.5
-#| fig-cap: "Slope from the same 5 m DEM, before and after 25 m smoothing."
-
-smoothed <- derive_topography(
-	dem = fine[["elevation_m"]], variables = "slope",
-	smoothing.cells = 5, neighbors = slope.neighbors
-)
-slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
-                   global(smoothed[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
-settings <- par(mfrow = c(1, 2))
-plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "No smoothing", mar = map.margins)
-plot(smoothed[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "25 m smoothing", mar = map.margins)
-par(settings)
-```
-
-## Compare slope neighbourhoods
-
-The same unsmoothed DEM can use four or eight neighbouring cells for slope and aspect. This parameter changes their calculation; it does not change the fixed eight-neighbour definition of TRI, the TPI radius or the curvature fit.
-
-```{r}
-#| label: fig-neighbor-comparison
-#| fig-width: 9
-#| fig-height: 4.5
-#| fig-cap: "Slope calculated from the same DEM with four or eight neighbours."
-
-slope.four <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 4)
-slope.eight <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 8)
-slope.limit <- max(global(slope.four[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
-                   global(slope.eight[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
-settings <- par(mfrow = c(1, 2))
-plot(slope.four[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "Four neighbours", mar = map.margins)
-plot(slope.eight[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
-     main = "Eight neighbours", mar = map.margins)
-par(settings)
-```
-
 # Derive topographical variables
 
-These are complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
+The `derive_topography()` function returns a relatively broad range of variables. These are complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
 
 -   **Elevation:** height relative to the chosen datum.
 -   **Slope:** terrain inclination.
@@ -436,6 +365,94 @@ HAND can distinguish terrain near valley bottoms from higher slopes. It is not a
 hand <- topography[["height_above_drainage_m"]]
 plot(hand, col = map.colors, main = "Height above drainage (m)",
      axes = TRUE, mar = map.margins)
+```
+
+# Comparison of parameters
+
+## Compare resolutions
+
+These calls use the same point data and interpolation settings, without smoothing. Only raster resolution changes. Both maps use the same colour range; compare patterns rather than expecting cell-by-cell agreement.
+
+```{r}
+#| label: fig-resolution-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope calculated at 5 m and 10 m resolution, with no smoothing."
+
+fine <- derive_topography(
+	xyz = elevations, variables = "slope", resolution = 5, extent = plot.extent,
+	interpolation = interpolation, search.radius = search.radius,
+	idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+)
+
+coarse <- derive_topography(
+	xyz = elevations, variables = "slope", resolution = 10, extent = plot.extent,
+	interpolation = interpolation, search.radius = search.radius,
+	idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+)
+
+slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(coarse[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+
+settings <- par(mfrow = c(1, 2))
+plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "5 m cells", mar = map.margins)
+plot(coarse[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "10 m cells", mar = map.margins)
+par(settings)
+```
+
+## Compare smoothing
+
+Reuse the unsmoothed 5 m DEM, so interpolation does not change. The second calculation applies a 5 by 5 cell mean, covering 25 m. Smoothing can reduce local noise, but it can also remove real terrain features.
+
+```{r}
+#| label: fig-smoothing-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope from the same 5 m DEM, before and after 25 m smoothing."
+
+smoothed <- derive_topography(
+	dem = fine[["elevation_m"]], variables = "slope",
+	smoothing.cells = 5, neighbors = slope.neighbors
+)
+
+slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(smoothed[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+
+settings <- par(mfrow = c(1, 2))
+plot(fine[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "No smoothing", mar = map.margins)
+plot(smoothed[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "25 m smoothing", mar = map.margins)
+par(settings)
+```
+
+## Compare slope neighbourhoods
+
+The same unsmoothed DEM can use four or eight neighbouring cells for slope and aspect. This parameter changes their calculation; it does not change the fixed eight-neighbour definition of TRI, the TPI radius or the curvature fit.
+
+```{r}
+#| label: fig-neighbor-comparison
+#| fig-width: 9
+#| fig-height: 4.5
+#| fig-cap: "Slope calculated from the same DEM with four or eight neighbours."
+
+slope.four <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 4)
+
+slope.eight <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 8)
+
+slope.limit <- max(global(slope.four[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(slope.eight[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+
+settings <- par(mfrow = c(1, 2))
+plot(slope.four[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "Four neighbours", mar = map.margins)
+plot(slope.eight[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "Eight neighbours", mar = map.margins)
+par(settings)
 ```
 
 # Keep the layers and save GeoTIFF files
