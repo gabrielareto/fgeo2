@@ -25,6 +25,8 @@ This is a limited tool for pairwise survey records, with little consideration fo
 
 # Read the survey
 
+This section reads a simulated survey as an example. It follows mostly a regular grid, with some local complications and unusable points that were by-passed by taking measurements around.
+
 The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
 
 ```{r}
@@ -60,7 +62,7 @@ table(survey.distance)
 #| fig-height: 7
 
 # Fraction removed from each arrow: 0 = full length, 0.3 = shorten by 30%.
-arrow.reduction = 0.3
+arrow.reduction = 0.2
 
 # Planned grid and measured locations.
 grid <- expand.grid(x = seq(0, 240, 20), y = seq(0, 240, 20))
@@ -101,7 +103,7 @@ par(settings)
 
 # Estimate elevations
 
-Set the coordinates and elevation of the reference point, then fit all measured differences together.
+This sections shows how the new topography solver works. It is just one function and its use is trivial, once the "survey" input has the needed five columns with the right column names. Set the coordinates and elevation of the reference point, then fit all measured differences together.
 
 ```{r}
 #| label: estimate-elevations
@@ -117,7 +119,9 @@ head(elevations)
 
 Other file layouts must be processed into the same five-column `survey` table. The solver identifies points by exact coordinate pairs, so use consistent coordinates for repeated points. The point IDs in this example file are only used by the old solver below.
 
-Rows and columns can be in any order. Repeated and conflicting measurements receive equal weight. Incomplete rows are omitted with a warning. Missing measurements or missing grid points are acceptable while the remaining observations connect every retained point. Points represented only by omitted rows disappear from the output. The result contains `x`, `y` and `z`, as the most general output. Raster construction and interpolation, if needed, would be separate steps.
+Rows and columns can be in any order. Repeated and conflicting measurements receive equal weight. Incomplete rows are omitted with a warning. Missing measurements or missing grid points are acceptable while the remaining observations connect every retained point. Points represented only by omitted rows disappear from the output.
+
+The result contains `x`, `y` and `z`, as the most general output. Raster construction and interpolation, if needed, would be separate steps.
 
 # Comparison with Condit's solver
 
@@ -168,36 +172,38 @@ max(abs(old.z - new.fit$z)) # minor floating point disagreements
 stopifnot(isTRUE(all.equal(old.z, new.fit$z, tolerance = 1e-8)))
 ```
 
-The two panels show the fitted terrain at the retained grid points. The unusable corners are left as gaps. All measurements, including the short-distance observations, contributed to the fit. Both panels use the same scales and viewing angles, using [R perspective plots](https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/persp.html).
+The two panels show the topography estimated from both solvers. For visualization purposes, the {x, y, z} output of the solvers has been interpolated into a complete 5x5m grid. The z dimension has been exaggerated for better visualization by the same factor. Both panels use the same scales and viewing angles, using [R perspective plots](https://stat.ethz.ch/R-manual/R-devel/library/graphics/html/persp.html).
 
 ```{r}
 #| label: fig-terrain-comparison
-#| fig-cap: "Relative elevations from the same survey. Condit's solver and the new solver agree."
+#| fig-cap: "Elevations interpolated onto a 5 m grid. Both solvers agree."
 #| fig-width: 9
 #| fig-height: 4
 
-x <- seq(0, 240, 20)
-y <- seq(0, 240, 20)
-old.surface <- new.surface <- matrix(NA_real_, length(x), length(y))
+# install.packages("interp")
 
-# Show the nominal 20 m grid, leaving unsurveyed corners as NA.
-# Matrix rows correspond to x and columns to y.
-keep.old <- points$x %in% x & points$y %in% y
-keep.new <- new.fit$x %in% x & new.fit$y %in% y
-old.surface[cbind(match(points$x[keep.old], x), match(points$y[keep.old], y))] <- old.z[keep.old]
-new.surface[cbind(match(new.fit$x[keep.new], x), match(new.fit$y[keep.new], y))] <- new.fit$z[keep.new]
+x <- seq(0, 240, 5)
+y <- seq(0, 240, 5)
+
+# Interpolate all points, including those outside the main 20 m grid.
+old.surface <- interp::interp(points$x, points$y, old.z,
+                              xo = x, yo = y, method = "linear")$z
+new.surface <- interp::interp(new.fit$x, new.fit$y, new.fit$z,
+                              xo = x, yo = y, method = "linear")$z
+
+# Vertical exaggeration for display.
+zoomz = 3
+z.limits <- range(old.surface, new.surface, na.rm = TRUE) * zoomz
 
 settings <- par(mfrow = c(1, 2), mar = c(1, 1, 3, 1))
 
-zoomz = 5
-z.limits <- range(old.z*zoomz, new.fit$z*zoomz)
-
-persp(x, y, old.surface*zoomz, zlim = z.limits, theta = 35, phi = 25,
+persp(x, y, old.surface * zoomz, zlim = z.limits, theta = 35, phi = 25,
       scale = FALSE, col = "lightblue", shade = 0.4,
       xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "Condit")
-persp(x, y, new.surface*zoomz, zlim = z.limits, theta = 35, phi = 25,
+persp(x, y, new.surface * zoomz, zlim = z.limits, theta = 35, phi = 25,
       scale = FALSE, col = "lightblue", shade = 0.4,
       xlab = "x (m)", ylab = "y (m)", zlab = "z (m)", main = "New solver")
+
 par(settings)
 ```
 
