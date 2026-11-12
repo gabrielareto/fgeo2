@@ -89,6 +89,9 @@ abline(v = seq(0, 240, 20), h = seq(0, 240, 20), col = "grey85", lwd = 0.5)
 arrows(survey$x_i, survey$y_i, arrow.x, arrow.y,
        length = 0.03, angle = 25, code = 2, col = "black", lwd = 0.7)
 
+# Surveyed locations, including those on the finer 5 m grid.
+points(measured$x, measured$y, cex = 0.3, col = "black", pch = 16)
+
 # Grid points
 points(grid$x, grid$y, cex = 0.4, col = "black", pch = 16)
 points(grid$x[unusable], grid$y[unusable], cex = 0.9, col = "firebrick", pch = 4, lwd = 1.5)
