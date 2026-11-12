@@ -21,8 +21,8 @@ The general input is a table with `x`, `y` and `z`: two horizontal coordinates a
 
 The main workflow uses two packages:
 
-- **terra:** raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
-- **whitebox:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation. Zhang et al. (2025) also used terra and whitebox for tropical forest terrain calculations.
+-   **terra:** raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
+-   **whitebox:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation. Zhang et al. (2025) also used terra and whitebox for tropical forest terrain calculations.
 
 An optional third package, **interp**, provides the linear and spline alternatives shown in section 2. It is not needed for the default interpolation.
 
@@ -117,11 +117,11 @@ Use one finite elevation per distinct coordinate pair. Resolve missing or confli
 
 The main choices are:
 
-- **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
-- **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared above. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp.
-- **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. Compare choices before interpreting small ridges or depressions.
+-   **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
+-   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared above. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp.
+-   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. Compare choices before interpreting small ridges or depressions.
 
-Raster coordinates refer to cell centres. A 5 m raster over 0–240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
+Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
 
 ```{r}
 #| label: construct-dem
@@ -176,16 +176,16 @@ The complete workflow below assumes square raster cells and horizontal and verti
 
 These are complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
 
-- **Elevation:** height relative to the chosen datum.
-- **Slope:** terrain inclination.
-- **Aspect, northness and eastness:** orientation of the slope, with two continuous components for analysis.
-- **Topographic position (TPI):** height relative to a stated neighbourhood; a local description of ridges and depressions.
-- **Terrain ruggedness (TRI):** local elevation differences.
-- **Plan and profile curvature:** changes in surface direction and slope.
-- **Contributing area:** terrain supplying runoff to each location.
-- **Topographic wetness index (TWI):** potential for water accumulation from contributing area and slope.
-- **Downslope distance to drainage:** distance along the drainage route.
-- **Height above drainage:** vertical separation from the drainage reached downhill.
+-   **Elevation:** height relative to the chosen datum.
+-   **Slope:** terrain inclination.
+-   **Aspect, northness and eastness:** orientation of the slope, with two continuous components for analysis.
+-   **Topographic position (TPI):** height relative to a stated neighbourhood; a local description of ridges and depressions.
+-   **Terrain ruggedness (TRI):** local elevation differences.
+-   **Plan and profile curvature:** changes in surface direction and slope.
+-   **Contributing area:** terrain supplying runoff to each location.
+-   **Topographic wetness index (TWI):** potential for water accumulation from contributing area and slope.
+-   **Downslope distance to drainage:** distance along the drainage route.
+-   **Height above drainage:** vertical separation from the drainage reached downhill.
 
 Recent forest studies use aspect components and ruggedness (McNichol et al. 2024; Freund et al. 2021), and wetness indices (Zhang et al. 2025). Curvature and drainage position also have applications to forest structure and floristic composition (Detto et al. 2013; Schietti et al. 2014).
 
@@ -441,14 +441,14 @@ The same raster format can later hold soil, canopy and other environmental layer
 
 Detto, M., Muller-Landau, H. C., Mascaro, J., and Asner, G. P. (2013). Hydrological networks and associated topographic variation as templates for the spatial organization of tropical forest vegetation. *PLoS ONE*, 8(10), e76296. <https://doi.org/10.1371/journal.pone.0076296>
 
-Freund, C. A., Clark, K. E., Curran, J. F., Asner, G. P., and Silman, M. R. (2021). Landslide age, elevation and residual vegetation determine tropical montane forest canopy recovery and biomass accumulation after landslide disturbances in the Peruvian Andes. *Journal of Ecology*, 109, 3555–3571. <https://doi.org/10.1111/1365-2745.13737>
+Freund, C. A., Clark, K. E., Curran, J. F., Asner, G. P., and Silman, M. R. (2021). Landslide age, elevation and residual vegetation determine tropical montane forest canopy recovery and biomass accumulation after landslide disturbances in the Peruvian Andes. *Journal of Ecology*, 109, 3555--3571. <https://doi.org/10.1111/1365-2745.13737>
 
 McNichol, B. H., Wang, R., Hefner, A., Helzer, C., McMahon, S. M., and Russo, S. E. (2024). Topography-driven microclimate gradients shape forest structure, diversity, and composition in a temperate refugial forest. *Plant-Environment Interactions*, 5, e10153. <https://doi.org/10.1002/pei3.10153>
 
-Muscarella, R., Kolyaie, S., Morton, D. C., Zimmerman, J. K., and Uriarte, M. (2020). Effects of topography on tropical forest structure depend on climate context. *Journal of Ecology*, 108, 145–159. <https://doi.org/10.1111/1365-2745.13261>
+Muscarella, R., Kolyaie, S., Morton, D. C., Zimmerman, J. K., and Uriarte, M. (2020). Effects of topography on tropical forest structure depend on climate context. *Journal of Ecology*, 108, 145--159. <https://doi.org/10.1111/1365-2745.13261>
 
-Schietti, J., Emilio, T., Rennó, C. D., Drucker, D. P., Costa, F. R. C., Nogueira, A., Baccaro, F. B., Figueiredo, F., Castilho, C. V., Kinupp, V., Guillaumet, J.-L., Garcia, A. R. M., Lima, A. P., and Magnusson, W. E. (2014). Vertical distance from drainage drives floristic composition changes in an Amazonian rainforest. *Plant Ecology & Diversity*, 7(1–2), 241–253. <https://doi.org/10.1080/17550874.2013.783642>
+Schietti, J., Emilio, T., Rennó, C. D., Drucker, D. P., Costa, F. R. C., Nogueira, A., Baccaro, F. B., Figueiredo, F., Castilho, C. V., Kinupp, V., Guillaumet, J.-L., Garcia, A. R. M., Lima, A. P., and Magnusson, W. E. (2014). Vertical distance from drainage drives floristic composition changes in an Amazonian rainforest. *Plant Ecology & Diversity*, 7(1--2), 241--253. <https://doi.org/10.1080/17550874.2013.783642>
 
-Zhang, B., Jackson, T. D., Coomes, D. A., Burslem, D. F. R. P., Nilus, R., Bittencourt, P. R. L., Bartholomew, D. C., Rowland, L., Fischer, F. J., and Jucker, T. (2025). Soils and topography drive large and predictable shifts in canopy dynamics across tropical forest landscapes. *New Phytologist*, 247, 1666–1679. <https://doi.org/10.1111/nph.70300>
+Zhang, B., Jackson, T. D., Coomes, D. A., Burslem, D. F. R. P., Nilus, R., Bittencourt, P. R. L., Bartholomew, D. C., Rowland, L., Fischer, F. J., and Jucker, T. (2025). Soils and topography drive large and predictable shifts in canopy dynamics across tropical forest landscapes. *New Phytologist*, 247, 1666--1679. <https://doi.org/10.1111/nph.70300>
 
 Software documentation: [terra](https://rspatial.github.io/terra/reference/index.html), [interp](https://cran.r-project.org/web/packages/interp/refman/interp.html), and [whitebox](https://whiteboxr.gishub.org/reference/index.html). Curvature definitions were checked against the [WhiteboxTools 2.4.0 plan-curvature source](https://github.com/jblindsay/whitebox-tools/blob/v2.4.0/whitebox-tools-app/src/tools/terrain_analysis/plan_curvature.rs) and [profile-curvature source](https://github.com/jblindsay/whitebox-tools/blob/v2.4.0/whitebox-tools-app/src/tools/terrain_analysis/prof_curvature.rs).
