@@ -81,7 +81,7 @@ knitr::opts_chunk$set(fig.width = 6, fig.height = 5)
 source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-variables.R"))
 ```
 
-# From height differences to point elevations
+# From height differences to point elevations {#from-height-differences-to-point-elevations}
 
 Skip this section if a provider has already supplied an `{x, y, z}` table. The rest of the tutorial does not depend on how those elevations were obtained.
 
@@ -122,7 +122,7 @@ points(elevations[,c("x", "y")], col = "white", pch = "·")
 
 ```
 
-# Build the DEM
+# Build the DEM {#build-the-dem}
 
 The function accepts an elevation table or a matrix with `x`, `y` and `z`. Incomplete rows are omitted with a warning. Repeated identical points are accepted; conflicting elevations at the same coordinates must be resolved before interpolation.
 
@@ -169,7 +169,11 @@ points(elevation.points, pch = 16, cex = 0.2)
 
 # Derive topographical variables
 
-The `derive_topography()` function returns a relatively broad range of variables. These are complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
+The `derive_topography()` function returns a relatively broad range of variables.
+
+The shortest call is: `derive_topography(xyz = elevations)`, and it will return all the variables by default. Alternatively, one can supply a DEM directly, instead of {x,y,z} input, and ask for a specific set of variables. See "Calculate selected variables from a DEM" section below. \
+\
+The output variables aare complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
 
 -   **Elevation:** height relative to the chosen datum.
 -   **Slope:** terrain inclination.
@@ -358,7 +362,7 @@ plot(hand, col = map.colors, main = "Height above drainage (m)",
      axes = TRUE, mar = map.margins)
 ```
 
-## Calculate selected variables from a DEM
+## Calculate selected variables from a DEM {#calculate-selected-variables-from-a-dem}
 
 A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
 
