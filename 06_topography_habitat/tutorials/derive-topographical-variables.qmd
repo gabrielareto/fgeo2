@@ -21,20 +21,20 @@ This tutorial starts with elevations at known coordinates, builds a digital elev
 
 The general input is a table with `x`, `y` and `z`: two horizontal coordinates and elevation. These values may come from a survey, a data provider or other instruments.
 
-The optional [survey section](#from-height-differences-to-point-elevations) obtains `{x, y, z}` from simulated height differences, using the fgeo2 function `estimate_point_elevations()`. Users who already have elevations can start at [Build the DEM](#build-the-dem). Users with a DEM can use the [example for selected variables](#calculate-selected-variables-from-a-dem).
+The optional [survey section](#from-height-differences-to-point-elevations) obtains `{x, y, z}` from simulated height differences, using the fgeo2 function `estimate_point_elevations()`. Users who already have elevations can start with the [point-input call](#point-input-all-variables). Users with a DEM can use the [DEM-input call](#dem-input-selected-variables).
 
 `derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The function uses two packages:
 
 -   `terra`**:** the gold standard for raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
 -   `whitebox`**:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation.
 
-An optional third package, `interp`, provides the linear and spline alternatives described under [Build the DEM](#build-the-dem). It is not needed for the default interpolation.
+An optional third package, `interp`, provides the linear and spline alternatives described under [the point-input call](#point-input-all-variables). It is not needed for the default interpolation.
 
 Raster layers and GeoTIFF files are useful in general to store environmental variables. This is useful when topography is later combined with soil, canopy or disturbance data. A separate tutorial will cover combining these sources and extracting values for points or polygons.
 
-## **Setup and parameters**
+## Setup
 
-Keep the main choices together. The example uses within-plot coordinates in metres.
+The example uses within-plot coordinates in metres. Set paths and plotting options here; calculation parameters are declared beside the main call below.
 
 The default paths below work when rendering this tutorial or running from the repository root. Set a full path to fgeo2 when using the code elsewhere.
 
@@ -50,21 +50,6 @@ library(terra)
 
 path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
 #path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update this
-
-plot.extent = c(0, 240, 0, 240)  # xmin, xmax, ymin, ymax, in metres.
-cell.size = 5
-interpolation = "idw"          # "idw", "linear", "akima" or "bilinear".
-search.radius = 60             # IDW search radius, in metres.
-idw.power = 2                  # Distance weighting: larger values favour nearer points.
-idw.smooth = 0                 # IDW distance-smoothing parameter, in metres.
-min.points = 3                # Minimum points within the IDW search radius.
-max.points = 12               # Maximum points used for IDW.
-slope.neighbors = 8           # 4 or 8 neighbours for slope and aspect.
-smoothing.cells = 3            # Odd window width; 1 means no smoothing.
-position.radius = 20           # TPI neighbourhood radius, in metres.
-flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepared DEM.
-breach.distance.cells = 20     # Maximum search distance for drainage preparation.
-channel.area.m2 = 1000         # Illustrative channel threshold; check in the field.
 
 # Temporary by default. Change this to keep the files after the R session.
 output.dir = file.path(tempdir(), "fgeo2-topography")
@@ -122,25 +107,43 @@ points(elevations[,c("x", "y")], col = "white", pch = "·")
 
 ```
 
-# Build the DEM {#build-the-dem}
+# Alternative ways of running the code
+
+## From point elevations: all variables {#point-input-all-variables}
+
+The shortest call is `topography <- derive_topography(xyz = elevations)`. It builds a DEM and returns all variables by default. The example below declares the parameters explicitly so they are easy to change. This `topography` object is used throughout the rest of the tutorial.
 
 The function accepts an elevation table or a matrix with `x`, `y` and `z`. Incomplete rows are omitted with a warning. Repeated identical points are accepted; conflicting elevations at the same coordinates must be resolved before interpolation.
 
 The main choices are:
 
 -   **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
--   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared above. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp. `bilinear` is available when the input points form a complete regular grid.
+-   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared below. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp. `bilinear` is available when the input points form a complete regular grid.
 -   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. The function defaults to 1, with no smoothing. This example explicitly uses 3. Compare choices before interpreting small ridges or depressions.
 
 Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
 
-The call below builds the DEM and calculates all terrain layers. The next section describes and plots each output.
+Raster resolution, smoothing and neighbourhood choices are compared near the end of the tutorial.
 
 ```{r}
 #| label: construct-dem
 
-# The shortest call is: derive_topography(xyz = elevations).
-# Here, pass the choices declared above so they are easy to change.
+plot.extent = c(0, 240, 0, 240)  # xmin, xmax, ymin, ymax, in metres.
+cell.size = 5
+interpolation = "idw"          # "idw", "linear", "akima" or "bilinear".
+search.radius = 60             # IDW search radius, in metres.
+idw.power = 2                  # Distance weighting: larger values favour nearer points.
+idw.smooth = 0                 # IDW distance-smoothing parameter, in metres.
+min.points = 3                # Minimum points within the IDW search radius.
+max.points = 12               # Maximum points used for IDW.
+slope.neighbors = 8           # 4 or 8 neighbours for slope and aspect.
+smoothing.cells = 3            # Odd window width; 1 means no smoothing.
+position.radius = 20           # TPI neighbourhood radius, in metres.
+flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepared DEM.
+breach.distance.cells = 20     # Maximum search distance for drainage preparation.
+channel.area.m2 = 1000         # Illustrative channel threshold; check in the field.
+
+# Build the DEM and calculate all variables.
 topography <- derive_topography(
 	xyz = elevations, resolution = cell.size, extent = plot.extent, crs = "local",
 	interpolation = interpolation, search.radius = search.radius,
@@ -164,16 +167,31 @@ The function leaves cells outside the observed points' convex hull as `NA`. Smoo
 
 plot(dem, col = map.colors, main = "Elevation (m)",
      axes = TRUE, mar = map.margins)
-points(elevation.points, pch = 16, cex = 0.2)
+points(elevations[, c("x", "y")], pch = 16, cex = 0.2)
 ```
 
-# Derive topographical variables
+## From a DEM: selected variables {#dem-input-selected-variables}
 
-The `derive_topography()` function returns a relatively broad range of variables.
+Alternatively, supply a DEM and request only the variables needed. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
 
-The shortest call is: `derive_topography(xyz = elevations)`, and it will return all the variables by default. Alternatively, one can supply a DEM directly, instead of {x,y,z} input, and ask for a specific set of variables. See "Calculate selected variables from a DEM" section below. \
-\
-The output variables aare complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model.
+```{r}
+#| label: dem-input-and-variable-selection
+
+# Reuse the example DEM. To use your own file, replace this line:
+dem <- topography[["elevation_m"]]
+# dem <- rast("/full/path/to/elevation.tif")
+
+local.topography <- derive_topography(
+	dem = dem, variables = c("slope", "tpi", "tri")
+)
+names(local.topography)
+```
+
+Elevation is always included. This call uses the default calculation parameters; add arguments as in the previous call to change them. Requesting only these local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
+
+# Description of topographical variables
+
+The variables below are complementary descriptions of the same terrain. They are often correlated; calculating them all does not mean that all should enter the same statistical model. Each plot uses a layer from the main `topography` object.
 
 -   **Elevation:** height relative to the chosen datum.
 -   **Slope:** terrain inclination.
@@ -190,13 +208,11 @@ Recent forest studies use aspect components and ruggedness (McNichol et al. 2024
 
 Spatial scale is part of each variable. DEM resolution, smoothing and neighbourhood size can change the results (Detto et al. 2013; Muscarella et al. 2020). Blank boundary cells are retained where the full local neighbourhood is unavailable.
 
-**Legacy:** The CTFS/ctfs/fgeo quadrat summary returned mean elevation, slope and convexity for regular square quadrats (20 m by default, configurable). Here, input points may be irregular; calculations use a raster with adjustable cell size. See the [legacy evaluation](../../evaluation/6-topography.qmd) for details.
+The old CTFS/ctfs/fgeo quadrat summary returned mean elevation, slope and convexity for regular square quadrats (20 m by default, configurable). This function accepts irregular input points and calculates variables on a raster with adjustable cell size. See the [evaluation](../../evaluation/6-topography.qmd) for details.
 
 ## Elevation
 
-Elevation is already in the DEM. It can describe broad gradients within a plot, although it does not directly measure soil moisture or soil fertility. An arbitrary elevation datum is sufficient for the relative terrain calculations below.
-
-**Legacy:** Quadrat elevation was the mean of its four corners. Here it is the interpolated, optionally smoothed elevation at a raster cell centre.
+Elevation is already in the DEM. It can describe broad gradients within a plot, although it does not directly measure soil moisture or soil fertility. An arbitrary elevation datum is sufficient for the relative terrain calculations below. The old CTFS/fgeo code used the mean of four quadrat corners; here elevation is interpolated at a raster cell centre, with optional smoothing.
 
 ```{r}
 #| label: fig-elevation-layer
@@ -208,9 +224,7 @@ plot(elevation, col = map.colors, main = "Elevation (m)",
 
 ## Slope
 
-Slope is the inclination from horizontal, in degrees. It describes steepness and is often used when analysing forest structure or disturbance. The example uses the eight neighbouring cells; `neighbors = 4` is an alternative.
-
-**Legacy:** Quadrat slope averaged the inclinations of four planes, each through three corners. This differs from both raster methods; `neighbors = 4` does not recreate that calculation.
+Slope is the inclination from horizontal, in degrees. It describes steepness and is often used when analysing forest structure or disturbance. The example uses the eight neighbouring cells; `neighbors = 4` is an alternative. The old CTFS/fgeo code instead averaged the inclinations of four planes, each through three quadrat corners. Both raster methods differ from that calculation.
 
 ```{r}
 #| label: fig-slope
@@ -224,9 +238,7 @@ plot(slope, col = map.colors, main = "Slope (degrees)",
 
 Aspect is the downhill direction, clockwise from north. It can represent differences in exposure, as in the Niobrara ForestGEO study of microclimate (McNichol et al. 2024). On our local grid, this interpretation assumes that positive `y` points north.
 
-Northness and eastness avoid the discontinuity between 359 and 0 degrees: they are the cosine and sine of aspect. Flat cells have no meaningful aspect and are left blank.
-
-**Legacy:** `calc.gradient()` calculated directions for eight triangular facets. This differs from a single raster aspect and its northness/eastness components.
+Northness and eastness avoid the discontinuity between 359 and 0 degrees: they are the cosine and sine of aspect. Flat cells have no meaningful aspect and are left blank. The old CTFS `calc.gradient()` calculated directions for eight triangular facets rather than a single raster aspect and its northness/eastness components.
 
 ```{r}
 #| label: fig-aspect-components
@@ -248,7 +260,7 @@ par(settings)
 
 TPI is focal elevation minus the mean elevation of its neighbours. Positive values indicate locally higher ground; negative values indicate depressions. The neighbourhood below is a square extending `position.radius` metres from the focal cell centre, rounded up to a whole number of cells.
 
-**Legacy:** Quadrat convexity was focal quadrat mean elevation minus the mean of eight surrounding quadrat means. Its default edge correction used centre elevation minus corner mean. TPI uses raster cells and an explicit radius; incomplete neighbourhoods stay blank, so it is not the same measure.
+The old CTFS/fgeo convexity was a quadrat's mean elevation minus the mean of its eight surrounding quadrats. At the perimeter, the default calculation used measured centre elevation minus corner mean. Here, TPI uses raster cells, an explicit radius and no estimate for incomplete neighbourhoods.
 
 ```{r}
 #| label: fig-tpi
@@ -275,7 +287,7 @@ plot(tri, col = map.colors, main = "Terrain ruggedness (m)",
 
 Plan curvature describes convergence or divergence across the slope. Profile curvature describes how steepness changes downhill. These are second derivatives of elevation and are particularly sensitive to interpolation and smoothing. Detto et al. (2013) used several curvature measures to describe forest canopy structure in Panama.
 
-The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These are not the CTFS convexity measure. The calculation uses a 5 by 5 cell fit; the function masks the incomplete boundary.
+The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These differ from CTFS/fgeo convexity, which compared a quadrat with its neighbours. The calculation uses a 5 by 5 cell fit; the function masks the incomplete boundary.
 
 ```{r}
 #| label: fig-curvature
@@ -298,9 +310,7 @@ par(settings)
 
 ## Contributing area
 
-Contributing area describes how much upslope terrain supplies flow to a cell. It is an input to TWI. The function uses D-infinity accumulation, which can divide flow between neighbouring directions. The specific contributing area (SCA) is area per unit contour width, in metres; multiplying by cell width gives the corresponding area in square metres.
-
-**Legacy:** The standard quadrat summary did not include the flow-based variables below.
+Contributing area describes how much upslope terrain supplies flow to a cell. It is an input to TWI. The function uses D-infinity accumulation, which can divide flow between neighbouring directions. The specific contributing area (SCA) is area per unit contour width, in metres; multiplying by cell width gives the corresponding area in square metres. The old CTFS/fgeo quadrat summary did not include contributing area or the following flow-based variables.
 
 Flow routing needs a draining surface. By default, a separate copy of the DEM is prepared by breaching depressions, with filling where breaching fails. `flow.preparation = "fill"` instead raises depressions; use `"none"` for a DEM already prepared for routing. Inspect these choices where depressions are real features. The earlier local terrain layers still use the original DEM.
 
@@ -361,27 +371,6 @@ hand <- topography[["height_above_drainage_m"]]
 plot(hand, col = map.colors, main = "Height above drainage (m)",
      axes = TRUE, mar = map.margins)
 ```
-
-## Calculate selected variables from a DEM {#calculate-selected-variables-from-a-dem}
-
-A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
-
-```{r}
-#| label: dem-input-and-variable-selection
-
-# When a ground DEM is already available:
-# supplied.dem <- rast("/full/path/to/elevation.tif")
-# supplied.topography <- derive_topography(dem = supplied.dem)
-
-# Here, reuse the example DEM and request only local variables.
-local.topography <- derive_topography(
-	dem = dem, variables = c("slope", "tpi", "tri"),
-	neighbors = slope.neighbors, position.radius = position.radius
-)
-names(local.topography)
-```
-
-Elevation is always included. Requesting only these local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
 
 # Comparison of parameters
 
