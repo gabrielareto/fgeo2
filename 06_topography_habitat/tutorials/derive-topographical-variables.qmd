@@ -19,12 +19,11 @@ editor: visual
 
 This tutorial describes how to derive a range of topographical variables with potential uses in forest ecology. The input is elevation at known coordinates within a plot. The output describes local terrain, exposure, relative position and potential drainage. These variables can later be assigned to trees, quadrats or other areas.
 
-`derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The function uses two packages:
+`derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The full point-input workflow uses three packages:
 
--   `terra`**:** the gold standard for raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
--   `whitebox`**:** curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation.
-
-An optional third package, `interp`, provides the linear and spline alternatives described under [the point-input call](#point-input-all-variables). It is not needed for the default interpolation.
+-   `terra`: raster objects, local terrain calculations, maps and GeoTIFF files. The main object is a `SpatRaster`, with one layer per variable.
+-   `interp`: the default linear interpolation from points. It preserves a sloping plane and avoids the repeated grid patterns that IDW can introduce into derivatives. It is not needed for a supplied DEM, IDW or bilinear interpolation.
+-   `whitebox`: curvature and hydrological calculations. It calls the separate WhiteboxTools program, which needs a one-time installation.
 
 Raster layers and GeoTIFF files are useful in general to store environmental variables. This is useful when topography is later combined with soil, canopy or disturbance data. A separate tutorial will cover combining these sources and extracting values for points or polygons.
 
@@ -38,8 +37,7 @@ The default paths below work when rendering this tutorial or running from the re
 #| label: setup-terrain
 #| results: hide
 
-# install.packages(c("terra", "whitebox"))
-# install.packages("interp")  # Only for the optional linear or spline interpolation.
+# install.packages(c("terra", "interp", "whitebox"))
 # whitebox::install_whitebox()  # Once, to install the WhiteboxTools program.
 
 library(terra)
@@ -115,7 +113,7 @@ The function accepts an elevation table or a matrix with `x`, `y` and `z`. Incom
 The main choices are:
 
 -   **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
--   **Interpolation:** the default inverse-distance weighting (IDW) gives nearby points more weight. Its search radius, distance power and smoothing parameter are declared below. `linear` connects the elevations with planar triangles; `akima` gives a smoother surface, which may overshoot the observed range. The last two options need interp. `bilinear` is available when the input points form a complete regular grid.
+-   **Interpolation:** the default `linear` method connects elevations with planar triangles. It does not create new elevation extremes. IDW is also available, with its search radius, distance power and distance-smoothing parameter declared below. It can imprint the survey grid on the derivatives. `akima` gives a smoother surface but can create spurious peaks and pits, especially with irregular spacing. Linear and Akima need interp. `bilinear` is available for a complete regular input grid.
 -   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. The function defaults to 1, with no smoothing. This example explicitly uses 3. Compare choices before interpreting small ridges or depressions.
 
 Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
@@ -123,22 +121,27 @@ Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres
 Raster resolution, smoothing and neighbourhood choices are compared near the end of the tutorial.
 
 ```{r}
-#| label: construct-dem
+#| label: terrain-parameters
 
 plot.extent = c(0, 240, 0, 240)  # xmin, xmax, ymin, ymax, in metres.
-cell.size = 5
-interpolation = "idw"          # "idw", "linear", "akima" or "bilinear".
+cell.size = 5                 # Mostly 20 m between survey points; this is an interpolated grid.
+interpolation = "linear"       # "linear", "idw", "akima" or "bilinear".
 search.radius = 60             # IDW search radius, in metres.
 idw.power = 2                  # Distance weighting: larger values favour nearer points.
 idw.smooth = 0                 # IDW distance-smoothing parameter, in metres.
 min.points = 3                # Minimum points within the IDW search radius.
 max.points = 12               # Maximum points used for IDW.
 slope.neighbors = 8           # 4 or 8 neighbours for slope and aspect.
-smoothing.cells = 3            # Odd window width; 1 means no smoothing.
+smoothing.cells = 3            # 15 m window at 5 m resolution; 1 means no smoothing.
 position.radius = 20           # TPI neighbourhood radius, in metres.
 flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepared DEM.
 breach.distance.cells = 20     # Maximum search distance for drainage preparation.
 channel.area.m2 = 1000         # Illustrative channel threshold; check in the field.
+
+```
+
+```{r}
+#| label: construct-dem
 
 # Calculate all variables.
 topography <- derive_topography(
@@ -156,7 +159,7 @@ names(topography)
 
 ```
 
-The function leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary. Check the DEM for gaps and interpolation artefacts before interpreting the layers. If linear interpolation leaves interior gaps, use IDW or `bilinear` for a complete regular input grid. For larger sites, supply the terrain surrounding the plot and crop the outputs afterwards.
+The function leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary; this can flatten slopes near the edge. Check the DEM for gaps and interpolation artefacts before interpreting the layers. Triangulation can occasionally leave unresolved interior cells; try another resolution or method. These cells are not filled automatically. For larger sites, supply the terrain surrounding the plot and crop the outputs afterwards.
 
 ```{r}
 #| label: fig-dem
@@ -171,7 +174,9 @@ points(elevations[, c("x", "y")], pch = 16, cex = 0.2)
 
 ## DEM as input {#dem-input-selected-variables}
 
-One can pass a DEM as input instead of a `{x, y, z}` table. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
+One can pass a DEM as input instead of a `{x, y, z}` table. For your own DEM, run setup and the parameter definitions above, skip the point-input call, and read your file in the chunk below. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
+
+A processed DEM already contains the interpolation and smoothing. It does not store the settings for calculating slope, TPI or drainage. Pass those settings again. Here, `smoothing.cells = 1` keeps the processed elevations unchanged; using 3 again would smooth them twice. For a DEM supplied from elsewhere, choose any required smoothing explicitly.
 
 ```{r}
 #| label: dem-input
@@ -180,13 +185,21 @@ One can pass a DEM as input instead of a `{x, y, z}` table. A supplied DEM bypas
 dem <- topography[["elevation_m"]]
 # dem <- rast("/full/path/to/elevation.tif")
 
-topography <- derive_topography(dem = dem)
-names(topography)
+dem.topography <- derive_topography(
+	dem = dem, smoothing.cells = 1,
+	neighbors = slope.neighbors, position.radius = position.radius,
+	flow.preparation = flow.preparation,
+	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
+)
+names(dem.topography)
+
+# When starting from your own DEM, use this result for the plots and export:
+# topography <- dem.topography
 ```
 
 ## Ask for a set of variables
 
-The output include all variables by default, but one can ask for a subset. Elevation is always included. Requesting some local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
+The output includes all variables by default, but one can ask for a subset with either input: `{x, y, z}` or a DEM. Elevation is always included. Requesting only local variables such as slope, TPI and TRI does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
 
 ```{r}
 #| label: variable-selection
@@ -195,9 +208,14 @@ The output include all variables by default, but one can ask for a subset. Eleva
 dem <- topography[["elevation_m"]]
 # dem <- rast("/full/path/to/elevation.tif")
 
-local.topography <- derive_topography(dem = dem,
-                                      variables = c("slope", "tpi", "tri"))
+local.topography <- derive_topography(
+	dem = dem, variables = c("slope", "tpi", "tri"), smoothing.cells = 1,
+	neighbors = slope.neighbors, position.radius = position.radius
+)
 names(local.topography)
+
+# The same selection works directly from point elevations:
+# local.topography <- derive_topography(xyz = elevations, variables = c("slope", "tpi", "tri"))
 ```
 
 # Description of topographical variables
@@ -385,6 +403,53 @@ plot(hand, col = map.colors, main = "Height above drainage (m)",
 
 # Comparison of parameters
 
+The following comparisons reuse the survey point elevations. If you only have a DEM, continue to [saving the layers](#keep-the-layers-and-save-geotiff-files).
+
+## Compare interpolation methods
+
+Raster cells remain visible at 5 m resolution. Repeated stripes or rings following the 20 m survey grid are a different problem: interpolation can create them in the values themselves, especially in slope and curvature. Linear interpolation followed by a modest moving mean reduced these patterns in this example. More smoothing alone can erase real terrain features. A spline is not automatically better: Akima created isolated peaks and pits in this survey.
+
+The calls below hold resolution and smoothing constant. Choose these scales with the measurement spacing and expected terrain features in mind. There is no single smoothing width suitable for every survey.
+
+```{r}
+#| label: fig-interpolation-comparison
+#| fig-width: 9
+#| fig-height: 8
+#| fig-cap: "The same point elevations and smoothing, with IDW or linear interpolation. Both columns use the same colour scales."
+
+idw.layers <- derive_topography(
+	xyz = elevations, variables = c("slope", "plan_curvature"),
+	resolution = cell.size, extent = plot.extent, interpolation = "idw",
+	search.radius = search.radius, idw.power = idw.power, idw.smooth = idw.smooth,
+	min.points = min.points, max.points = max.points,
+	smoothing.cells = smoothing.cells, neighbors = slope.neighbors
+)
+
+linear.layers <- derive_topography(
+	xyz = elevations, variables = c("slope", "plan_curvature"),
+	resolution = cell.size, extent = plot.extent, interpolation = "linear",
+	smoothing.cells = smoothing.cells, neighbors = slope.neighbors
+)
+
+slope.limit <- max(global(idw.layers[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
+                   global(linear.layers[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
+curvature.limit <- max(global(abs(idw.layers[["plan_curvature_per_m"]]), "max", na.rm = TRUE)[1, 1],
+                       global(abs(linear.layers[["plan_curvature_per_m"]]), "max", na.rm = TRUE)[1, 1])
+
+settings <- par(mfrow = c(2, 2))
+plot(idw.layers[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "IDW: slope", mar = map.margins)
+plot(linear.layers[["slope_deg"]], col = map.colors, range = c(0, slope.limit),
+     main = "Linear: slope", mar = map.margins)
+plot(idw.layers[["plan_curvature_per_m"]], col = signed.colors,
+     range = c(-curvature.limit, curvature.limit), main = "IDW: plan curvature", mar = map.margins)
+plot(linear.layers[["plan_curvature_per_m"]], col = signed.colors,
+     range = c(-curvature.limit, curvature.limit), main = "Linear: plan curvature", mar = map.margins)
+par(settings)
+```
+
+The drainage layers also contain discrete paths and channels. Their cell pattern is partly inherent to raster flow routing. Do not smooth the derived drainage layers just to make their maps look smoother.
+
 ## Compare resolutions
 
 These calls use the same point data and interpolation settings, without smoothing. Only raster resolution changes. Both maps use the same colour range; compare patterns rather than expecting cell-by-cell agreement.
@@ -490,11 +555,15 @@ names(saved.topography)
 # Record the software used, including the separate WhiteboxTools program.
 R.version.string
 sapply(c("terra", "whitebox"), function(package) as.character(packageVersion(package)))
-# packageVersion("interp")  # If used for interpolation.
+
+if(requireNamespace("interp", quietly = TRUE)) print(packageVersion("interp"))
+
 print(whitebox::wbt_version()[1])
 ```
 
 Use a real persistent `output.dir` to keep these files. The local-coordinate example retains a local Cartesian CRS; it is not a geographically positioned map. A real site's GeoTIFF should retain its actual CRS.
+
+Keep the script and its calculation parameters with the files. A GeoTIFF stores the raster values and grid, not the choices needed to reproduce every derivative.
 
 The same raster format can later hold soil, canopy and other environmental layers. Those data do not have to share this resolution or grid. Combining them, extracting values and assigning habitats are separate workflows.
 

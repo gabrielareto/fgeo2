@@ -1,6 +1,6 @@
 # Standalone checks for derive_topography().
 # Run from the repository root or from 06_topography_habitat/tests.
-# Core checks need terra. Whitebox checks run only when its program is installed.
+# Core checks need terra and interp. Whitebox checks run only when its program is installed.
 
 path.to.fgeo2 = if(file.exists("fgeo2.Rproj")) "." else "../.."
 source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-variables.R"))
@@ -84,6 +84,14 @@ local({
 	)
 	stopifnot(warning.seen,
 	          isTRUE(all.equal(values(points.dem), values(missing.row), tolerance = 1e-10)))
+
+	# The default linear point interpolation preserves a plane: it must not
+	# imprint the 20 m measurement grid on slope or relative elevation.
+	point.plane <- derive_topography(xyz = xyz, variables = c("slope", "tpi"),
+	                                  position.radius = 10)
+	stopifnot(max(abs(values(point.plane[["elevation_m"]]) - original.values)) < 1e-8,
+	          max(abs(values(point.plane[["slope_deg"]]) - expected.slope), na.rm = TRUE) < 1e-8,
+	          max(abs(values(point.plane[["tpi_m"]])), na.rm = TRUE) < 1e-8)
 
 	# A complete regular grid can use bilinear interpolation without interp.
 	bilinear <- derive_topography(xyz = xyz, variables = "elevation", interpolation = "bilinear")
@@ -191,6 +199,30 @@ local({
 			stopifnot(nlyr(selected) == 2L,
 			          isTRUE(all.equal(values(selected), values(all.layers[[names(selected)]]), tolerance = 1e-8)))
 		}
+
+		# Reuse the processed DEM with the same derivative settings, without
+		# applying its original smoothing a second time.
+		configured <- derive_topography(
+			xyz = elevations, smoothing.cells = 3, neighbors = 4, position.radius = 15,
+			flow.preparation = "fill", breach.distance.cells = 12, channel.area.m2 = 2000
+		)
+		from.dem <- derive_topography(
+			dem = configured[["elevation_m"]], smoothing.cells = 1,
+			neighbors = 4, position.radius = 15, flow.preparation = "fill",
+			breach.distance.cells = 12, channel.area.m2 = 2000
+		)
+		stopifnot(compareGeom(configured, from.dem, stopOnError = FALSE),
+		          identical(names(configured), names(from.dem)),
+		          isTRUE(all.equal(values(configured), values(from.dem), tolerance = 1e-8)))
+
+		# Curvature of a plane is zero even with a large elevation datum.
+		# Double-precision handoffs prevent artificial curvature from rounding z.
+		precise.plane <- plane.dem
+		values(precise.plane) <- 1000000 + 0.123456789 * cell.xy[, 1] + 0.234567891 * cell.xy[, 2]
+		precise <- derive_topography(dem = precise.plane,
+		                             variables = c("plan_curvature", "profile_curvature"))
+		stopifnot(max(abs(values(precise[["plan_curvature_per_m"]])), na.rm = TRUE) < 1e-8,
+		          max(abs(values(precise[["profile_curvature_per_m"]])), na.rm = TRUE) < 1e-8)
 
 		# A later call must not overwrite or invalidate the earlier returned rasters.
 		before <- values(all.layers)
