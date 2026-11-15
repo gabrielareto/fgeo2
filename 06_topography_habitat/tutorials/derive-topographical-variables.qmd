@@ -17,11 +17,7 @@ editor: visual
 
 # Introduction
 
-This tutorial starts with elevations at known coordinates, builds a digital elevation model (DEM), and calculates topographical variables with potential uses in forest ecology. The outputs describe local terrain, exposure, relative position and potential drainage. They can later be assigned to trees, quadrats or other areas.
-
-The general input is a table with `x`, `y` and `z`: two horizontal coordinates and elevation. These values may come from a survey, a data provider or other instruments.
-
-The optional [survey section](#from-height-differences-to-point-elevations) obtains `{x, y, z}` from simulated height differences, using the fgeo2 function `estimate_point_elevations()`. Users who already have elevations can start with the [point-input call](#point-input-all-variables). Users with a DEM can use the [DEM-input call](#dem-input-selected-variables).
+This tutorial describes how to derive a range of topographical variables with potential uses in forest ecology. The input is elevation at known coordinates within a plot. The output describes local terrain, exposure, relative position and potential drainage. These variables can later be assigned to trees, quadrats or other areas.
 
 `derive_topography()` runs the calculations in one call and returns a named `SpatRaster`. Plotting and permanent file export remain separate. The function uses two packages:
 
@@ -32,7 +28,7 @@ An optional third package, `interp`, provides the linear and spline alternatives
 
 Raster layers and GeoTIFF files are useful in general to store environmental variables. This is useful when topography is later combined with soil, canopy or disturbance data. A separate tutorial will cover combining these sources and extracting values for points or polygons.
 
-## Setup
+# Setup
 
 The example uses within-plot coordinates in metres. Set paths and plotting options here; calculation parameters are declared beside the main call below.
 
@@ -68,7 +64,7 @@ source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-variable
 
 # From height differences to point elevations {#from-height-differences-to-point-elevations}
 
-Skip this section if a provider has already supplied an `{x, y, z}` table. The rest of the tutorial does not depend on how those elevations were obtained.
+Optional. Skip this section if a provider has already supplied an `{x, y, z}` table. The rest of the tutorial does not depend on how those elevations were obtained.
 
 For this example, positive `dz` means that the destination (point j) is higher than the origin (point i). The reference point sets the elevation datum. See [the solver tutorial](topography-solver.qmd) for the survey and its checks. The solver also needs `Matrix` and `igraph` R packages.
 
@@ -88,6 +84,7 @@ survey <- data.frame(
 )
 
 source(file.path(path.to.fgeo2, "06_topography_habitat/R/new/topography-solver.R"))
+
 elevations <- estimate_point_elevations(survey, reference.xy, reference.z)
 head(elevations)
 
@@ -109,7 +106,7 @@ points(elevations[,c("x", "y")], col = "white", pch = "·")
 
 # Alternative ways of running the code
 
-## From point elevations: all variables {#point-input-all-variables}
+## Default: {x, y, z} and all variables {#point-input-all-variables}
 
 The shortest call is `topography <- derive_topography(xyz = elevations)`. It builds a DEM and returns all variables by default. The example below declares the parameters explicitly so they are easy to change. This `topography` object is used throughout the rest of the tutorial.
 
@@ -143,7 +140,7 @@ flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepar
 breach.distance.cells = 20     # Maximum search distance for drainage preparation.
 channel.area.m2 = 1000         # Illustrative channel threshold; check in the field.
 
-# Build the DEM and calculate all variables.
+# Calculate all variables.
 topography <- derive_topography(
 	xyz = elevations, resolution = cell.size, extent = plot.extent, crs = "local",
 	interpolation = interpolation, search.radius = search.radius,
@@ -155,8 +152,8 @@ topography <- derive_topography(
 	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
 )
 
-dem <- topography[["elevation_m"]]
 names(topography)
+
 ```
 
 The function leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary. Check the DEM for gaps and interpolation artefacts before interpreting the layers. If linear interpolation leaves interior gaps, use IDW or `bilinear` for a complete regular input grid. For larger sites, supply the terrain surrounding the plot and crop the outputs afterwards.
@@ -165,29 +162,43 @@ The function leaves cells outside the observed points' convex hull as `NA`. Smoo
 #| label: fig-dem
 #| fig-cap: "Interpolated DEM after the selected smoothing. Points show the input locations."
 
+dem <- topography[["elevation_m"]]
+
 plot(dem, col = map.colors, main = "Elevation (m)",
      axes = TRUE, mar = map.margins)
 points(elevations[, c("x", "y")], pch = 16, cex = 0.2)
 ```
 
-## From a DEM: selected variables {#dem-input-selected-variables}
+## DEM as input {#dem-input-selected-variables}
 
-Alternatively, supply a DEM and request only the variables needed. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
+One can pass a DEM as input instead of a `{x, y, z}` table. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
 
 ```{r}
-#| label: dem-input-and-variable-selection
+#| label: dem-input
 
 # Reuse the example DEM. To use your own file, replace this line:
 dem <- topography[["elevation_m"]]
 # dem <- rast("/full/path/to/elevation.tif")
 
-local.topography <- derive_topography(
-	dem = dem, variables = c("slope", "tpi", "tri")
-)
-names(local.topography)
+topography <- derive_topography(dem = dem)
+names(topography)
 ```
 
-Elevation is always included. This call uses the default calculation parameters; add arguments as in the previous call to change them. Requesting only these local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
+## Ask for a set of variables
+
+The output include all variables by default, but one can ask for a subset. Elevation is always included. Requesting some local variables does not need WhiteboxTools. Available variable names and parameters are documented at the top of `topography-variables.R`.
+
+```{r}
+#| label: variable-selection
+
+# Reuse the example DEM. To use your own file, replace this line:
+dem <- topography[["elevation_m"]]
+# dem <- rast("/full/path/to/elevation.tif")
+
+local.topography <- derive_topography(dem = dem,
+                                      variables = c("slope", "tpi", "tri"))
+names(local.topography)
+```
 
 # Description of topographical variables
 
