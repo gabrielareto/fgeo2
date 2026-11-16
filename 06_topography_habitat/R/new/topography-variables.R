@@ -118,8 +118,10 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	                 contributing_area = "contributing_area_m2", twi = "twi",
 	                 drainage_distance = "drainage_distance_m",
 	                 height_above_drainage = "height_above_drainage_m")
+	
 	layer.units <- c("m", "degrees", "degrees", "1", "1", "m", "m",
 	                 "1/m", "1/m", "m2", "1", "m", "m")
+	
 	names(layer.units) <- names(layer.names)
 
 	if(!is.character(variables) || !length(variables) || anyNA(variables))
@@ -264,7 +266,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	   extent[1] >= extent[2] || extent[3] >= extent[4]))
 		stop("extent must be finite c(xmin, xmax, ymin, ymax), with positive width and height.")
 
-	if(from.xyz) grid.dim <- c(extent[2] - extent[1], extent[4] - extent[3]) / resolution
+	if(from.xyz)
+	  grid.dim <- c(extent[2] - extent[1], extent[4] - extent[3]) / resolution
 
 	if(from.xyz && any(abs(grid.dim - round(grid.dim)) > 1e-7))
 		stop("The extent width and height must be divisible by resolution.")
@@ -321,7 +324,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(use.interp && !requireNamespace("interp", quietly = TRUE))
 		stop("Install interp for linear/Akima interpolation.")
 
-	if(use.interp && nrow(xyz) < 4L) stop("interp requires at least four elevation points.")
+	if(use.interp && nrow(xyz) < 4L)
+	  stop("interp requires at least four elevation points.")
 
 	if(use.interp)
 	{
@@ -399,9 +403,11 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 		layers$aspect[layers$slope == 0] <- NA
 	}
 
-	if(need.northness) layers$northness <- cos(layers$aspect * pi / 180)
+	if(need.northness)
+	  layers$northness <- cos(layers$aspect * pi / 180)
 
-	if(need.eastness) layers$eastness <- sin(layers$aspect * pi / 180)
+	if(need.eastness)
+	  layers$eastness <- sin(layers$aspect * pi / 180)
 
 	# TPI compares the focal cell with its stated neighbourhood, excluding itself.
 	if(need.tpi)
@@ -413,7 +419,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	}
 
 	# TRI always uses the eight neighbours, independently of the slope setting.
-	if(need.tri) layers$tri <- terra::terrain(surface, v = "TRI")
+	if(need.tri)
+	  layers$tri <- terra::terrain(surface, v = "TRI")
 
 
 	##################################################
@@ -480,9 +487,11 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	##################################################
 
 	# Breaching/filling change only the routing copy, never the local terrain DEM.
-	if(need.flow) hydro.file <- dem.file
+	if(need.flow)
+	  hydro.file <- dem.file
 
-	if(prepare.flow) hydro.file <- file.path(work.dir, "elevation-for-flow.tif")
+	if(prepare.flow)
+	  hydro.file <- file.path(work.dir, "elevation-for-flow.tif")
 
 	if(breach.flow)
 		tool.output <- whitebox::wbt_breach_depressions_least_cost(dem.file, hydro.file,
@@ -511,7 +520,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(need.sca && !file.exists(sca.file))
 		stop("WhiteboxTools D-infinity accumulation failed. ", paste(tool.output, collapse = "\n"))
 
-	if(need.area) layers$contributing_area <- terra::rast(sca.file) * cell.size[1]
+	if(need.area)
+	  layers$contributing_area <- terra::rast(sca.file) * cell.size[1]
 
 	# TWI combines unlogged specific contributing area with slope in degrees.
 	if(need.twi)
@@ -551,7 +561,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(need.channels && !file.exists(streams.file))
 		stop("WhiteboxTools channel extraction failed. ", paste(tool.output, collapse = "\n"))
 
-	if(need.channels) stream.maximum <- terra::global(terra::rast(streams.file), "max", na.rm = TRUE)[1, 1]
+	if(need.channels)
+	  stream.maximum <- terra::global(terra::rast(streams.file), "max", na.rm = TRUE)[1, 1]
 
 	if(need.channels && (!is.finite(stream.maximum) || stream.maximum <= 0))
 		stop("No channels at channel.area.m2. Review the threshold or use a larger drainage domain.")
@@ -566,7 +577,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(need.distance && !file.exists(distance.file))
 		stop("WhiteboxTools drainage distance failed. ", paste(tool.output, collapse = "\n"))
 
-	if(need.distance) layers$drainage_distance <- terra::rast(distance.file)
+	if(need.distance)
+	  layers$drainage_distance <- terra::rast(distance.file)
 
 	if(need.hand)
 	{
@@ -577,7 +589,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(need.hand && !file.exists(hand.file))
 		stop("WhiteboxTools height above drainage failed. ", paste(tool.output, collapse = "\n"))
 
-	if(need.hand) layers$height_above_drainage <- terra::rast(hand.file)
+	if(need.hand)
+	  layers$height_above_drainage <- terra::rast(hand.file)
 
 
 	##################################################
