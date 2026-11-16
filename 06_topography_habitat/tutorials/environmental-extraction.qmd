@@ -28,9 +28,9 @@ The example combines real elevation and soil data for the 50-ha Barro Colorado I
 
 All inputs are in `data_examples/` at the repository root. See its [dataset notes](../../data_examples/README.md) for provenance and file checksums.
 
-- **`census1.txt` and `census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981–1983. Credit the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO. The related curated public release is Condit et al. (2019), [Complete data from the Barro Colorado 50-ha plot](https://doi.org/10.15146/5xcp-0d46). The exact release version of these older exports is undocumented.
-- **`bci-elevation.csv`** contains 20,301 elevation grid locations, with columns `x`, `y` and `z` in metres. Its numerical contents match `BCIelev.tsv` in the Condit et al. archive, released under CC0. Positions run from 0 to 1,000 m in x and 0 to 500 m in y, at 5 m intervals. These are input grid locations, rather than raster-cell boundaries.
-- **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf, Hubbell, Fricker and Turner (2015), [Geospatial observations on tropical forest surface soil chemistry](https://doi.org/10.1890/15-0558.1). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](https://doi.org/10.6084/m9.figshare.3562863) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
+-   **`census1.txt` and `census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO. The related curated public release is Condit et al. (2019), [Complete data from the Barro Colorado 50-ha plot](https://doi.org/10.15146/5xcp-0d46). The exact release version of these older exports is undocumented.
+-   **`bci-elevation.csv`** contains 20,301 elevation grid locations, with columns `x`, `y` and `z` in metres. Its numerical contents match `BCIelev.tsv` in the Condit et al. archive, released under CC0. Positions run from 0 to 1,000 m in x and 0 to 500 m in y, at 5 m intervals. These are input grid locations, rather than raster-cell boundaries.
+-   **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf, Hubbell, Fricker and Turner (2015), [Geospatial observations on tropical forest surface soil chemistry](https://doi.org/10.1890/15-0558.1). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](https://doi.org/10.6084/m9.figshare.3562863) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
 
 The soil observations were collected in 2010. Pairing them with earlier censuses demonstrates data handling across sources. Ecological analyses must consider when each environmental condition was measured and whether it represents conditions relevant to a particular census.
 
@@ -68,7 +68,7 @@ knitr::opts_chunk$set(comment = "#>", fig.width = 7, fig.height = 5)
 
 ## Census records and stable identifiers
 
-Read tags and identifiers as character strings, preserving leading zeros. The stem identifier is unique within each supplied census. A combined census–stem key distinguishes repeated observations of the same stem. Several stems can belong to one tree.
+Read tags and identifiers as character strings, preserving leading zeros. The stem identifier is unique within each supplied census. A combined census--stem key distinguishes repeated observations of the same stem. Several stems can belong to one tree.
 
 ```{r}
 #| label: load-censuses
@@ -244,13 +244,13 @@ These are means of the fine-resolution terrain variables. Calculating slope or T
 
 For other situations, choose the operation according to the actual mismatch.
 
-| Situation | Operation and interpretation |
-|---|---|
-| Same grid, additional variables | `c()` adds layers after `compareGeom()` checks. |
-| Aligned fine cells to larger cells | `aggregate()` summarizes groups of cells. |
-| Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable. |
-| Different known CRS | Transform targets for native-grid extraction, or use `project()` with a template if the raster itself must be transformed. |
-| Adjacent tiles of one variable | `merge()` or `mosaic()` combines spatial tiles. |
+| Situation                                  | Operation and interpretation                                                                                               |
+|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| Same grid, additional variables            | `c()` adds layers after `compareGeom()` checks.                                                                            |
+| Aligned fine cells to larger cells         | `aggregate()` summarizes groups of cells.                                                                                  |
+| Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable.                        |
+| Different known CRS                        | Transform targets for native-grid extraction, or use `project()` with a template if the raster itself must be transformed. |
+| Adjacent tiles of one variable             | `merge()` or `mosaic()` combines spatial tiles.                                                                            |
 
 For continuous point-like surfaces, bilinear resampling is a possible interpolation choice. For larger output cells covering several input cells, a mean may be appropriate. A value representing a block mean has a different meaning from a measurement at its centre. Smoothing changes the environmental surface and should have a stated analytical purpose. Finer output cells retain the information limits of the original source.
 
@@ -421,7 +421,7 @@ For a continuous cell value, an area mean uses the area of each cell's overlap w
 
 The mean is calculated over the part with valid values. Report **valid coverage**, the valid overlap area divided by the full target area, alongside it. Coverage of 0.7 means that 30% of the target contributes no values to that summary. It can reflect missing cells or an area extending beyond the raster. Here coverage is calculated independently for every variable, including terrain derivatives with missing neighbourhoods at the plot edges.
 
-For longitude–latitude rasters, cell areas vary. Fractions alone then do not give physical-area weights. Use an appropriate equal-area workflow or explicit overlap-area weights, with target areas calculated consistently. The examples below use a shared local Cartesian frame.
+For longitude--latitude rasters, cell areas vary. Fractions alone then do not give physical-area weights. Use an appropriate equal-area workflow or explicit overlap-area weights, with target areas calculated consistently. The examples below use a shared local Cartesian frame.
 
 ## Route 1 with terra::extract()
 
@@ -621,10 +621,10 @@ Keep the original inputs, source licences, parameter choices and executed code w
 
 # Software references and versions
 
-- [terra extraction](https://rspatial.github.io/terra/reference/extract.html) and [point interpolation](https://rspatial.github.io/terra/reference/interpIDW.html).
-- [terra grid comparisons](https://rspatial.github.io/terra/reference/compareGeom.html), [aggregation](https://rspatial.github.io/terra/reference/aggregate.html) and [resampling](https://rspatial.github.io/terra/reference/resample.html).
-- [exactextractr summaries and custom functions](https://isciences.gitlab.io/exactextractr/reference/exact_extract.html).
-- [sf coordinate transformations](https://r-spatial.github.io/sf/reference/st_transform.html).
+-   [terra extraction](https://rspatial.github.io/terra/reference/extract.html) and [point interpolation](https://rspatial.github.io/terra/reference/interpIDW.html).
+-   [terra grid comparisons](https://rspatial.github.io/terra/reference/compareGeom.html), [aggregation](https://rspatial.github.io/terra/reference/aggregate.html) and [resampling](https://rspatial.github.io/terra/reference/resample.html).
+-   [exactextractr summaries and custom functions](https://isciences.gitlab.io/exactextractr/reference/exact_extract.html).
+-   [sf coordinate transformations](https://r-spatial.github.io/sf/reference/st_transform.html).
 
 ```{r}
 #| label: environment-session
