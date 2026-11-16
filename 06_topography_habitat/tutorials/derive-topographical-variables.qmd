@@ -180,8 +180,8 @@ One can pass a DEM as input instead of a `{x, y, z}` table. A supplied DEM bypas
 dem <- topography[["elevation_m"]]
 # dem <- rast("/full/path/to/elevation.tif")
 
-topography <- derive_topography(dem = dem)
-names(topography)
+dem.topography <- derive_topography(dem = dem)
+names(dem.topography)
 ```
 
 ## Ask for a set of variables
