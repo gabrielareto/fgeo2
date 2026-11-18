@@ -455,18 +455,15 @@ head(buffer.env[c("point_id", "Mnemonic", "mean.soil_P_mgkg", "median.soil_P_mgk
 
 # Extract from quadrats
 
-## Construct quadrats at two resolutions
+## Construct quadrats
 
-Reuse `make_quadrats_fast()` and the standard table with `quadrat_id`, `xmin`, `ymin`, `xmax` and `ymax`. The polygons come directly from those bounds. `grid_id` distinguishes IDs that repeat between resolutions; these IDs are separate from the census `Quadrat` naming convention.
+Reuse `make_quadrats_fast()` and the standard table with `quadrat_id`, `xmin`, `ymin`, `xmax` and `ymax`. Set `RESOLUTION` to the quadrat side length in metres, then rerun this section to explore other sizes, such as 50 m. The polygons come directly from the bounds.
 
 ```{r}
 #| label: quadrat-polygons
 
-q20 <- make_quadrats_fast(0, 0, 1000, 500, 20, 20)
-q50 <- make_quadrats_fast(0, 0, 1000, 500, 50, 50)
-q20$grid_id <- "20m"
-q50$grid_id <- "50m"
-quadrat.table <- rbind(q20, q50)
+RESOLUTION = 20 # Change this to extract for quadrats of a different size (m).
+quadrat.table <- make_quadrats_fast(0, 0, 1000, 500, RESOLUTION, RESOLUTION)
 
 geometry <- lapply(seq_len(nrow(quadrat.table)), function(i)
 {
@@ -479,13 +476,12 @@ geometry <- lapply(seq_len(nrow(quadrat.table)), function(i)
 quadrats <- st_sf(quadrat.table, geometry = st_sfc(geometry, crs = st_crs(crs(terrain))))
 quadrat.i <- which(!st_is_empty(quadrats))
 quadrat.area <- as.numeric(st_area(quadrats))
-quadrat.key <- paste(quadrat.table$grid_id, quadrat.table$quadrat_id, sep = "/")
-stopifnot(nrow(q20) == 1250L, nrow(q50) == 200L, !anyDuplicated(quadrat.key))
+stopifnot(!anyDuplicated(quadrat.table$quadrat_id))
 ```
 
 ## Extract environmental summaries
 
-Both resolutions use the same environmental layers and weighting as the buffers. No raster needs to be resampled to the quadrat size.
+Any quadrat size uses the same environmental layers and weighting as the buffers. No raster needs to be resampled to the quadrat size.
 
 ### Method 1 with terra::extract()
 
@@ -521,8 +517,6 @@ for(source in names(environment))
 
 ### Method 2 with exactextractr::exact_extract()
 
-Keep both `grid_id` and `quadrat_id` when matching results, since a quadrat ID alone is not unique across grids.
-
 ```{r}
 #| label: exactextractr-quadrat-summaries
 
@@ -538,7 +532,7 @@ for(source in names(environment))
 	if(!length(quadrat.i)) next
 	extracted <- exact_extract(layers, quadrats[quadrat.i, ],
 		fun = c("mean", "median", "stdev", "count"),
-		append_cols = c("grid_id", "quadrat_id"), full_colnames = TRUE, progress = FALSE)
+		append_cols = "quadrat_id", full_colnames = TRUE, progress = FALSE)
 
 	for(variable in names(layers))
 	{
@@ -546,9 +540,8 @@ for(source in names(environment))
 		coverage[is.na(coverage)] <- 0
 		extracted[[paste0("coverage.", variable)]] <- pmin(1, pmax(0, coverage))
 	}
-	extracted.key <- paste(extracted$grid_id, extracted$quadrat_id, sep = "/")
-	original.i <- match(extracted.key, quadrat.key)
-	for(column in setdiff(names(extracted), c("grid_id", "quadrat_id")))
+	original.i <- match(extracted$quadrat_id, quadrat.table$quadrat_id)
+	for(column in setdiff(names(extracted), "quadrat_id"))
 	{
 		extracted[[column]][is.nan(extracted[[column]])] <- NA_real_
 		quadrat.env[original.i, column] <- extracted[[column]]
@@ -558,18 +551,16 @@ for(source in names(environment))
 
 ## Check the quadrat results
 
-The output retains the bounds and identifiers for both resolutions, with one row per supplied quadrat.
+The output retains the bounds and identifiers, with one row per supplied quadrat.
 
 ```{r}
 #| label: check-quadrat-results
 
 comparison.columns <- setdiff(names(quadrat.terra), names(quadrat.table))
-stopifnot(identical(quadrat.env[c("grid_id", "quadrat_id")],
-                    quadrat.table[c("grid_id", "quadrat_id")]),
+stopifnot(identical(quadrat.env$quadrat_id, quadrat.table$quadrat_id),
           isTRUE(all.equal(quadrat.terra[comparison.columns],
                            quadrat.env[comparison.columns], tolerance = 1e-5)))
-table(quadrat.env$grid_id)
-head(quadrat.env[c("grid_id", "quadrat_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
+head(quadrat.env[c("quadrat_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
 ```
 
 # Extract from arbitrary polygons
