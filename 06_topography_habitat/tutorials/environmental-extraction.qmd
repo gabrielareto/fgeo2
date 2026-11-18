@@ -1,5 +1,5 @@
 ---
-title: "Combine environmental layers and extract values for trees and areas"
+title: "Combine environmental layers and extract values at certain locations"
 author: "Gabriel Arellano"
 date: today
 format:
@@ -18,17 +18,19 @@ editor: visual
 
 # Introduction
 
-Forest research teams often have several sources of environmental information for the same plot. Elevation may come from a ground survey or a digital elevation model. Soil measurements may be stored as a table of sampling locations, while canopy height or disturbance intensity may arrive as raster files. These sources can describe different years, spatial resolutions and areas of coverage.
+Forest research teams often have several sources of environmental information for the same plot. Elevation may come from a ground survey or a digital elevation model. Soil measurements may be stored as a table of sampling locations, while canopy height or disturbance intensity may arrive as raster files. These sources can describe different years, spatial resolutions and areas of coverage. This tutorial shows how to put those sources into a common spatial frame. It also shows how to extract environmental information at different scales:
 
-This tutorial puts those sources into a common spatial frame, then extracts environmental information for individual trees or stems, buffers around their locations, quadrats of different sizes and arbitrary polygons. The result is a table with one row per supplied target and explicit identifiers for joining it back to the census or geometry.
+-   specific points, e.g. tree locations;
 
-The example combines real elevation and soil data for the 50-ha Barro Colorado Island (BCI) plot in Panama. Terrain layers come from the completed `derive_topography()` workflow. Soil layers are prepared independently. Native raster grids are retained for extraction, and an additional example shows how to create a common grid when an analysis needs one. Habitat classification and categorical extraction are covered separately. General mapping belongs in `07_mapping_plotting`.
+-   buffers around specific points;
 
-# Input data and attribution
+-   quadrats;
 
-All inputs are in `data_examples/` at the repository root. See its [dataset notes](../../data_examples/README.md) for provenance and file checksums.
+-   polygons of arbitrary shape.
 
--   **`census1.txt` and `census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO. The related curated public release is Condit et al. (2019), [Complete data from the Barro Colorado 50-ha plot](https://doi.org/10.15146/5xcp-0d46). The exact release version of these older exports is undocumented.
+The example data used here combines real elevation and soil data for the 50-ha Barro Colorado Island (BCI) plot in Panama. Terrain layers come from the `derive_topography()` workflow applied to elevational data. Soil layers are prepared independently. Native raster grids are retained for extraction, and an additional example shows how to create a common grid when an analysis needs one. Habitat classification and categorical extraction are covered separately. All inputs are in `data_examples/` at the repository root. See its [dataset notes](../../data_examples/README.md) for provenance.
+
+-   **`census1.txt` and `census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit goes to the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO.
 -   **`bci-elevation.csv`** contains 20,301 elevation grid locations, with columns `x`, `y` and `z` in metres. Its numerical contents match `BCIelev.tsv` in the Condit et al. archive, released under CC0. Positions run from 0 to 1,000 m in x and 0 to 500 m in y, at 5 m intervals. These are input grid locations, rather than raster-cell boundaries.
 -   **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf, Hubbell, Fricker and Turner (2015), [Geospatial observations on tropical forest surface soil chemistry](https://doi.org/10.1890/15-0558.1). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](https://doi.org/10.6084/m9.figshare.3562863) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
 
@@ -73,17 +75,22 @@ Read tags and identifiers as character strings, preserving leading zeros. The st
 ```{r}
 #| label: load-censuses
 
-id.columns <- c(TreeID = "character", StemID = "character",
-                Tag = "character", StemTag = "character", Quadrat = "character")
+id.columns <- c(TreeID = "character",
+                StemID = "character",
+                Tag = "character",
+                StemTag = "character",
+                Quadrat = "character")
+
 census1 <- read.delim(file.path(input.dir, "census1.txt"),
                       colClasses = id.columns, check.names = FALSE)
+
 census2 <- read.delim(file.path(input.dir, "census2.txt"),
                       colClasses = id.columns, check.names = FALSE)
+
 trees <- rbind(census1, census2)
 trees$point_id <- paste(trees$Census, trees$StemID, sep = "_")
 stopifnot(!anyNA(trees$point_id), !anyDuplicated(trees$point_id))
 
-data.frame(census = c(1, 2), records = c(nrow(census1), nrow(census2)))
 ```
 
 ## Elevation and soil tables
@@ -96,9 +103,11 @@ Keep the complete input tables. Variable selection takes place when preparing la
 xyz <- read.csv(file.path(input.dir, "bci-elevation.csv"))
 soils <- read.csv(file.path(input.dir, "bci-soils-wolf-2015.csv"),
                   check.names = FALSE)
+
 names(soils) <- trimws(names(soils))
 stopifnot(nrow(xyz) == 20301L, nrow(soils) == 625L,
           !anyDuplicated(xyz[c("x", "y")]), !anyDuplicated(soils$uid))
+
 head(soils[c("uid", "gx", "gy", "M3P", "M3Ca")])
 ```
 
@@ -120,6 +129,7 @@ For data already in known geographical CRSs, transform the target geometries int
 canopy <- rast("/full/path/to/canopy-height.tif")
 known.points <- st_as_sf(my.coordinates, coords = c("easting", "northing"),
                          crs = "EPSG:32617")
+
 canopy.points <- st_transform(known.points, crs(canopy))
 canopy.values <- terra::extract(canopy, vect(canopy.points))
 ```
@@ -139,14 +149,13 @@ terrain <- derive_topography(
 	crs = "local",
 	position.radius = 20
 )
+
 names(terrain)
 ```
 
 ## Soil measurements to continuous layers
 
-The soil coordinates are sampling locations. They form an approximately 28 m sampling design with small positional offsets. Treating this table as a complete rectangular raster with `rast(..., type = "xyz")` would misrepresent its support.
-
-For this teaching example, inverse-distance weighting estimates P and Ca on a 20 m grid. A 60 m search radius, up to 12 neighbours, at least 3 observations and power 2 are explicit example settings. These settings have not been tuned or cross-validated for BCI soil prediction. The resulting cells describe interpolated estimates. Their 20 m spacing does not establish 20 m measurement accuracy.
+The soil coordinates are sampling locations. They form an approximately 28 m sampling design with small positional offsets. For this tutorial example, inverse-distance weighting estimates P and Ca on a 20 m grid. A 60 m search radius, up to 12 neighbours, at least 3 observations and power 2 are explicit example settings. The resulting cells describe interpolated estimates, not true measurement accuracy or uniform density of information. But this is standard practice, so in general you don't have to worry about this if data comes from a reasonable representative survey.
 
 ```{r}
 #| label: prepare-soil
@@ -191,7 +200,7 @@ If environmental values are already recorded for the supplied quadrats, a direct
 
 ## Optional soil principal components
 
-All soil measurements are retained, allowing alternative selections or summaries. This optional example standardizes the measurement columns and fits PCA to complete rows. It excludes identifiers and coordinates, and preserves row alignment when storing scores. Several columns describe related elements measured by different methods, so the variable selection affects the PCA. PC signs are arbitrary.
+Soil surveys often contain many correlated variables, and soils are usually described in terms of "soil axes". This optional example standardizes the measurement columns and fits PCA to complete rows. It excludes identifiers and coordinates, and preserves row alignment when storing scores.
 
 ```{r}
 #| label: soil-pca
@@ -219,9 +228,13 @@ A named list can hold the terrain and soil rasters together while preserving eac
 #| label: native-grids
 
 environment <- list(terrain = terrain, soil = soil)
-data.frame(source = names(environment),
-           cell_width_m = sapply(environment, function(x) res(x)[1]),
-           layers = sapply(environment, nlyr))
+
+str(environment)
+str(environment$terrain)
+dim(environment$terrain)
+str(environment$soil)
+dim(environment$soil)
+
 compareGeom(terrain, soil, stopOnError = FALSE)
 ```
 
@@ -245,7 +258,7 @@ These are means of the fine-resolution terrain variables. Calculating slope or T
 For other situations, choose the operation according to the actual mismatch.
 
 | Situation                                  | Operation and interpretation                                                                                               |
-|--------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+|------------------------------------|------------------------------------|
 | Same grid, additional variables            | `c()` adds layers after `compareGeom()` checks.                                                                            |
 | Aligned fine cells to larger cells         | `aggregate()` summarizes groups of cells.                                                                                  |
 | Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable.                        |
@@ -263,37 +276,21 @@ soil.on.terrain.grid <- resample(soil, terrain[[1]], method = "bilinear")
 # A coarser output template may instead call for method = "mean".
 ```
 
-# Extract at tree or stem coordinates
+# Extract at point (tree) coordinates
 
-## Select an example while retaining census identity
-
-Use two abundant species and up to 25 living stems per species per census, keeping the buffer example small. This selection is explicit. The extraction itself has no species-specific requirements and can be applied to all supplied records.
+This small example uses a couple of abundant species. The extraction itself works on points: it has no species-specific requirements and can be applied to all supplied records.
 
 ```{r}
 #| label: choose-tree-targets
+spp <- c("beilpe", "virosu", "elaeol")
+use <- which(trees$Mnemonic %in% spp & trees$Status == "alive")
+targets <- trees[use, c("point_id", "Census", "StemID", "Mnemonic", "PX", "PY")]
 
-abundance <- sort(table(census1$Mnemonic[census1$Status == "alive"]),
-                   decreasing = TRUE)
-species <- names(abundance)[1:2]
-selected <- integer()
-
-for(census in c(1, 2))
-{
-	for(sp in species)
-	{
-		i <- which(trees$Census == census & trees$Mnemonic == sp & trees$Status == "alive")
-		selected <- c(selected, sample(i, min(25L, length(i))))
-	}
-}
-
-targets <- trees[sort(selected), c("point_id", "Census", "StemID", "Mnemonic", "PX", "PY")]
 rownames(targets) <- NULL
 table(targets$Census, targets$Mnemonic)
 ```
 
-## Sample with terra
-
-`method = "simple"` returns the value of the cell containing each point. Optional bilinear sampling estimates a value from nearby cell centres and changes the sampling operation. The simple method uses terra's raster boundary convention, assigning an internal edge to the rightmost and/or lowest cell.
+The `terra::extract()` function crosses layers with sampling points; `method = "simple"` returns the value of the cell containing each point. Optional bilinear sampling estimates a value from nearby cell centres and changes the sampling operation.
 
 Initialize the complete output before extracting rows with finite coordinates. The `ID` returned by terra refers to row positions in the supplied point geometry, so map it back through `point.i`. Duplicate coordinates are allowed for different records. Missing coordinates, outside points and missing cells all retain their input rows.
 
@@ -320,18 +317,13 @@ for(source in names(environment))
 }
 
 stopifnot(identical(point.env$point_id, targets$point_id))
+
+# check output
 head(point.env[c("point_id", "Mnemonic", "elevation_m", "soil_P_mgkg")])
-```
 
-A missing cell number identifies a point outside a raster or without usable coordinates. A defined cell number with an `NA` environmental value identifies missing data inside its extent. Layers within the same raster may differ in missingness. An empty point table retains the initialized output and skips geometry construction.
-
-A simple downstream summary can group the extracted values by species and census. Missing values are omitted separately for each variable. Consider reporting the corresponding numbers of valid observations in an ecological analysis.
-
-```{r}
-#| label: point-groups
-
+# simple summary to group the extracted values by species. 
 aggregate(point.env[c("elevation_m", "soil_P_mgkg", "soil_Ca_mgkg")],
-          by = point.env[c("Census", "Mnemonic")], FUN = mean, na.rm = TRUE)
+          by = list(point.env$Mnemonic), FUN = mean, na.rm = TRUE)
 ```
 
 `exactextractr::exact_extract()` operates on polygons. Direct point sampling uses terra. Buffers turn point neighbourhoods into area targets that both extraction routes can process.
