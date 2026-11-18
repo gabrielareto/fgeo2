@@ -21,20 +21,15 @@ editor: visual
 Forest research teams often have several sources of environmental information for the same plot. Elevation may come from a ground survey or a digital elevation model. Soil measurements may be stored as a table of sampling locations, while canopy height or disturbance intensity may arrive as raster files. These sources can describe different years, spatial resolutions and areas of coverage. This tutorial shows how to put those sources into a common spatial frame. It also shows how to extract environmental information at different scales:
 
 -   specific points, e.g. tree locations;
-
 -   buffers around specific points;
-
 -   quadrats;
-
 -   polygons of arbitrary shape.
 
 The example data used here combines real elevation and soil data for the 50-ha Barro Colorado Island (BCI) plot in Panama. Terrain layers come from the `derive_topography()` workflow applied to elevational data. Soil layers are prepared independently. Native raster grids are retained for extraction, and an additional example shows how to create a common grid when an analysis needs one. Habitat classification and categorical extraction are covered separately. All inputs are in `data_examples/` at the repository root. See its [dataset notes](../../data_examples/README.md) for provenance.
 
--   **`census1.txt` and `census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit goes to the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO.
+-   **`census1.txt`** and **`census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit goes to the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO.
 -   **`bci-elevation.csv`** contains 20,301 elevation grid locations, with columns `x`, `y` and `z` in metres. Its numerical contents match `BCIelev.tsv` in the Condit et al. archive, released under CC0. Positions run from 0 to 1,000 m in x and 0 to 500 m in y, at 5 m intervals. These are input grid locations, rather than raster-cell boundaries.
--   **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf, Hubbell, Fricker and Turner (2015), [Geospatial observations on tropical forest surface soil chemistry](https://doi.org/10.1890/15-0558.1). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](https://doi.org/10.6084/m9.figshare.3562863) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
-
-The soil observations were collected in 2010. Pairing them with earlier censuses demonstrates data handling across sources. Ecological analyses must consider when each environmental condition was measured and whether it represents conditions relevant to a particular census.
+-   **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf et al. (2015), [Geospatial observations on tropical forest surface soil chemistry](#0). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](#0) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
 
 # Setup and loading
 
@@ -242,12 +237,12 @@ These are means of the fine-resolution terrain variables. Calculating slope or T
 
 For other situations, choose the operation according to the actual mismatch.
 
-| Situation                                  | Operation and interpretation                                                                                               |
+| Situation                                  | Operation and interpretation                                                                        |
 |------------------------------------|------------------------------------|
-| Same grid, additional variables            | `c()` adds layers after `compareGeom()` checks.                                                                            |
-| Aligned fine cells to larger cells         | `aggregate()` summarizes groups of cells.                                                                                  |
-| Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable.                        |
-| Adjacent tiles of one variable             | `merge()` or `mosaic()` combines spatial tiles.                                                                            |
+| Same grid, additional variables            | `c()` adds layers after `compareGeom()` checks.                                                     |
+| Aligned fine cells to larger cells         | `aggregate()` summarizes groups of cells.                                                           |
+| Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable. |
+| Adjacent tiles of one variable             | `merge()` or `mosaic()` combines spatial tiles.                                                     |
 
 For continuous point-like surfaces, bilinear resampling is a possible interpolation choice. For larger output cells covering several input cells, a mean may be appropriate. A value representing a block mean has a different meaning from a measurement at its centre. Smoothing changes the environmental surface and should have a stated analytical purpose. Finer output cells retain the information limits of the original source.
 
@@ -310,8 +305,6 @@ aggregate(point.env[c("elevation_m", "soil_P_mgkg", "soil_Ca_mgkg")],
           by = list(point.env$Mnemonic), FUN = mean, na.rm = TRUE)
 ```
 
-`exactextractr::exact_extract()` operates on polygons. Direct point sampling uses terra. Buffers turn point neighbourhoods into area targets that both extraction routes can process.
-
 # Extract from buffers
 
 All polygon-based extractions work in the same way. The tutorial separates buffers, quadrats and arbitrary polygons for didactic purposes; only the construction of the targets and their identifiers changes.
@@ -325,18 +318,18 @@ The radius is in metres because these are local metre coordinates. Buffers can o
 
 point.sf <- st_sf(point_id = character(),
                   geometry = st_sfc(crs = st_crs(crs(terrain))))
+
 if(length(point.i))
 	point.sf <- st_as_sf(targets[point.i, ], coords = c("PX", "PY"),
 	                     crs = st_crs(crs(terrain)))
+
 buffers <- st_buffer(point.sf, dist = buffer.radius)
 buffer.area <- as.numeric(st_area(buffers))
 ```
 
 ## Extract environmental summaries
 
-An area mean weights each cell by its overlap with the target, treating the cell value as constant within that cell. On these local regular grids, cell area is constant within each layer, so overlap fractions supply the weights.
-
-The mean uses only valid values. **Valid coverage** is their overlap area divided by the full target area. Coverage of 0.7 means that 30% of the target contributes no values, because of missing cells or an area beyond the raster. Calculate it separately for each variable, on that layer's native grid. The same definitions apply to the quadrats and arbitrary polygons below.
+An area mean weights each cell by its overlap with the target. Valid coverage is their overlap area divided by the full target area. Coverage of 0.7 means that 30% of the target contributes no values, because of missing cells or an area beyond the raster. Calculate it separately for each variable, on that layer's native grid. The same definitions apply to the quadrats and arbitrary polygons below.
 
 ### Method 1 with terra::extract()
 
@@ -349,12 +342,15 @@ buffer.terra <- targets
 for(source in names(environment))
 {
 	layers <- environment[[source]]
+	
 	for(variable in names(layers))
 	{
 		buffer.terra[[paste0("mean.", variable)]] <- rep(NA_real_, nrow(targets))
 		buffer.terra[[paste0("coverage.", variable)]] <- rep(NA_real_, nrow(targets))
 	}
+	
 	if(!length(point.i)) next
+	
 	means <- terra::extract(layers, vect(buffers), exact = TRUE, fun = mean, na.rm = TRUE)
 	counts <- terra::extract(!is.na(layers), vect(buffers), exact = TRUE, fun = sum, na.rm = TRUE)
 	i <- match(seq_along(point.i), means$ID)
@@ -369,10 +365,11 @@ for(source in names(environment))
 		buffer.terra[point.i, paste0("mean.", variable)] <- value
 		buffer.terra[point.i, paste0("coverage.", variable)] <- pmin(1, pmax(0, coverage))
 	}
+	
 }
 ```
 
-Terra's direct exact summaries support mean, sum, min, max and class tables. Other statistics can use raw values and fractions. This optional calculation illustrates a population SD for soil P in the first buffer.
+Terra's direct exact summaries support mean, sum, min, max and class tables. Other statistics can use raw values and fractions. For example, this would calculate standard deviation of soil P in the first buffer:
 
 ```{r}
 #| label: terra-custom-summary
@@ -395,7 +392,7 @@ spatial.sd
 
 ### Method 2 with exactextractr::exact_extract()
 
-The R package is `exactextractr`, whose polygon engine is exactextract. It accepts the same `SpatRaster` layers and `sf` polygons. Here it supplies overlap-weighted means, medians and population SDs. Its `count` is the sum of valid cell fractions, used to calculate coverage. `append_cols` preserves the point identifier for joining the results back.
+The `exactextract()` function in the R package `exactextractr` accepts the same `SpatRaster` layers and `sf` polygons. Here it supplies overlap-weighted means, medians and population SDs. Its `count` is the sum of valid cell fractions, used to calculate coverage. `append_cols` preserves the point identifier for joining the results back.
 
 ```{r}
 #| label: exactextractr-buffer-summaries
@@ -404,12 +401,15 @@ buffer.env <- targets
 for(source in names(environment))
 {
 	layers <- environment[[source]]
+	
 	for(variable in names(layers))
 	{
 		for(statistic in c("mean", "median", "stdev", "count", "coverage"))
 			buffer.env[[paste(statistic, variable, sep = ".")]] <- rep(NA_real_, nrow(targets))
 	}
+	
 	if(!length(point.i)) next
+	
 	extracted <- exact_extract(layers, buffers,
 		fun = c("mean", "median", "stdev", "count"),
 		append_cols = "point_id", full_colnames = TRUE, progress = FALSE)
@@ -420,18 +420,21 @@ for(source in names(environment))
 		coverage[is.na(coverage)] <- 0
 		extracted[[paste0("coverage.", variable)]] <- pmin(1, pmax(0, coverage))
 	}
+	
 	original.i <- match(extracted$point_id, targets$point_id)
+	
 	for(column in setdiff(names(extracted), "point_id"))
 	{
 		extracted[[column]][is.nan(extracted[[column]])] <- NA_real_
 		buffer.env[original.i, column] <- extracted[[column]]
 	}
+	
 }
 ```
 
 Both methods ignore missing cell values. Fully outside or all-missing areas receive `NA` estimates and zero coverage. A target without usable geometry retains its ID with `NA` estimates and `NA` coverage. These conventions apply to all three area sections.
 
-Population SD describes spatial heterogeneity within an area. It does not measure uncertainty in the interpolated surface or its mean. Estimation uncertainty needs information about measurement or model error; raster cells should not automatically be treated as independent observations for a standard error.
+Population SD describes spatial heterogeneity within an area. It does not measure uncertainty in the interpolated surface or its mean. A proper estimation of uncertainty needs information about measurement or model error; raster cells should not automatically be treated as independent observations for a standard error.
 
 ## Check the buffer results
 
@@ -441,9 +444,11 @@ The methods should agree on means and coverage. `buffer.env` also contains media
 #| label: check-buffer-results
 
 comparison.columns <- setdiff(names(buffer.terra), names(targets))
+
 stopifnot(identical(buffer.env$point_id, targets$point_id),
           isTRUE(all.equal(buffer.terra[comparison.columns],
                            buffer.env[comparison.columns], tolerance = 1e-5)))
+
 head(buffer.env[c("point_id", "Mnemonic", "mean.soil_P_mgkg", "median.soil_P_mgkg",
                   "stdev.soil_P_mgkg", "coverage.soil_P_mgkg")])
 ```
@@ -470,6 +475,7 @@ geometry <- lapply(seq_len(nrow(quadrat.table)), function(i)
 	                 c(q$ymin, q$ymin, q$ymax, q$ymax, q$ymin))
 	st_polygon(list(corners))
 })
+
 quadrats <- st_sf(quadrat.table, geometry = st_sfc(geometry, crs = st_crs(crs(terrain))))
 quadrat.i <- which(!st_is_empty(quadrats))
 quadrat.area <- as.numeric(st_area(quadrats))
@@ -672,54 +678,6 @@ stopifnot(identical(polygon.env$polygon_id, regions$polygon_id),
                            polygon.env[comparison.columns], tolerance = 1e-5)))
 polygon.env[c("polygon_id", "mean.elevation_m", "coverage.elevation_m",
               "mean.soil_P_mgkg", "coverage.soil_P_mgkg")]
-```
-
-# A small numerical check
-
-This artificial 2 × 2 raster makes missing values and partial coverage explicit. Its southwest, southeast, northwest and northeast values are 10, 20, 30 and `NA`. The triangle has area 100 m². It overlaps 25 m² of value 10, 43.75 m² of value 20, 18.75 m² of value 30, 6.25 m² of missing cells and 6.25 m² outside the raster. The valid-area mean is therefore 19.2857 and valid coverage is 0.875.
-
-```{r}
-#| label: numerical-coverage-check
-
-toy <- rast(nrows = 2, ncols = 2, xmin = 0, xmax = 20,
-             ymin = 0, ymax = 20, crs = "local", vals = c(30, NA, 10, 20))
-toy.areas <- st_sf(target_id = c("triangle", "missing_cell", "outside"),
-	geometry = st_as_sfc(c(
-		"POLYGON ((5 5, 25 5, 5 15, 5 5))",
-		"POLYGON ((10 10, 20 10, 20 20, 10 20, 10 10))",
-		"POLYGON ((22 0, 26 0, 26 4, 22 4, 22 0))"),
-		crs = st_crs(crs(toy))))
-toy.terra <- terra::extract(toy, vect(toy.areas), exact = TRUE, fun = mean, na.rm = TRUE)
-toy.exact <- exact_extract(toy, toy.areas, c("mean", "count"),
-                           force_df = TRUE, progress = FALSE)
-expected.mean = (25 * 10 + 43.75 * 20 + 18.75 * 30) / 87.5
-coverage <- toy.exact$count * prod(res(toy)) / as.numeric(st_area(toy.areas))
-toy.exact$mean[is.nan(toy.exact$mean)] <- NA_real_
-stopifnot(abs(toy.terra[[2]][1] - expected.mean) < 1e-5,
-          abs(toy.exact$mean[1] - expected.mean) < 1e-5,
-          abs(coverage[1] - 0.875) < 1e-5,
-          all(is.na(toy.terra[[2]][2:3])), all(is.na(toy.exact$mean[2:3])),
-          all(coverage[2:3] == 0))
-data.frame(target_id = toy.areas$target_id, mean = toy.exact$mean,
-           valid_coverage = coverage)
-```
-
-The last two rows demonstrate all-missing and fully outside areas. For points, the following small check retains a missing-coordinate row and two separate records at identical coordinates. It also verifies the value terra chooses on an internal raster edge.
-
-```{r}
-#| label: numerical-point-check
-
-queries <- data.frame(point_id = c("inside", "masked", "outside", "missing_xy", "edge", "repeat"),
-                       x = c(5, 15, 25, NA, 10, 5), y = c(5, 15, 5, 5, 5, 5))
-query.env <- queries["point_id"]
-query.env$value <- rep(NA_real_, nrow(queries))
-i <- which(is.finite(queries$x) & is.finite(queries$y))
-query.points <- vect(queries[i, ], geom = c("x", "y"), crs = "local")
-sampled <- terra::extract(toy, query.points, cells = TRUE)
-query.env$value[i[sampled$ID]] <- sampled[[2]]
-stopifnot(identical(query.env$point_id, queries$point_id),
-          isTRUE(all.equal(query.env$value, c(10, NA, NA, NA, 20, 10))))
-query.env
 ```
 
 # Save results and reuse them
