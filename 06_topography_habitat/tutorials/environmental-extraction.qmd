@@ -115,24 +115,9 @@ head(soils[c("uid", "gx", "gy", "M3P", "M3Ca")])
 
 ## Coordinate congruence
 
-Here x increases eastward from the plot's western edge and y increases northward from its southern edge. Census `PX, PY`, soil `gx, gy` and elevation `x, y` use that local plot frame, in metres. We label it `"local"` throughout.
+Census `PX, PY`, Wolf's soil `gx, gy` and elevation `x, y` use the same local plot coordinates, in metres. Here x increases eastward from the western edge and y increases northward from the southern edge. We use `"local"` throughout; check that any additional plot data share this origin, axis directions and units.
 
-A matching CRS label alone cannot establish alignment. Check the origin, axis directions, units and footprint against known plot locations. Georeferenced external data require a known transformation between their CRS and the plot frame. Wolf's data include UTM coordinates and plot-corner measurements that can support that transformation. Merely assigning an EPSG code to local coordinates leaves their numerical positions unchanged.
-
-For data already in known geographical CRSs, transform the target geometries into each raster's CRS before extraction. An external raster can keep its original grid. If the raster itself must change CRS, use `terra::project()` with an explicit output template.
-
-```{r}
-#| label: external-layer-template
-#| eval: false
-
-# Adapt these paths and CRS to an independently supplied, georeferenced layer.
-canopy <- rast("/full/path/to/canopy-height.tif")
-known.points <- st_as_sf(my.coordinates, coords = c("easting", "northing"),
-                         crs = "EPSG:32617")
-
-canopy.points <- st_transform(known.points, crs(canopy))
-canopy.values <- terra::extract(canopy, vect(canopy.points))
-```
+External sources such as remote-sensing products need CRS alignment and standard GIS checks before use (`sf::st_transform()` or `terra::project()`, as appropriate). Assigning a CRS label alone does not align coordinates.
 
 ## Terrain from the elevation grid
 
@@ -262,7 +247,6 @@ For other situations, choose the operation according to the actual mismatch.
 | Same grid, additional variables            | `c()` adds layers after `compareGeom()` checks.                                                                            |
 | Aligned fine cells to larger cells         | `aggregate()` summarizes groups of cells.                                                                                  |
 | Same CRS, different grid origin or spacing | `resample()` transfers values to an explicit template. Choose a method appropriate to the variable.                        |
-| Different known CRS                        | Transform targets for native-grid extraction, or use `project()` with a template if the raster itself must be transformed. |
 | Adjacent tiles of one variable             | `merge()` or `mosaic()` combines spatial tiles.                                                                            |
 
 For continuous point-like surfaces, bilinear resampling is a possible interpolation choice. For larger output cells covering several input cells, a mean may be appropriate. A value representing a block mean has a different meaning from a measurement at its centre. Smoothing changes the environmental surface and should have a stated analytical purpose. Finer output cells retain the information limits of the original source.
@@ -278,7 +262,7 @@ soil.on.terrain.grid <- resample(soil, terrain[[1]], method = "bilinear")
 
 # Extract at point (tree) coordinates
 
-This small example uses a couple of abundant species. The extraction itself works on points: it has no species-specific requirements and can be applied to all supplied records.
+This example uses three tree species. The extraction itself works on points: it has no species-specific requirements and can be applied to all supplied records.
 
 ```{r}
 #| label: choose-tree-targets
@@ -328,11 +312,13 @@ aggregate(point.env[c("elevation_m", "soil_P_mgkg", "soil_Ca_mgkg")],
 
 `exactextractr::exact_extract()` operates on polygons. Direct point sampling uses terra. Buffers turn point neighbourhoods into area targets that both extraction routes can process.
 
-# Construct area targets
+# Extract from buffers
 
-## Buffers around points
+All polygon-based extractions work in the same way. The tutorial separates buffers, quadrats and arbitrary polygons for didactic purposes; only the construction of the targets and their identifiers changes.
 
-The radius is in metres because these are local metre coordinates. Buffers can overlap and can cross the plot boundary. Each remains a separate target, with its original point ID. A stem's neighbourhood can consequently be incomplete near a raster boundary or missing-data region.
+## Construct buffers
+
+The radius is in metres because these are local metre coordinates. Buffers can overlap and cross the plot boundary. Each remains a separate target with its original point ID. Missing-coordinate records have no buffer geometry, but keep their requested output rows.
 
 ```{r}
 #| label: point-buffers
@@ -343,11 +329,130 @@ if(length(point.i))
 	point.sf <- st_as_sf(targets[point.i, ], coords = c("PX", "PY"),
 	                     crs = st_crs(crs(terrain)))
 buffers <- st_buffer(point.sf, dist = buffer.radius)
+buffer.area <- as.numeric(st_area(buffers))
 ```
 
-## Quadrats at two resolutions
+## Extract environmental summaries
 
-Reuse `make_quadrats_fast()` and the standard location table. The geometry below comes directly from the bounds. Grid identifiers distinguish quadrat IDs that repeat between resolutions. These generated IDs are separate from the naming convention in the census `Quadrat` column.
+An area mean weights each cell by its overlap with the target, treating the cell value as constant within that cell. On these local regular grids, cell area is constant within each layer, so overlap fractions supply the weights.
+
+The mean uses only valid values. **Valid coverage** is their overlap area divided by the full target area. Coverage of 0.7 means that 30% of the target contributes no values, because of missing cells or an area beyond the raster. Calculate it separately for each variable, on that layer's native grid. The same definitions apply to the quadrats and arbitrary polygons below.
+
+### Method 1 with terra::extract()
+
+With `exact = TRUE` and `fun = mean`, terra weights values by overlap fractions. Extracting `!is.na(layers)` with `fun = sum` gives the sum of valid fractions. Multiplying by cell area and dividing by target area gives coverage. As for points, terra's `ID` refers to geometry row positions; `point.i` restores the complete target table.
+
+```{r}
+#| label: terra-buffer-means
+
+buffer.terra <- targets
+for(source in names(environment))
+{
+	layers <- environment[[source]]
+	for(variable in names(layers))
+	{
+		buffer.terra[[paste0("mean.", variable)]] <- rep(NA_real_, nrow(targets))
+		buffer.terra[[paste0("coverage.", variable)]] <- rep(NA_real_, nrow(targets))
+	}
+	if(!length(point.i)) next
+	means <- terra::extract(layers, vect(buffers), exact = TRUE, fun = mean, na.rm = TRUE)
+	counts <- terra::extract(!is.na(layers), vect(buffers), exact = TRUE, fun = sum, na.rm = TRUE)
+	i <- match(seq_along(point.i), means$ID)
+	j <- match(seq_along(point.i), counts$ID)
+
+	for(variable in names(layers))
+	{
+		value <- means[[variable]][i]
+		value[is.nan(value)] <- NA_real_
+		coverage <- counts[[variable]][j] * prod(res(layers)) / buffer.area
+		coverage[is.na(coverage)] <- 0
+		buffer.terra[point.i, paste0("mean.", variable)] <- value
+		buffer.terra[point.i, paste0("coverage.", variable)] <- pmin(1, pmax(0, coverage))
+	}
+}
+```
+
+Terra's direct exact summaries support mean, sum, min, max and class tables. Other statistics can use raw values and fractions. This optional calculation illustrates a population SD for soil P in the first buffer.
+
+```{r}
+#| label: terra-custom-summary
+
+spatial.sd <- NA_real_
+if(nrow(buffers))
+{
+	overlap <- terra::extract(soil[["soil_P_mgkg"]], vect(buffers[1, ]), exact = TRUE)
+	keep <- is.finite(overlap$soil_P_mgkg) & is.finite(overlap$fraction) & overlap$fraction > 0
+	values <- overlap$soil_P_mgkg[keep]
+	weights <- overlap$fraction[keep]
+	if(length(values))
+	{
+		average <- weighted.mean(values, weights)
+		spatial.sd <- sqrt(weighted.mean((values - average)^2, weights))
+	}
+}
+spatial.sd
+```
+
+### Method 2 with exactextractr::exact_extract()
+
+The R package is `exactextractr`, whose polygon engine is exactextract. It accepts the same `SpatRaster` layers and `sf` polygons. Here it supplies overlap-weighted means, medians and population SDs. Its `count` is the sum of valid cell fractions, used to calculate coverage. `append_cols` preserves the point identifier for joining the results back.
+
+```{r}
+#| label: exactextractr-buffer-summaries
+
+buffer.env <- targets
+for(source in names(environment))
+{
+	layers <- environment[[source]]
+	for(variable in names(layers))
+	{
+		for(statistic in c("mean", "median", "stdev", "count", "coverage"))
+			buffer.env[[paste(statistic, variable, sep = ".")]] <- rep(NA_real_, nrow(targets))
+	}
+	if(!length(point.i)) next
+	extracted <- exact_extract(layers, buffers,
+		fun = c("mean", "median", "stdev", "count"),
+		append_cols = "point_id", full_colnames = TRUE, progress = FALSE)
+
+	for(variable in names(layers))
+	{
+		coverage <- extracted[[paste0("count.", variable)]] * prod(res(layers)) / buffer.area
+		coverage[is.na(coverage)] <- 0
+		extracted[[paste0("coverage.", variable)]] <- pmin(1, pmax(0, coverage))
+	}
+	original.i <- match(extracted$point_id, targets$point_id)
+	for(column in setdiff(names(extracted), "point_id"))
+	{
+		extracted[[column]][is.nan(extracted[[column]])] <- NA_real_
+		buffer.env[original.i, column] <- extracted[[column]]
+	}
+}
+```
+
+Both methods ignore missing cell values. Fully outside or all-missing areas receive `NA` estimates and zero coverage. A target without usable geometry retains its ID with `NA` estimates and `NA` coverage. These conventions apply to all three area sections.
+
+Population SD describes spatial heterogeneity within an area. It does not measure uncertainty in the interpolated surface or its mean. Estimation uncertainty needs information about measurement or model error; raster cells should not automatically be treated as independent observations for a standard error.
+
+## Check the buffer results
+
+The methods should agree on means and coverage. `buffer.env` also contains medians, SDs and counts, and retains one row per original tree/stem record.
+
+```{r}
+#| label: check-buffer-results
+
+comparison.columns <- setdiff(names(buffer.terra), names(targets))
+stopifnot(identical(buffer.env$point_id, targets$point_id),
+          isTRUE(all.equal(buffer.terra[comparison.columns],
+                           buffer.env[comparison.columns], tolerance = 1e-5)))
+head(buffer.env[c("point_id", "Mnemonic", "mean.soil_P_mgkg", "median.soil_P_mgkg",
+                  "stdev.soil_P_mgkg", "coverage.soil_P_mgkg")])
+```
+
+# Extract from quadrats
+
+## Construct quadrats at two resolutions
+
+Reuse `make_quadrats_fast()` and the standard table with `quadrat_id`, `xmin`, `ymin`, `xmax` and `ymax`. The polygons come directly from those bounds. `grid_id` distinguishes IDs that repeat between resolutions; these IDs are separate from the census `Quadrat` naming convention.
 
 ```{r}
 #| label: quadrat-polygons
@@ -366,12 +471,106 @@ geometry <- lapply(seq_len(nrow(quadrat.table)), function(i)
 	st_polygon(list(corners))
 })
 quadrats <- st_sf(quadrat.table, geometry = st_sfc(geometry, crs = st_crs(crs(terrain))))
-stopifnot(nrow(q20) == 1250L, nrow(q50) == 200L)
+quadrat.i <- which(!st_is_empty(quadrats))
+quadrat.area <- as.numeric(st_area(quadrats))
+quadrat.key <- paste(quadrat.table$grid_id, quadrat.table$quadrat_id, sep = "/")
+stopifnot(nrow(q20) == 1250L, nrow(q50) == 200L, !anyDuplicated(quadrat.key))
 ```
 
-## Arbitrary polygons
+## Extract environmental summaries
 
-One polygon lies within the plot, while another crosses its western boundary. Existing `sf` polygons or multipolygons can enter at this same step. Validate their geometry and CRS before extracting. An unknown location should retain its source ID with `NA` output while the geometry is resolved. Invalid shapes need correction before overlay.
+Both resolutions use the same environmental layers and weighting as the buffers. No raster needs to be resampled to the quadrat size.
+
+### Method 1 with terra::extract()
+
+```{r}
+#| label: terra-quadrat-means
+
+quadrat.terra <- quadrat.table
+for(source in names(environment))
+{
+	layers <- environment[[source]]
+	for(variable in names(layers))
+	{
+		quadrat.terra[[paste0("mean.", variable)]] <- rep(NA_real_, nrow(quadrat.table))
+		quadrat.terra[[paste0("coverage.", variable)]] <- rep(NA_real_, nrow(quadrat.table))
+	}
+	if(!length(quadrat.i)) next
+	means <- terra::extract(layers, vect(quadrats[quadrat.i, ]), exact = TRUE, fun = mean, na.rm = TRUE)
+	counts <- terra::extract(!is.na(layers), vect(quadrats[quadrat.i, ]), exact = TRUE, fun = sum, na.rm = TRUE)
+	i <- match(seq_along(quadrat.i), means$ID)
+	j <- match(seq_along(quadrat.i), counts$ID)
+
+	for(variable in names(layers))
+	{
+		value <- means[[variable]][i]
+		value[is.nan(value)] <- NA_real_
+		coverage <- counts[[variable]][j] * prod(res(layers)) / quadrat.area[quadrat.i]
+		coverage[is.na(coverage)] <- 0
+		quadrat.terra[quadrat.i, paste0("mean.", variable)] <- value
+		quadrat.terra[quadrat.i, paste0("coverage.", variable)] <- pmin(1, pmax(0, coverage))
+	}
+}
+```
+
+### Method 2 with exactextractr::exact_extract()
+
+Keep both `grid_id` and `quadrat_id` when matching results, since a quadrat ID alone is not unique across grids.
+
+```{r}
+#| label: exactextractr-quadrat-summaries
+
+quadrat.env <- quadrat.table
+for(source in names(environment))
+{
+	layers <- environment[[source]]
+	for(variable in names(layers))
+	{
+		for(statistic in c("mean", "median", "stdev", "count", "coverage"))
+			quadrat.env[[paste(statistic, variable, sep = ".")]] <- rep(NA_real_, nrow(quadrat.table))
+	}
+	if(!length(quadrat.i)) next
+	extracted <- exact_extract(layers, quadrats[quadrat.i, ],
+		fun = c("mean", "median", "stdev", "count"),
+		append_cols = c("grid_id", "quadrat_id"), full_colnames = TRUE, progress = FALSE)
+
+	for(variable in names(layers))
+	{
+		coverage <- extracted[[paste0("count.", variable)]] * prod(res(layers)) / quadrat.area[quadrat.i]
+		coverage[is.na(coverage)] <- 0
+		extracted[[paste0("coverage.", variable)]] <- pmin(1, pmax(0, coverage))
+	}
+	extracted.key <- paste(extracted$grid_id, extracted$quadrat_id, sep = "/")
+	original.i <- match(extracted.key, quadrat.key)
+	for(column in setdiff(names(extracted), c("grid_id", "quadrat_id")))
+	{
+		extracted[[column]][is.nan(extracted[[column]])] <- NA_real_
+		quadrat.env[original.i, column] <- extracted[[column]]
+	}
+}
+```
+
+## Check the quadrat results
+
+The output retains the bounds and identifiers for both resolutions, with one row per supplied quadrat.
+
+```{r}
+#| label: check-quadrat-results
+
+comparison.columns <- setdiff(names(quadrat.terra), names(quadrat.table))
+stopifnot(identical(quadrat.env[c("grid_id", "quadrat_id")],
+                    quadrat.table[c("grid_id", "quadrat_id")]),
+          isTRUE(all.equal(quadrat.terra[comparison.columns],
+                           quadrat.env[comparison.columns], tolerance = 1e-5)))
+table(quadrat.env$grid_id)
+head(quadrat.env[c("grid_id", "quadrat_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
+```
+
+# Extract from arbitrary polygons
+
+## Construct the polygons
+
+One polygon lies inside the plot; the other crosses its western boundary. Existing `sf` polygons or multipolygons in the same local plot frame can enter here. Invalid shapes need correction before extraction. An empty geometry represents a target whose location remains unresolved and keeps an `NA` output row.
 
 ```{r}
 #| label: irregular-polygons
@@ -382,161 +581,95 @@ regions <- st_sf(polygon_id = c("interior", "western_edge"),
 		st_polygon(list(cbind(c(-15, 60, 60, -15, -15), c(30, 30, 80, 100, 30)))),
 		crs = st_crs(crs(terrain))
 	))
-stopifnot(all(st_is_valid(regions)))
+polygon.table <- st_drop_geometry(regions)
+polygon.i <- which(!st_is_empty(regions))
+polygon.area <- as.numeric(st_area(regions))
+stopifnot(!anyNA(regions$polygon_id), !anyDuplicated(regions$polygon_id),
+          all(st_is_valid(regions)), all(is.finite(polygon.area[polygon.i])),
+          all(polygon.area[polygon.i] > 0))
 ```
 
-## One extraction table for all areas
+## Extract environmental summaries
 
-Combine geometries under unique temporary keys so that the following calculations apply unchanged to every target type. Original identifiers remain in their source tables and are restored when results are joined back below. Missing-coordinate point records have no buffer geometry and will receive an `NA` buffer result when joined back to the complete target table.
+Only the target geometry and its ID have changed. Coverage still uses the full polygon area, including any part outside the raster.
 
-```{r}
-#| label: combine-area-targets
-
-areas <- rbind(
-	st_sf(target_id = paste0(rep("buffer/", nrow(buffers)), buffers$point_id),
-	      geometry = st_geometry(buffers)),
-	st_sf(target_id = paste(quadrats$grid_id, quadrats$quadrat_id, sep = "/"),
-	      geometry = st_geometry(quadrats)),
-	st_sf(target_id = paste0("polygon/", regions$polygon_id), geometry = st_geometry(regions))
-)
-stopifnot(!anyDuplicated(areas$target_id), all(st_is_valid(areas)))
-area.m2 <- as.numeric(st_area(areas))
-area.i <- which(!st_is_empty(areas))
-stopifnot(all(is.finite(area.m2[area.i])), all(area.m2[area.i] > 0))
-```
-
-# Summarize areas on native grids
-
-## Definition and coverage
-
-For a continuous cell value, an area mean uses the area of each cell's overlap with the target as its weight. On these regular planar grids, cell area is constant within each layer, so exact overlap fractions supply the weights. This treats each raster cell's value as constant across that cell.
-
-The mean is calculated over the part with valid values. Report **valid coverage**, the valid overlap area divided by the full target area, alongside it. Coverage of 0.7 means that 30% of the target contributes no values to that summary. It can reflect missing cells or an area extending beyond the raster. Here coverage is calculated independently for every variable, including terrain derivatives with missing neighbourhoods at the plot edges.
-
-For longitude--latitude rasters, cell areas vary. Fractions alone then do not give physical-area weights. Use an appropriate equal-area workflow or explicit overlap-area weights, with target areas calculated consistently. The examples below use a shared local Cartesian frame.
-
-## Route 1 with terra::extract()
-
-For polygons, `exact = TRUE` includes partial cells. With `fun = mean`, terra applies their overlap fractions as weights. Extracting `!is.na(layers)` with `fun = sum` gives the sum of fractions containing valid data. Multiplying by cell area and dividing by target area gives valid coverage.
+### Method 1 with terra::extract()
 
 ```{r}
-#| label: terra-area-means
+#| label: terra-polygon-means
 
-terra.env <- data.frame(target_id = areas$target_id)
+polygon.terra <- polygon.table
 for(source in names(environment))
 {
 	layers <- environment[[source]]
 	for(variable in names(layers))
 	{
-		terra.env[[paste0("mean.", variable)]] <- rep(NA_real_, nrow(areas))
-		terra.env[[paste0("coverage.", variable)]] <- rep(NA_real_, nrow(areas))
+		polygon.terra[[paste0("mean.", variable)]] <- rep(NA_real_, nrow(polygon.table))
+		polygon.terra[[paste0("coverage.", variable)]] <- rep(NA_real_, nrow(polygon.table))
 	}
-	if(!length(area.i)) next
-	means <- terra::extract(layers, vect(areas[area.i, ]), exact = TRUE, fun = mean, na.rm = TRUE)
-	counts <- terra::extract(!is.na(layers), vect(areas[area.i, ]), exact = TRUE, fun = sum, na.rm = TRUE)
-	i <- match(seq_along(area.i), means$ID)
-	j <- match(seq_along(area.i), counts$ID)
+	if(!length(polygon.i)) next
+	means <- terra::extract(layers, vect(regions[polygon.i, ]), exact = TRUE, fun = mean, na.rm = TRUE)
+	counts <- terra::extract(!is.na(layers), vect(regions[polygon.i, ]), exact = TRUE, fun = sum, na.rm = TRUE)
+	i <- match(seq_along(polygon.i), means$ID)
+	j <- match(seq_along(polygon.i), counts$ID)
 
 	for(variable in names(layers))
 	{
 		value <- means[[variable]][i]
 		value[is.nan(value)] <- NA_real_
-		coverage <- counts[[variable]][j] * prod(res(layers)) / area.m2[area.i]
+		coverage <- counts[[variable]][j] * prod(res(layers)) / polygon.area[polygon.i]
 		coverage[is.na(coverage)] <- 0
-		terra.env[area.i, paste0("mean.", variable)] <- value
-		terra.env[area.i, paste0("coverage.", variable)] <- pmin(1, pmax(0, coverage))
+		polygon.terra[polygon.i, paste0("mean.", variable)] <- value
+		polygon.terra[polygon.i, paste0("coverage.", variable)] <- pmin(1, pmax(0, coverage))
 	}
 }
-head(terra.env[c("target_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
 ```
 
-Terra's direct exact summaries are limited to mean, sum, min, max and class tables. For a different statistic, request raw values and fractions, then summarize explicitly. This example calculates a population SD for soil P in the first area. It describes spatial variation within that area.
+### Method 2 with exactextractr::exact_extract()
 
 ```{r}
-#| label: terra-custom-summary
+#| label: exactextractr-polygon-summaries
 
-overlap <- terra::extract(soil[["soil_P_mgkg"]], vect(areas[1, ]), exact = TRUE)
-keep <- is.finite(overlap$soil_P_mgkg) & is.finite(overlap$fraction) & overlap$fraction > 0
-values <- overlap$soil_P_mgkg[keep]
-weights <- overlap$fraction[keep]
-spatial.sd <- NA_real_
-if(length(values))
-{
-	average <- weighted.mean(values, weights)
-	spatial.sd <- sqrt(weighted.mean((values - average)^2, weights))
-}
-spatial.sd
-```
-
-## Route 2 with exactextractr::exact_extract()
-
-The R package is called `exactextractr`. Its polygon engine is exactextract. It accepts the same `SpatRaster` layers, with `sf` polygons. Named summaries include overlap-weighted mean, median, quantiles and population standard deviation. `count` is the sum of valid cell fractions, which supplies the coverage calculation. `append_cols` carries the target key into the result.
-
-```{r}
-#| label: exactextractr-area-summaries
-
-area.env <- data.frame(target_id = areas$target_id)
+polygon.env <- polygon.table
 for(source in names(environment))
 {
 	layers <- environment[[source]]
 	for(variable in names(layers))
 	{
 		for(statistic in c("mean", "median", "stdev", "count", "coverage"))
-			area.env[[paste(statistic, variable, sep = ".")]] <- rep(NA_real_, nrow(areas))
+			polygon.env[[paste(statistic, variable, sep = ".")]] <- rep(NA_real_, nrow(polygon.table))
 	}
-	if(!length(area.i)) next
-	extracted <- exact_extract(layers, areas[area.i, ],
+	if(!length(polygon.i)) next
+	extracted <- exact_extract(layers, regions[polygon.i, ],
 		fun = c("mean", "median", "stdev", "count"),
-		append_cols = "target_id", full_colnames = TRUE, progress = FALSE)
+		append_cols = "polygon_id", full_colnames = TRUE, progress = FALSE)
 
 	for(variable in names(layers))
 	{
-		coverage <- extracted[[paste0("count.", variable)]] * prod(res(layers)) / area.m2[area.i]
+		coverage <- extracted[[paste0("count.", variable)]] * prod(res(layers)) / polygon.area[polygon.i]
+		coverage[is.na(coverage)] <- 0
 		extracted[[paste0("coverage.", variable)]] <- pmin(1, pmax(0, coverage))
 	}
-
-	for(column in setdiff(names(extracted), "target_id"))
+	original.i <- match(extracted$polygon_id, regions$polygon_id)
+	for(column in setdiff(names(extracted), "polygon_id"))
 	{
 		extracted[[column]][is.nan(extracted[[column]])] <- NA_real_
-		area.env[[column]] <- extracted[[column]][match(area.env$target_id, extracted$target_id)]
+		polygon.env[original.i, column] <- extracted[[column]]
 	}
 }
-
-# Both routes should give the same means and valid coverage.
-comparison.columns <- setdiff(names(terra.env), "target_id")
-stopifnot(isTRUE(all.equal(terra.env[comparison.columns],
-                          area.env[comparison.columns], tolerance = 1e-5)))
-head(area.env[c("target_id", "mean.soil_P_mgkg", "median.soil_P_mgkg",
-                "stdev.soil_P_mgkg", "coverage.soil_P_mgkg")])
 ```
 
-The named summaries ignore `NA` cells. All-missing or completely outside targets retain a row, with `NA` estimates and zero coverage after normalizing undefined numeric results. Empty geometries retain their IDs with `NA` estimates and `NA` coverage because their area is unknown. User-defined summary functions can accept both cell values and overlap fractions. An unweighted function applied to all touched cells would change the meaning of the summary.
+## Check the polygon results
 
-Population SD describes heterogeneity of the raster values inside an area. Estimation uncertainty requires additional information about measurement or model error. Raster pixels should not automatically be treated as independent observations for a standard error. Dates, interpolation choices and the coarsest source support remain relevant when interpreting an apparently detailed surface.
-
-## Return each geometry's original identifiers
-
-Join by the explicit keys and keep input order. Quadrat output retains the standard bounds and both grid and quadrat identifiers. The same pattern handles missing geometries by leaving their requested rows in the output.
+The western-edge polygon demonstrates partial coverage. Missing soil cells can reduce valid coverage further, independently of elevation coverage.
 
 ```{r}
-#| label: join-area-results
+#| label: check-polygon-results
 
-summary.columns <- setdiff(names(area.env), "target_id")
-buffer.env <- cbind(targets,
-	area.env[match(paste0(rep("buffer/", nrow(targets)), targets$point_id), area.env$target_id),
-	         summary.columns, drop = FALSE])
-quadrat.env <- cbind(quadrat.table,
-	area.env[match(paste(quadrat.table$grid_id, quadrat.table$quadrat_id, sep = "/"),
-	               area.env$target_id), summary.columns, drop = FALSE])
-polygon.env <- cbind(st_drop_geometry(regions),
-	area.env[match(paste0("polygon/", regions$polygon_id), area.env$target_id),
-	         summary.columns, drop = FALSE])
-rownames(buffer.env) <- rownames(quadrat.env) <- rownames(polygon.env) <- NULL
-
-stopifnot(nrow(buffer.env) == nrow(targets),
-          identical(buffer.env$point_id, targets$point_id),
-          identical(quadrat.env$quadrat_id, quadrat.table$quadrat_id),
-          identical(polygon.env$polygon_id, regions$polygon_id))
+comparison.columns <- setdiff(names(polygon.terra), names(polygon.table))
+stopifnot(identical(polygon.env$polygon_id, regions$polygon_id),
+          isTRUE(all.equal(polygon.terra[comparison.columns],
+                           polygon.env[comparison.columns], tolerance = 1e-5)))
 polygon.env[c("polygon_id", "mean.elevation_m", "coverage.elevation_m",
               "mean.soil_P_mgkg", "coverage.soil_P_mgkg")]
 ```
