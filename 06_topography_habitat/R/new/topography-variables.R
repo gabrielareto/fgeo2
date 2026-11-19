@@ -15,6 +15,9 @@
 #
 # Returns a standard SpatRaster: elevation first, then the requested variables.
 # Names and units are retained. No plots or permanent files are produced.
+# With fill.missing = TRUE, attr(result, "filled.cells") is a same-grid raster
+# marking substitutions in this call (1 = filled, 0 = unchanged). Save it separately;
+# ordinary raster transformations and GeoTIFF export may drop R attributes.
 # WhiteboxTools uses a private temporary directory. Requested results are copied
 # to a separate R temporary GeoTIFF before that directory is removed. Save the
 # returned raster with terra::writeRaster() to retain it across R sessions.
@@ -56,8 +59,8 @@
 # search.radius, idw.power, idw.smooth: IDW search distance (m), distance power,
 #   and distance smoothing (m). min.points/max.points limit the IDW neighbours.
 # smoothing.cells: odd moving-mean width in cells. Default 1 preserves the DEM.
-#   Missing cells remain missing. Interpolated cells outside the point hull are
-#   masked. A supplied DEM retains its original support, including internal NAs.
+#   Smoothing preserves missing cells; nearest-value completion happens only
+#   after all derivatives and flow calculations, when fill.missing = TRUE.
 # neighbors: 4 or 8 neighbours for slope/aspect. TRI always uses 8 neighbours.
 # position.radius: square TPI neighbourhood radius (m), rounded up to whole cells;
 #   the focal cell is excluded. This is not the legacy CTFS quadrat convexity.
@@ -67,6 +70,12 @@
 # breach.distance.cells: maximum least-cost breaching search distance in cells.
 # channel.area.m2: D8 contributing-area threshold defining the modelled channels.
 #   Default 1000 is an example starting value, not a site-calibrated threshold.
+# fill.missing: TRUE (default) replaces non-finite output cells with the nearest
+#   finite estimate of that variable, anywhere inside the existing raster extent.
+#   This includes gaps, borders and cells outside the point hull. Valid estimates
+#   are unchanged. Aspect is filled once; northness/eastness use that direction.
+#   FALSE retains the unfilled calculations. A layer with no finite donor raises
+#   an error with TRUE; this can occur for aspect/TWI on entirely flat terrain.
 #
 # METHODS AND LIMITS
 # terra is required. interp is needed for default linear/Akima point input;
@@ -75,9 +84,11 @@
 # All elevations and horizontal distances must be in metres. Aspect is relative
 # to grid north; geographic exposure requires a north-aligned/georeferenced grid.
 # Curvature uses the WhiteboxTools 2.4.0 definitions (5x5 fit, log=FALSE).
-# TPI and curvature retain NA where their full neighbourhood is unavailable;
-# flat-cell aspect and zero-slope TWI are undefined. Hydrological variables use
-# only the supplied domain and cannot recover missing upstream terrain.
+# Before completion, TPI/curvature require their full neighbourhood; flat-cell
+# aspect and zero-slope TWI are undefined. Filled values are spatial proxies,
+# including for drainage distance and HAND; no new flow path is calculated.
+# Completion does not expand the grid or recover missing upstream terrain.
+# A missing channel network still requires a revised domain or channel threshold.
 # TWI is a wetness proxy; drainage and HAND are not observed streams/water levels.
 # Raster cells and D8 flow paths remain discrete. Smoother-looking maps do not
 # recover terrain detail absent from the survey. Do not smooth the derived
@@ -89,6 +100,7 @@
 # topography <- derive_topography(xyz = elevations, resolution = 5)
 # local.layers <- derive_topography(xyz = elevations, variables = c("slope", "tpi"))
 # from.dem <- derive_topography(dem = my.dem, variables = c("slope", "tri"))
+# unfilled <- derive_topography(xyz = elevations, fill.missing = FALSE)
 
 derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
                               resolution = 5, extent = NULL, crs = "local",
@@ -97,7 +109,8 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
                               min.points = 3, max.points = 12,
                               smoothing.cells = 1, neighbors = 8,
                               position.radius = 20, flow.preparation = "breach",
-                              breach.distance.cells = 20, channel.area.m2 = 1000)
+                              breach.distance.cells = 20, channel.area.m2 = 1000,
+                              fill.missing = TRUE)
 {
 	##################################################
 	# CHECK INPUT TYPES AND REQUESTED VARIABLES
@@ -106,6 +119,9 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	if(!requireNamespace("terra", quietly = TRUE)) stop("Install the terra package.")
 
 	if(is.null(xyz) == is.null(dem)) stop("Supply exactly one of xyz or dem.")
+
+	if(!is.logical(fill.missing) || length(fill.missing) != 1L || is.na(fill.missing))
+		stop("fill.missing must be TRUE or FALSE.")
 
 	from.xyz <- !is.null(xyz)
 	from.dem <- !is.null(dem)
@@ -594,6 +610,45 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 
 
 	##################################################
+	# OPTIONALLY COMPLETE THE CALCULATED LAYERS
+	##################################################
+
+	filled.cells <- NULL
+	if(fill.missing)
+	{
+		# Record the original gaps before replacing anything. Completion is last:
+		# substituted elevation/slope must not feed back into terrain or routing.
+		filled.cells <- terra::rast(lapply(layers[variables], function(x) !is.finite(x)))
+		completion.variables <- setdiff(unique(c(if(need.aspect) "aspect", variables)),
+		                                c("northness", "eastness"))
+		# A raster diagonal includes every possible donor within this extent.
+		fill.radius <- sqrt(sum((terra::res(surface) * c(ncol(surface), nrow(surface)))^2))
+
+		for(variable in completion.variables)
+		{
+			layer <- layers[[variable]]
+			missing <- !is.finite(layer)
+			if(terra::global(missing, "sum", na.rm = TRUE)[1, 1] == 0) next
+			if(terra::global(is.finite(layer), "sum", na.rm = TRUE)[1, 1] == 0)
+				stop("Cannot fill ", layer.names[[variable]], ": no finite estimates. ",
+				     "Use fill.missing = FALSE or revise the inputs/calculation settings.")
+
+			# Borrow one nearest value, without averaging directions or smoothing
+			# valid estimates. Non-finite values cannot serve as donors.
+			layer[missing] <- NA
+			donors <- terra::as.points(layer, na.rm = TRUE)
+			nearest <- terra::interpNear(layer, donors, field = names(layer)[1],
+			                             radius = fill.radius, interpolate = FALSE)
+			layers[[variable]] <- terra::cover(layer, nearest)
+		}
+
+		# Complete the direction once, even if only a component was requested.
+		if(need.northness) layers$northness <- cos(layers$aspect * pi / 180)
+		if(need.eastness) layers$eastness <- sin(layers$aspect * pi / 180)
+	}
+
+
+	##################################################
 	# RETURN STANDARD RASTER LAYERS WITH NAMES AND UNITS
 	##################################################
 
@@ -606,6 +661,20 @@ derive_topography <- function(xyz = NULL, dem = NULL, variables = "all",
 	{
 		result.file <- tempfile("fgeo2-topography-result-", fileext = ".tif")
 		out <- terra::writeRaster(out, result.file, datatype = "FLT8S", overwrite = TRUE)
+	}
+
+	if(fill.missing)
+	{
+		names(filled.cells) <- names(out)
+		terra::units(filled.cells) <- rep("1", terra::nlyr(out))
+		if(need.whitebox)
+		{
+			# Keep provenance readable after the private Whitebox folder is removed.
+			mask.file <- tempfile("fgeo2-topography-filled-", fileext = ".tif")
+			filled.cells <- terra::writeRaster(filled.cells, mask.file, datatype = "INT1U",
+			                                  overwrite = TRUE)
+		}
+		attr(out, "filled.cells") <- filled.cells
 	}
 
 	out

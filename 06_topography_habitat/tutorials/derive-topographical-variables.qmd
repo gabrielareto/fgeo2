@@ -36,6 +36,7 @@ The default paths below work when rendering this tutorial or running from the re
 ```{r}
 #| label: setup-terrain
 #| results: hide
+#| message: false
 
 # install.packages(c("terra", "interp", "whitebox"))
 # whitebox::install_whitebox()  # Once, to install the WhiteboxTools program.
@@ -115,6 +116,7 @@ The main choices are:
 -   **Resolution:** `cell.size` sets the output spacing. A 5 m raster does not create 5 m measured detail from a survey taken mostly at 20 m intervals.
 -   **Interpolation:** the default `linear` method connects elevations with planar triangles. It does not create new elevation extremes. IDW is also available, with its search radius, distance power and distance-smoothing parameter declared below. It can imprint the survey grid on the derivatives. `akima` gives a smoother surface but can create spurious peaks and pits, especially with irregular spacing. Linear and Akima need interp. `bilinear` is available for a complete regular input grid.
 -   **Smoothing:** `smoothing.cells` sets a moving mean applied before the derivatives. At 5 m resolution, a width of 3 covers 15 m. Use 1 to keep the interpolated DEM unchanged. The function defaults to 1, with no smoothing. This example explicitly uses 3. Compare choices before interpreting small ridges or depressions.
+-   **Missing results:** `fill.missing = TRUE` completes gaps after all calculations by copying the nearest finite estimate in each layer. Set it to `FALSE` to retain the unfilled results. Aspect is completed first, and northness/eastness are derived from that completed direction.
 
 Raster coordinates refer to cell centres. A 5 m raster over 0--240 m has centres at 2.5, 7.5, ..., 237.5 m. Interpolating at those centres keeps the raster boundary at the plot boundary.
 
@@ -133,6 +135,7 @@ min.points = 3                # Minimum points within the IDW search radius.
 max.points = 12               # Maximum points used for IDW.
 slope.neighbors = 8           # 4 or 8 neighbours for slope and aspect.
 smoothing.cells = 3            # 15 m window at 5 m resolution; 1 means no smoothing.
+fill.missing = TRUE            # Complete missing outputs; FALSE retains gaps.
 position.radius = 20           # TPI neighbourhood radius, in metres.
 flow.preparation = "breach"   # "breach", "fill" or "none" for an already prepared DEM.
 breach.distance.cells = 20     # Maximum search distance for drainage preparation.
@@ -150,7 +153,7 @@ topography <- derive_topography(
 	idw.power = idw.power, idw.smooth = idw.smooth,
 	min.points = min.points, max.points = max.points,
 	smoothing.cells = smoothing.cells, neighbors = slope.neighbors,
-	position.radius = position.radius,
+	fill.missing = fill.missing, position.radius = position.radius,
 	flow.preparation = flow.preparation,
 	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
 )
@@ -159,7 +162,19 @@ names(topography)
 
 ```
 
-The function leaves cells outside the observed points' convex hull as `NA`. Smoothing preserves those missing cells and uses available neighbours at the boundary; this can flatten slopes near the edge. Check the DEM for gaps and interpolation artefacts before interpreting the layers. Triangulation can occasionally leave unresolved interior cells; try another resolution or method. These cells are not filled automatically. For larger sites, supply the terrain surrounding the plot and crop the outputs afterwards.
+Interpolation leaves cells outside the measurements' convex hull as `NA`, and smoothing uses available neighbours without filling those gaps. After deriving all variables, the default completion fills missing outputs throughout the selected raster extent. These are spatial proxies, including extrapolated elevations and drainage estimates without a resolved flow path. Completion does not recover unknown surrounding terrain. A layer with no finite donor estimates causes an error; use `fill.missing = FALSE` to inspect its unfilled output.
+
+The `filled.cells` attribute records which cells were completed in this call, for each returned layer. It is an auxiliary raster with the same grid and layer names.
+
+```{r}
+#| label: completed-terrain-cells
+
+filled.cells <- attr(topography, "filled.cells")
+# Counts of completed cells, when completion is enabled.
+if(!is.null(filled.cells)) global(filled.cells, "sum", na.rm = TRUE)
+```
+
+Check interpolation artefacts before interpreting the layers. For larger sites, supply surrounding terrain and crop the outputs afterwards.
 
 ```{r}
 #| label: fig-dem
@@ -174,9 +189,9 @@ points(elevations[, c("x", "y")], pch = 16, cex = 0.2)
 
 ## DEM as input {#dem-input-selected-variables}
 
-One can pass a DEM as input instead of a `{x, y, z}` table. For your own DEM, run setup and the parameter definitions above, skip the point-input call, and read your file in the chunk below. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1, so its elevations are also unchanged unless smoothing is requested. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
+One can pass a DEM as input instead of a `{x, y, z}` table. For your own DEM, run setup and the parameter definitions above, skip the point-input call, and read your file in the chunk below. A supplied DEM bypasses interpolation and retains its grid and CRS. Smoothing defaults to 1; finite elevations are unchanged unless smoothing is requested. Default completion can fill its missing output elevations. The workflow requires square raster cells and compatible horizontal and vertical metre units. Do not label longitude and latitude coordinates as metres.
 
-A processed DEM already contains the interpolation and smoothing. It does not store the settings for calculating slope, TPI or drainage. Pass those settings again. Here, `smoothing.cells = 1` keeps the processed elevations unchanged; using 3 again would smooth them twice. For a DEM supplied from elsewhere, choose any required smoothing explicitly.
+A processed DEM already contains interpolation, smoothing and any completed elevations. Re-derivation can differ where the original DEM had gaps. Pass the derivative settings again. Here, `smoothing.cells = 1` avoids smoothing twice. For a DEM supplied from elsewhere, choose any required smoothing explicitly.
 
 ```{r}
 #| label: dem-input
@@ -186,7 +201,7 @@ dem <- topography[["elevation_m"]]
 # dem <- rast("/full/path/to/elevation.tif")
 
 dem.topography <- derive_topography(
-	dem = dem, smoothing.cells = 1,
+	dem = dem, smoothing.cells = 1, fill.missing = fill.missing,
 	neighbors = slope.neighbors, position.radius = position.radius,
 	flow.preparation = flow.preparation,
 	breach.distance.cells = breach.distance.cells, channel.area.m2 = channel.area.m2
@@ -210,7 +225,7 @@ dem <- topography[["elevation_m"]]
 
 local.topography <- derive_topography(
 	dem = dem, variables = c("slope", "tpi", "tri"), smoothing.cells = 1,
-	neighbors = slope.neighbors, position.radius = position.radius
+	fill.missing = fill.missing, neighbors = slope.neighbors, position.radius = position.radius
 )
 names(local.topography)
 
@@ -235,7 +250,7 @@ The variables below are complementary descriptions of the same terrain. They are
 
 Recent forest studies use aspect components and ruggedness (McNichol et al. 2024; Freund et al. 2021), and wetness indices (Zhang et al. 2025). Curvature and drainage position also have applications to forest structure and floristic composition (Detto et al. 2013; Schietti et al. 2014).
 
-Spatial scale is part of each variable. DEM resolution, smoothing and neighbourhood size can change the results (Detto et al. 2013; Muscarella et al. 2020). Blank boundary cells are retained where the full local neighbourhood is unavailable.
+Spatial scale is part of each variable. DEM resolution, smoothing and neighbourhood size can change the results (Detto et al. 2013; Muscarella et al. 2020). With `fill.missing = FALSE`, blank cells remain where the required data are unavailable; the default completes them from nearby estimates.
 
 The old CTFS/ctfs/fgeo quadrat summary returned mean elevation, slope and convexity for regular square quadrats (20 m by default, configurable). This function accepts irregular input points and calculates variables on a raster with adjustable cell size. See the [evaluation](../../evaluation/6-topography.qmd) for details.
 
@@ -267,7 +282,7 @@ plot(slope, col = map.colors, main = "Slope (degrees)",
 
 Aspect is the downhill direction, clockwise from north. It can represent differences in exposure, as in the Niobrara ForestGEO study of microclimate (McNichol et al. 2024). On our local grid, this interpretation assumes that positive `y` points north.
 
-Northness and eastness avoid the discontinuity between 359 and 0 degrees: they are the cosine and sine of aspect. Flat cells have no meaningful aspect and are left blank. The old CTFS `calc.gradient()` calculated directions for eight triangular facets rather than a single raster aspect and its northness/eastness components.
+Northness and eastness avoid the discontinuity between 359 and 0 degrees: they are the cosine and sine of aspect. Flat cells have no meaningful aspect. Default completion assigns a nearby defined direction; `fill.missing = FALSE` leaves them blank. The old CTFS `calc.gradient()` calculated directions for eight triangular facets rather than a single raster aspect and its northness/eastness components.
 
 ```{r}
 #| label: fig-aspect-components
@@ -289,7 +304,7 @@ par(settings)
 
 TPI is focal elevation minus the mean elevation of its neighbours. Positive values indicate locally higher ground; negative values indicate depressions. The neighbourhood below is a square extending `position.radius` metres from the focal cell centre, rounded up to a whole number of cells.
 
-The old CTFS/fgeo convexity was a quadrat's mean elevation minus the mean of its eight surrounding quadrats. At the perimeter, the default calculation used measured centre elevation minus corner mean. Here, TPI uses raster cells, an explicit radius and no estimate for incomplete neighbourhoods.
+The old CTFS/fgeo convexity was a quadrat's mean elevation minus the mean of its eight surrounding quadrats. At the perimeter, the default calculation used measured centre elevation minus corner mean. Here, TPI is initially calculated from complete raster neighbourhoods at an explicit radius. Default completion extends nearby TPI estimates into missing boundary cells; it does not reproduce the CTFS edge formula.
 
 ```{r}
 #| label: fig-tpi
@@ -316,7 +331,7 @@ plot(tri, col = map.colors, main = "Terrain ruggedness (m)",
 
 Plan curvature describes convergence or divergence across the slope. Profile curvature describes how steepness changes downhill. These are second derivatives of elevation and are particularly sensitive to interpolation and smoothing. Detto et al. (2013) used several curvature measures to describe forest canopy structure in Panama.
 
-The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These differ from CTFS/fgeo convexity, which compared a quadrat with its neighbours. The calculation uses a 5 by 5 cell fit; the function masks the incomplete boundary.
+The WhiteboxTools 2.4.0 implementation used here reports curvature in inverse metres. Positive plan curvature indicates divergence; positive profile curvature indicates acceleration of downhill flow. The two signs describe different things. These differ from CTFS/fgeo convexity, which compared a quadrat with its neighbours. The calculation uses a 5 by 5 cell fit. The incomplete boundary is masked before the optional nearest-value completion.
 
 ```{r}
 #| label: fig-curvature
@@ -358,7 +373,7 @@ plot(log10(contributing.area), col = map.colors,
 
 TWI combines specific contributing area and local slope: `log(SCA / tan(slope))`. Higher values indicate greater topographic potential for water accumulation. It is a proxy, not measured soil moisture. Zhang et al. (2025) used TWI to describe tropical forest canopy dynamics.
 
-The function supplies Whitebox with **unlogged SCA and slope in degrees**. Whitebox converts the angle internally. Zero-slope cells become `NA`. Here, slope comes from the same DEM used for the local terrain variables; only the flow-routing surface was conditioned.
+The function supplies Whitebox with **unlogged SCA and slope in degrees**. Whitebox converts the angle internally. Zero-slope cells initially become `NA`; default completion copies nearby finite TWI values into these gaps. Slope comes from the same DEM used for the local terrain variables; only the flow-routing surface was conditioned.
 
 ```{r}
 #| label: fig-twi
@@ -373,7 +388,7 @@ plot(twi, col = map.colors, main = "Topographic wetness index",
 
 This is distance along the downhill flow path to a channel, not straight-line distance to the closest channel. Detto et al. (2013) related flow distance to canopy height.
 
-A channel network must first be defined. The example uses a D8 contributing-area threshold, in square metres. Change `channel.area.m2` to reflect site hydrology and check it against mapped channels. This synthetic network does not identify observed or perennial streams.
+A channel network must first be defined. The example uses a D8 contributing-area threshold, in square metres. Change `channel.area.m2` to reflect site hydrology and check it against mapped channels; the function stops if no channels are defined. This synthetic network does not identify observed or perennial streams.
 
 ```{r}
 #| label: fig-drainage-distance
@@ -384,7 +399,7 @@ plot(drainage.distance, col = map.colors, main = "Downslope distance to drainage
      axes = TRUE, mar = map.margins)
 ```
 
-The D8 network routes flow to one neighbour; it is used consistently for the drainage distance and height below. TWI uses the distributed D-infinity accumulation. These are separate, visible choices. Cells whose route leaves the DEM without reaching a defined channel can remain blank.
+The D8 network routes flow to one neighbour; it is used consistently for the drainage distance and height below. TWI uses the distributed D-infinity accumulation. These are separate, visible choices. Cells whose route leaves the DEM without reaching a defined channel remain blank with `fill.missing = FALSE`. Default completion supplies nearby distance and HAND estimates as spatial proxies, without establishing a local drainage connection.
 
 ## Height above drainage
 
@@ -422,13 +437,15 @@ idw.layers <- derive_topography(
 	resolution = cell.size, extent = plot.extent, interpolation = "idw",
 	search.radius = search.radius, idw.power = idw.power, idw.smooth = idw.smooth,
 	min.points = min.points, max.points = max.points,
-	smoothing.cells = smoothing.cells, neighbors = slope.neighbors
+	smoothing.cells = smoothing.cells, neighbors = slope.neighbors,
+	fill.missing = fill.missing
 )
 
 linear.layers <- derive_topography(
 	xyz = elevations, variables = c("slope", "plan_curvature"),
 	resolution = cell.size, extent = plot.extent, interpolation = "linear",
-	smoothing.cells = smoothing.cells, neighbors = slope.neighbors
+	smoothing.cells = smoothing.cells, neighbors = slope.neighbors,
+	fill.missing = fill.missing
 )
 
 slope.limit <- max(global(idw.layers[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
@@ -464,14 +481,16 @@ fine <- derive_topography(
 	xyz = elevations, variables = "slope", resolution = 5, extent = plot.extent,
 	interpolation = interpolation, search.radius = search.radius,
 	idw.power = idw.power, idw.smooth = idw.smooth,
-	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors,
+	fill.missing = fill.missing
 )
 
 coarse <- derive_topography(
 	xyz = elevations, variables = "slope", resolution = 10, extent = plot.extent,
 	interpolation = interpolation, search.radius = search.radius,
 	idw.power = idw.power, idw.smooth = idw.smooth,
-	min.points = min.points, max.points = max.points, neighbors = slope.neighbors
+	min.points = min.points, max.points = max.points, neighbors = slope.neighbors,
+	fill.missing = fill.missing
 )
 
 slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
@@ -497,7 +516,7 @@ Reuse the unsmoothed 5 m DEM, so interpolation does not change. The second calcu
 
 smoothed <- derive_topography(
 	dem = fine[["elevation_m"]], variables = "slope",
-	smoothing.cells = 5, neighbors = slope.neighbors
+	smoothing.cells = 5, neighbors = slope.neighbors, fill.missing = fill.missing
 )
 
 slope.limit <- max(global(fine[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
@@ -521,9 +540,11 @@ The same unsmoothed DEM can use four or eight neighbouring cells for slope and a
 #| fig-height: 4.5
 #| fig-cap: "Slope calculated from the same DEM with four or eight neighbours."
 
-slope.four <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 4)
+slope.four <- derive_topography(dem = fine[["elevation_m"]], variables = "slope",
+	neighbors = 4, fill.missing = fill.missing)
 
-slope.eight <- derive_topography(dem = fine[["elevation_m"]], variables = "slope", neighbors = 8)
+slope.eight <- derive_topography(dem = fine[["elevation_m"]], variables = "slope",
+	neighbors = 8, fill.missing = fill.missing)
 
 slope.limit <- max(global(slope.four[["slope_deg"]], "max", na.rm = TRUE)[1, 1],
                    global(slope.eight[["slope_deg"]], "max", na.rm = TRUE)[1, 1])
@@ -547,6 +568,11 @@ writeRaster(topography, file.path(output.dir, "topography.tif"),
             datatype = "FLT4S", gdal = "COMPRESS=LZW", overwrite = TRUE)
 write.csv(data.frame(variable = names(topography), unit = units(topography)),
           file.path(output.dir, "topography-layers.csv"), row.names = FALSE)
+
+# GeoTIFF does not retain the R attribute; save its mask separately if needed.
+if(!is.null(filled.cells))
+	writeRaster(filled.cells, file.path(output.dir, "topography-filled-cells.tif"),
+	            datatype = "INT1U", overwrite = TRUE)
 
 # Read the saved layers in another R session.
 saved.topography <- rast(file.path(output.dir, "topography.tif"))

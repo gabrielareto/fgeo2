@@ -67,6 +67,7 @@ plot.extent = c(0, 1000, 0, 500)  # xmin, xmax, ymin, ymax
 terrain.resolution = 5
 soil.resolution = 20
 buffer.radius = 15
+fill.missing = TRUE # Complete terrain gaps; FALSE retains unfilled calculations.
 set.seed(123)
 knitr::opts_chunk$set(comment = "#>", fig.width = 7, fig.height = 5)
 ```
@@ -126,6 +127,8 @@ External sources such as remote-sensing products need CRS alignment and standard
 
 The example call uses default linear interpolation and selects a few of the variables available through `derive_topography()` fgeo2 function. Elevation is returned automatically too. This is an application of the completed [terrain workflow](derive-topographical-variables.qmd). TPI describes relative topographic position at the selected neighbourhood scale. Northness and eastness are relative to the local plot-grid axes here.
 
+Default `fill.missing = TRUE` completes missing terrain outputs from the nearest finite estimate in each layer, after all calculations. It applies to all topographic variables and retains the native grid. Set it to `FALSE` in setup to retain the unfilled results. Completion supplies spatial proxies within the raster extent; it does not extend that extent or alter the independently prepared soil layers.
+
 ```{r}
 #| label: prepare-terrain
 
@@ -137,7 +140,7 @@ terrain <- derive_topography(
 	resolution = terrain.resolution,
 	extent = plot.extent,
 	crs = "local",
-	position.radius = 20
+	position.radius = 20, fill.missing = fill.missing
 )
 
 names(terrain)
@@ -229,7 +232,7 @@ dim(environment$soil)
 compareGeom(terrain, soil, stopOnError = FALSE)
 ```
 
-Missing terrain neighbourhoods and the soil sampling hull create different valid footprints, even though both raster extents describe the full plot. An optional check below shows how much of a target contributes valid values when this matters to an analysis.
+Completed terrain layers cover this raster extent; with `fill.missing = FALSE`, some neighbourhood-based values remain missing. Soil layers retain the sampling-hull mask in either case. The optional check below concerns available raster area, which does not distinguish calculated from filled terrain values.
 
 ## Create a common grid when needed
 
@@ -569,7 +572,7 @@ q <- make_quadrats_fast(0, 0, 1000, 500, 20, 20)
 quadrat.terrain <- derive_topography(
 	xyz = xyz, variables = c("slope", "tpi"),
 	resolution = 5, extent = plot.extent, crs = "local",
-	smoothing.cells = 3, position.radius = 25
+	smoothing.cells = 3, position.radius = 25, fill.missing = fill.missing
 )
 
 topography20 <- aggregate(quadrat.terrain, fact = 4, fun = "mean", na.rm = TRUE)
@@ -581,7 +584,7 @@ raster.topography <- cbind(q, terra::extract(topography20, quadrat.xy))
 
 ## Compare old and new approaches
 
-Compare **all 1,250 quadrats**, separating the 146 **edge** quadrats that touch the plot boundary from the 1,104 **inner** quadrats. First check row alignment against the original quadrat indexing. Keep missing results visible rather than dropping whole quadrats from the comparison.
+Compare **all 1,250 quadrats**, separating the 146 **edge** quadrats that touch the plot boundary from the 1,104 **inner** quadrats. The same completion choice is used here and in the earlier terrain preparation. First check row alignment against the original quadrat indexing. Paired counts also expose missing results when completion is disabled.
 
 Express elevation and relative-height differences in centimetres. Convert each slope estimate to centimetres of rise per horizontal metre before subtracting: `100 * tan(slope * pi / 180)`. This expresses the existing quadrat slope in another unit; it does not average fine-cell gradients. Convexity and TPI are both height contrasts: a positive value of 25 cm means 25 cm above the relevant reference elevation, although their reference neighbourhoods differ.
 
@@ -623,7 +626,7 @@ knitr::kable(comparison, row.names = FALSE, digits = 2,
 	col.names = c("Group", "Variable", "Paired/total", "Median difference", "90% within"))
 ```
 
-The table compares corresponding quadrats, using absolute differences. Half of the paired quadrats differ by at most the median; 90% differ by at most the last column. For example, across the full plot, half the slope estimates differ by no more than about 0.26 cm of rise per horizontal metre, and 90% by no more than 1.41 cm/m. `Paired/total` shows how many supplied quadrats have both estimates; `NA` indicates that no paired comparison is possible.
+The table compares corresponding quadrats, using absolute differences. Half of the paired quadrats differ by at most the median; 90% differ by at most the last column. For example, across the full plot, half the slope estimates differ by no more than about `r round(comparison$median[2], 2)` cm of rise per horizontal metre, and 90% by no more than `r round(comparison$p90[2], 2)` cm/m. `Paired/total` shows how many supplied quadrats have both estimates; `NA` indicates that no paired comparison is possible.
 
 ### Distributions and the plot boundary
 
@@ -635,7 +638,7 @@ The panels below show the distributions as well as the paired differences above.
 #| fig-width: 7
 #| fig-height: 6.8
 #| out-width: "100%"
-#| fig-cap: "Original CTFS (black) and fgeo2 (red) quadrat-level estimates. Titles give paired/total quadrats. Curves use the same paired quadrats in each panel, except that the edge convexity panel shows the original estimates alone because fgeo2 has no TPI estimates there. All and Inner TPI curves are identical: both contain the same 1,104 pairs."
+#| fig-cap: "Original CTFS (black) and fgeo2 (red) quadrat-level estimates. Titles give paired/total quadrats. Curves compare matching locations. The default fgeo2 calculation includes nearest-value completion; disabling it can leave panels without paired estimates."
 
 plot.old <- legacy.values
 plot.new <- raster.values
@@ -676,9 +679,9 @@ mtext("Original CTFS: black     fgeo2: red", outer = TRUE, cex = 0.9)
 par(plot.options)
 ```
 
-The full-plot comparison reveals a practical difference: elevation and slope have estimates for all quadrats, but TPI is missing for all 146 edge quadrats because its neighbourhood extends beyond the DEM. CTFS instead returns centre elevation minus the corner mean for edge convexity, so there are **no paired estimates to establish agreement under that edge rule**. The two relative-height measures should retain their distinct names.
+With default completion, the comparison includes TPI estimates for the 146 boundary quadrats. These borrow nearby calculated TPI values; CTFS instead uses centre elevation minus corner mean at the perimeter. The larger edge differences underline that completed TPI still has a different definition from CTFS convexity.
 
-Aggregation uses available cells: the 146 edge slope summaries and 138 inner TPI summaries cover only part of their quadrat. These remain in the comparison. This is a reason to inspect boundary behaviour, rather than a general reason to discard edge quadrats. To obtain the stated TPI throughout the plot, supply an elevation surface extending beyond its boundary; using a smaller or incomplete neighbourhood would define a different relative-height measure.
+Completed raster cells contribute to the quadrat means, including edge slope and TPI summaries. To identify them, inspect `attr(quadrat.terrain, "filled.cells")`, a same-grid mask with 1 for cells filled in this call and 0 for unchanged cells. Setting `fill.missing = FALSE` leaves the original gaps. Neither mode recovers unknown surrounding terrain or provides independent terrain validation.
 
 # Save results and reuse them
 
@@ -689,6 +692,11 @@ Save native raster groups separately to retain their original resolution. GeoTIF
 #| results: hide
 
 writeRaster(terrain, file.path(output.dir, "bci-terrain.tif"), overwrite = TRUE)
+# R attributes are not retained by ordinary GeoTIFF export; save the mask separately.
+terrain.filled <- attr(terrain, "filled.cells")
+if(!is.null(terrain.filled))
+	writeRaster(terrain.filled, file.path(output.dir, "bci-terrain-filled-cells.tif"),
+	            datatype = "INT1U", overwrite = TRUE)
 writeRaster(soil, file.path(output.dir, "bci-soil.tif"), overwrite = TRUE)
 write.csv(point.env, file.path(output.dir, "bci-point-environment.csv"), row.names = FALSE)
 write.csv(buffer.env, file.path(output.dir, "bci-buffer-environment.csv"), row.names = FALSE)
