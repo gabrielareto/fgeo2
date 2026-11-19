@@ -628,8 +628,6 @@ knitr::kable(comparison, row.names = FALSE, digits = 2,
 
 The table compares corresponding quadrats, using absolute differences. Half of the paired quadrats differ by at most the median; 90% differ by at most the last column. For example, across the full plot, half the slope estimates differ by no more than about `r round(comparison$median[2], 2)` cm of rise per horizontal metre, and 90% by no more than `r round(comparison$p90[2], 2)` cm/m. `Paired/total` shows how many supplied quadrats have both estimates; `NA` indicates that no paired comparison is possible.
 
-### Distributions and the plot boundary
-
 The panels below show the distributions as well as the paired differences above. Elevation is plotted in metres to keep its absolute values readable; relative height is in centimetres and slope in cm/m. Black lines are original CTFS results and red lines are fgeo2 results. Within each variable, panels share the horizontal scale and smoothing bandwidth. Density similarity describes distributions, while the table checks agreement at the same locations.
 
 ```{r}
