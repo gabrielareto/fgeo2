@@ -581,7 +581,9 @@ raster.topography <- cbind(q, terra::extract(topography20, quadrat.xy))
 
 ## Compare old and new approaches
 
-First check row alignment against the original quadrat indexing. Compare quadrats at least 40 m inside the plot boundary so all fine cells have complete terrain neighbourhoods. This also avoids the different edge rule in legacy convexity.
+Compare **all 1,250 quadrats**, separating the 146 **edge** quadrats that touch the plot boundary from the 1,104 **inner** quadrats. First check row alignment against the original quadrat indexing. Keep missing results visible rather than dropping whole quadrats from the comparison.
+
+Express elevation and relative-height differences in centimetres. Convert each slope estimate to centimetres of rise per horizontal metre before subtracting: `100 * tan(slope * pi / 180)`. This expresses the existing quadrat slope in another unit; it does not average fine-cell gradients. Convexity and TPI are both height contrasts: a positive value of 25 cm means 25 cm above the relevant reference elevation, although their reference neighbourhoods differ.
 
 ```{r}
 #| label: compare-quadrat-topography
@@ -590,22 +592,93 @@ legacy.xy <- legacy$index.to.gxgy(seq_len(nrow(legacy.topography)),
 	gridsize = 20, plotdim = c(1000, 500))
 stopifnot(all(legacy.xy$gx == q$xmin), all(legacy.xy$gy == q$ymin))
 
-interior <- q$xmin >= 40 & q$xmax <= 960 & q$ymin >= 40 & q$ymax <= 460
-legacy.values <- legacy.topography[interior, c("meanelev", "slope", "convex")]
-raster.values <- raster.topography[interior, c("elevation_m", "slope_deg", "tpi_m")]
+legacy.values <- as.matrix(legacy.topography[c("meanelev", "slope", "convex")])
+raster.values <- as.matrix(raster.topography[c("elevation_m", "slope_deg", "tpi_m")])
 
-comparison <- data.frame(
-	variable = c("Elevation (m)", "Slope (degrees)", "Convexity / TPI (m)"),
-	quadrats = nrow(legacy.values),
-	correlation = diag(cor(legacy.values, raster.values)),
-	mean.absolute.difference = colMeans(abs(raster.values - legacy.values))
-)
+# Length contrasts in cm; slope as cm rise per m horizontal run.
+legacy.values[, c(1, 3)] <- 100 * legacy.values[, c(1, 3)]
+raster.values[, c(1, 3)] <- 100 * raster.values[, c(1, 3)]
+legacy.values[, 2] <- 100 * tan(legacy.values[, 2] * pi / 180)
+raster.values[, 2] <- 100 * tan(raster.values[, 2] * pi / 180)
 
-knitr::kable(comparison, row.names = FALSE, digits = c(0, 0, 4, 3),
-	col.names = c("Variable", "Quadrats", "Correlation", "Mean absolute difference"))
+edge <- q$xmin == 0 | q$xmax == 1000 | q$ymin == 0 | q$ymax == 500
+groups <- list(All = seq_len(nrow(q)), Inner = which(!edge), Edge = which(edge))
+variables = c("Elevation (cm)", "Slope (cm/m)", "Convexity / TPI (cm)")
+comparison <- list()
+
+for(group in names(groups)) for(j in seq_along(variables))
+{
+	i <- groups[[group]]
+	difference <- abs(raster.values[i, j] - legacy.values[i, j])
+	difference <- difference[is.finite(difference)]
+	comparison[[length(comparison) + 1L]] <- data.frame(
+		group = group, variable = variables[j],
+		paired = paste0(length(difference), "/", length(i)),
+		median = if(length(difference)) median(difference) else NA_real_,
+		p90 = if(length(difference)) unname(quantile(difference, 0.9)) else NA_real_
+	)
+}
+comparison <- do.call(rbind, comparison)
+knitr::kable(comparison, row.names = FALSE, digits = 2,
+	col.names = c("Group", "Variable", "Paired/total", "Median difference", "90% within"))
 ```
 
-For these 966 interior quadrats, mean absolute differences are about 0.074 m for elevation, 0.252 degrees for slope and 0.060 m for TPI versus convexity. Both routes capture similar broad topographic gradients. The original method uses quadrat-corner elevations and plane slopes, whereas the raster route summarizes cell values and local derivatives. TPI remains a different measure from legacy convexity, so identical thresholds or habitat assignments should not be assumed. This comparison measures agreement on one input surface, not independent terrain accuracy.
+The table compares corresponding quadrats, using absolute differences. Half of the paired quadrats differ by at most the median; 90% differ by at most the last column. For example, across the full plot, half the slope estimates differ by no more than about 0.26 cm of rise per horizontal metre, and 90% by no more than 1.41 cm/m. `Paired/total` shows how many supplied quadrats have both estimates; `NA` indicates that no paired comparison is possible.
+
+### Distributions and the plot boundary
+
+The panels below show the distributions as well as the paired differences above. Elevation is plotted in metres to keep its absolute values readable; relative height is in centimetres and slope in cm/m. Black lines are original CTFS results and red lines are fgeo2 results. Within each variable, panels share the horizontal scale and smoothing bandwidth. Density similarity describes distributions, while the table checks agreement at the same locations.
+
+```{r}
+#| label: fig-quadrat-topography-distributions
+#| echo: false
+#| fig-width: 7
+#| fig-height: 6.8
+#| out-width: "100%"
+#| fig-cap: "Original CTFS (black) and fgeo2 (red) quadrat-level estimates. Titles give paired/total quadrats. Curves use the same paired quadrats in each panel, except that the edge convexity panel shows the original estimates alone because fgeo2 has no TPI estimates there. All and Inner TPI curves are identical: both contain the same 1,104 pairs."
+
+plot.old <- legacy.values
+plot.new <- raster.values
+plot.old[, 1] <- plot.old[, 1] / 100
+plot.new[, 1] <- plot.new[, 1] / 100
+axis.labels = c("Elevation (m)", "Slope (cm/m)", "Convexity / TPI (cm)")
+plot.options <- par(mfrow = c(3, 3), mar = c(3.2, 3.2, 2.4, 0.7),
+                    oma = c(0, 0, 1.5, 0), mgp = c(1.9, 0.6, 0), cex = 0.85)
+
+for(group in names(groups)) for(j in seq_along(variables))
+{
+	i <- groups[[group]]
+	old <- plot.old[i, j]
+	new <- plot.new[i, j]
+	paired <- is.finite(old) & is.finite(new)
+	if(any(paired))
+	{
+		old <- old[paired]
+		new <- new[paired]
+	}
+
+	pooled <- c(plot.old[, j], plot.new[, j])
+	pooled <- pooled[is.finite(pooled)]
+	bandwidth <- bw.nrd0(pooled)
+	limits <- range(pooled) + c(-3, 3) * bandwidth
+	original <- density(old, bw = bandwidth, na.rm = TRUE)
+	alternative <- if(any(paired)) density(new, bw = bandwidth) else NULL
+
+	plot(original, col = "black", lwd = 2,
+	     xlim = limits, ylim = c(0, max(original$y, alternative$y)),
+	     main = paste0(group, ": ", sum(paired), "/", length(i)),
+	     xlab = axis.labels[j], ylab = if(j == 1) "Density" else "")
+	if(any(paired)) lines(alternative, col = "red3", lwd = 2)
+	if(!any(paired)) legend("topright", "No fgeo2\nestimates",
+	                        text.col = "red3", bty = "n", cex = 0.85)
+}
+mtext("Original CTFS: black     fgeo2: red", outer = TRUE, cex = 0.9)
+par(plot.options)
+```
+
+The full-plot comparison reveals a practical difference: elevation and slope have estimates for all quadrats, but TPI is missing for all 146 edge quadrats because its neighbourhood extends beyond the DEM. CTFS instead returns centre elevation minus the corner mean for edge convexity, so there are **no paired estimates to establish agreement under that edge rule**. The two relative-height measures should retain their distinct names.
+
+Aggregation uses available cells: the 146 edge slope summaries and 138 inner TPI summaries cover only part of their quadrat. These remain in the comparison. This is a reason to inspect boundary behaviour, rather than a general reason to discard edge quadrats. To obtain the stated TPI throughout the plot, supply an elevation surface extending beyond its boundary; using a smaller or incomplete neighbourhood would define a different relative-height measure.
 
 # Save results and reuse them
 
