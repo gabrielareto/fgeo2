@@ -25,6 +25,10 @@ Forest research teams often have several sources of environmental information fo
 -   quadrats;
 -   polygons of arbitrary shape.
 
+These targets support different ecological questions: soil conditions at individual trees can help explain growth or mortality; buffers describe the surrounding environment; quadrats support abundance or composition analyses at different spatial scales; and irregular polygons can represent canopy gaps or treatment areas.
+
+The familiar CTFS/fgeo approach returned elevation, slope and convexity for a regular quadrat grid, commonly 20 × 20 m. Here, preparing environmental layers and choosing extraction targets are separate steps. The same layers can therefore serve several analyses, alongside independently supplied soil or canopy data. A pseudo-legacy example below returns to quadrat-level topography for users who need that familiar output.
+
 # Data and setup
 
 ## Example data
@@ -225,7 +229,7 @@ dim(environment$soil)
 compareGeom(terrain, soil, stopOnError = FALSE)
 ```
 
-Missing terrain neighbourhoods and the soil sampling hull create different valid footprints, even though both raster extents describe the full plot. Each variable therefore needs its own coverage calculation.
+Missing terrain neighbourhoods and the soil sampling hull create different valid footprints, even though both raster extents describe the full plot. An optional check below shows how much of a target contributes valid values when this matters to an analysis.
 
 ## Create a common grid when needed
 
@@ -240,7 +244,7 @@ common.grid <- c(terrain20, soil)
 names(common.grid)
 ```
 
-These are means of the fine-resolution terrain variables. Calculating slope or TPI afresh from a coarser DEM would define a different quantity. `na.rm = TRUE` also permits partially observed aggregate cells, so retain native layers for the coverage-aware extraction below.
+These are means of the fine-resolution terrain variables. Calculating slope or TPI afresh from a coarser DEM would define a different quantity. `na.rm = TRUE` also permits partially observed aggregate cells. Extraction below uses the native layers in `environment`.
 
 For other situations, choose the operation according to the actual mismatch.
 
@@ -309,7 +313,6 @@ The radius is in metres. Buffers may overlap and cross the plot boundary. Missin
 
 buffers <- st_buffer(st_as_sf(points), dist = buffer.radius)
 buffer.i <- which(!st_is_empty(buffers))
-buffer.area <- as.numeric(st_area(buffers))
 if(!length(buffer.i)) stop("No buffers have a usable location.")
 ```
 
@@ -335,9 +338,9 @@ for(layers in environment)
 
 ### Method 2 with exactextractr::exact_extract()
 
-Named summaries such as `"mean"`, `"median"` and `"stdev"` already account for overlap weights and omit missing values. Edit the `fun` vector to choose summaries; keep `"count"` when calculating coverage. With `coverage_area = TRUE`, `count.*` is valid area in square metres on our local grids. Dividing those columns by the full buffer area gives each variable's valid coverage, including the effect of missing cells and areas beyond the raster. For example, coverage of 0.7 means that 70% of the target contributes valid values.
+Named summaries such as `"mean"`, `"median"` and `"stdev"` already account for overlap weights and omit missing values. Edit the `fun` vector to choose summaries. `force_df = TRUE` keeps a dataframe result even when selecting only one variable and summary.
 
-The dataframe division calculates coverage for every variable without another loop. Indexed subsetting restores rows omitted because their buffer geometry was empty. The examples require at least one non-empty polygon.
+Indexed subsetting restores rows omitted because their buffer geometry was empty. The examples require at least one non-empty polygon.
 
 ```{r}
 #| label: exactextractr-buffer-summaries
@@ -346,19 +349,15 @@ buffer.env <- targets
 for(layers in environment)
 {
 	extracted <- exact_extract(layers, buffers[buffer.i, ],
-		fun = c("mean", "median", "stdev", "count"),
-		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
-	
-	coverage <- extracted[paste0("count.", names(layers))] / buffer.area[buffer.i]
-	names(coverage) <- paste0("coverage.", names(layers))
-	
-	extracted <- cbind(extracted, coverage)
+		fun = c("mean", "median", "stdev"),
+		full_colnames = TRUE, force_df = TRUE, progress = FALSE)
+
 	extracted <- extracted[match(seq_len(nrow(targets)), buffer.i), , drop = FALSE]
 	buffer.env <- cbind(buffer.env, extracted)
 }
 ```
 
-Both methods retain undefined estimates as `NA` or `NaN`; `is.na()` identifies either. A defined area with no valid raster values has zero coverage. An unresolved location has missing coverage. These conventions also apply to quadrats and arbitrary polygons below.
+Both methods retain undefined estimates as `NA` or `NaN`; `is.na()` identifies either. An area without valid raster values and an unresolved location both lack an environmental estimate. These conventions also apply to quadrats and arbitrary polygons below.
 
 `stdev` is the overlap-weighted population SD: spatial heterogeneity within the area. Estimating uncertainty in a surface or its mean needs information about measurement or model error; raster cells should not automatically be treated as independent observations for a standard error.
 
@@ -370,7 +369,7 @@ Both methods retain undefined estimates as `NA` or `NaN`; `is.na()` identifies e
 #| label: check-buffer-results
 
 head(buffer.env[c("point_id", "mean.soil_P_mgkg",
-                  "stdev.soil_P_mgkg", "coverage.soil_P_mgkg")])
+                  "median.soil_P_mgkg", "stdev.soil_P_mgkg")])
 ```
 
 # Extract from quadrats
@@ -394,7 +393,6 @@ geometry <- lapply(seq_len(nrow(quadrat.table)), function(i)
 })
 
 quadrats <- st_sf(quadrat.table, geometry = st_sfc(geometry, crs = st_crs(crs(terrain))))
-quadrat.area <- as.numeric(st_area(quadrats))
 ```
 
 ## Extract environmental summaries
@@ -424,13 +422,9 @@ quadrat.env <- quadrat.table
 for(layers in environment)
 {
 	extracted <- exact_extract(layers, quadrats,
-		fun = c("mean", "median", "stdev", "count"),
-		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
-	
-	coverage <- extracted[paste0("count.", names(layers))] / quadrat.area
-	names(coverage) <- paste0("coverage.", names(layers))
-	
-	extracted <- cbind(extracted, coverage)
+		fun = c("mean", "median", "stdev"),
+		full_colnames = TRUE, force_df = TRUE, progress = FALSE)
+
 	quadrat.env <- cbind(quadrat.env, extracted)
 }
 ```
@@ -442,7 +436,7 @@ The output retains each quadrat's bounds and ID.
 ```{r}
 #| label: check-quadrat-results
 
-head(quadrat.env[c("quadrat_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
+head(quadrat.env[c("quadrat_id", "mean.soil_P_mgkg", "stdev.soil_P_mgkg")])
 ```
 
 # Extract from arbitrary polygons
@@ -463,14 +457,13 @@ regions <- st_sf(polygon_id = c("interior", "western_edge"),
 
 polygon.table <- st_drop_geometry(regions)
 polygon.i <- which(!st_is_empty(regions))
-polygon.area <- as.numeric(st_area(regions))
 stopifnot(all(st_is_valid(regions)))
 if(!length(polygon.i)) stop("Supply at least one non-empty polygon.")
 ```
 
 ## Extract environmental summaries
 
-Only the target geometry has changed. Coverage still uses the full polygon area, including any part beyond the raster.
+Only the target geometry has changed. Summaries use the available raster values within each polygon.
 
 ### Method 1 with terra::extract()
 
@@ -495,28 +488,124 @@ polygon.env <- polygon.table
 for(layers in environment)
 {
 	extracted <- exact_extract(layers, regions[polygon.i, ],
-		fun = c("mean", "median", "stdev", "count"),
-		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
-	
-	coverage <- extracted[paste0("count.", names(layers))] / polygon.area[polygon.i]
-	names(coverage) <- paste0("coverage.", names(layers))
-	
-	extracted <- cbind(extracted, coverage)
-	extracted <- extracted[match(seq_len(nrow(polygon.table)), polygon.i), , drop = FALSE]
+		fun = c("mean", "median", "stdev"),
+		full_colnames = TRUE, force_df = TRUE, progress = FALSE)
+
+  extracted <- extracted[match(seq_len(nrow(polygon.table)), polygon.i), , drop = FALSE]
 	polygon.env <- cbind(polygon.env, extracted)
 }
 ```
 
 ## Check the polygon results
 
-The western-edge polygon demonstrates partial coverage. Soil and terrain can have different valid footprints.
+The western-edge polygon still receives summaries, using its overlap with valid cells. Soil and terrain can have different valid footprints.
 
 ```{r}
 #| label: check-polygon-results
 
-polygon.env[c("polygon_id", "mean.elevation_m", "coverage.elevation_m",
-              "mean.soil_P_mgkg", "coverage.soil_P_mgkg")]
+polygon.env[c("polygon_id", "mean.elevation_m", "mean.soil_P_mgkg")]
 ```
+
+## Optional check: valid environmental area
+
+For targets crossing a raster boundary or containing missing cells, valid-area coverage can flag a mean based on only a small part of the intended area. It is useful for deciding whether to retain such targets, but need not accompany every extraction. Coverage measures available raster area, not measurement accuracy or interpolation uncertainty.
+
+Here `"count"` with `coverage_area = TRUE` returns the area with non-missing soil P values, in square metres. Dividing by the full polygon area gives its valid fraction: 0.7 would mean that 70% of the target contributes to the summary. This check is specific to the selected variable.
+
+```{r}
+#| label: optional-valid-area
+
+valid.area <- exact_extract(soil[["soil_P_mgkg"]], regions[polygon.i, ],
+	fun = "count", coverage_area = TRUE, progress = FALSE)
+coverage <- polygon.table
+coverage$valid_fraction <- NA_real_
+coverage$valid_fraction[polygon.i] <-
+	valid.area / as.numeric(st_area(regions[polygon.i, ]))
+coverage
+```
+
+# Pseudo-legacy for quadrat-level topography
+
+This example uses the same BCI elevation table to compare original CTFS/fgeo calculations with a compact raster route at 20 m quadrat resolution.
+
+## Original CTFS calculation
+
+Use the repository's snapshot loader to download the archived original scripts from a fixed commit, keeping their functions in a separate environment. The original calculation expects a table named `col`, an elevation column named `elev`, and grid locations ordered by x, then y. The BCI table supplies the required quadrat corners and perimeter midpoints for `edgecorrect = TRUE`.
+
+```{r}
+#| label: legacy-quadrat-topography
+#| results: hide
+#| message: false
+
+source(file.path(path.to.fgeo2, "evaluation/0-code-to-source.r"))
+legacy <- new.env()
+load_github_snapshot(
+	commit = "0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d",
+	scripts = c("evaluation/Condit/spatial/quadfunc.r",
+	            "evaluation/Condit/topography/slope.r"),
+	envir = legacy
+)
+
+legacy.xyz <- xyz[order(xyz$x, xyz$y), ]
+names(legacy.xyz)[names(legacy.xyz) == "z"] <- "elev"
+
+legacy.topography <- legacy$allquadratslopes(
+	list(col = legacy.xyz), gridsize = 20,
+	plotdim = c(1000, 500), edgecorrect = TRUE
+)
+```
+
+## Alternative fgeo2 calculation at a comparable scale
+
+Use 5 m cells, a 3 × 3 cell smoothing window (15 × 15 m), and `position.radius = 25` for TPI. The latter defines an 11 × 11 cell window covering 55 × 55 m, broadly comparable to the three-by-three set of 20 m quadrats used for interior legacy convexity. These are useful scale choices for this example, rather than a guarantee for other surfaces.
+
+Because the 20 m quadrats align with groups of 4 × 4 raster cells, aggregation followed by sampling at quadrat centres gives means over their available raster area. This is a short alternative to constructing polygons for this aligned grid. It summarizes the derived terrain layers; it does not calculate slope from a 20 m DEM.
+
+```{r}
+#| label: raster-quadrat-topography
+
+q <- make_quadrats_fast(0, 0, 1000, 500, 20, 20)
+
+quadrat.terrain <- derive_topography(
+	xyz = xyz, variables = c("slope", "tpi"),
+	resolution = 5, extent = plot.extent, crs = "local",
+	smoothing.cells = 3, position.radius = 25
+)
+
+topography20 <- aggregate(quadrat.terrain, fact = 4, fun = "mean", na.rm = TRUE)
+quadrat.xy <- cbind(x = (q$xmin + q$xmax) / 2,
+	                y = (q$ymin + q$ymax) / 2)
+
+raster.topography <- cbind(q, terra::extract(topography20, quadrat.xy))
+```
+
+## Compare old and new approaches
+
+First check row alignment against the original quadrat indexing. Compare quadrats at least 40 m inside the plot boundary so all fine cells have complete terrain neighbourhoods. This also avoids the different edge rule in legacy convexity.
+
+```{r}
+#| label: compare-quadrat-topography
+
+legacy.xy <- legacy$index.to.gxgy(seq_len(nrow(legacy.topography)),
+	gridsize = 20, plotdim = c(1000, 500))
+stopifnot(all(legacy.xy$gx == q$xmin), all(legacy.xy$gy == q$ymin))
+
+interior <- q$xmin >= 40 & q$xmax <= 960 & q$ymin >= 40 & q$ymax <= 460
+legacy.values <- legacy.topography[interior, c("meanelev", "slope", "convex")]
+raster.values <- raster.topography[interior, c("elevation_m", "slope_deg", "tpi_m")]
+
+comparison <- data.frame(
+	variable = c("Elevation (m)", "Slope (degrees)", "Convexity / TPI (m)"),
+	quadrats = nrow(legacy.values),
+	correlation = diag(cor(legacy.values, raster.values)),
+	mean.absolute.difference = colMeans(abs(raster.values - legacy.values))
+)
+
+knitr::kable(comparison, row.names = FALSE, digits = c(0, 0, 4, 3),
+	col.names = c("Variable", "Quadrats", "Correlation", "Mean absolute difference"))
+```
+
+For these 966 interior quadrats, mean absolute differences are about 0.074 m for elevation, 0.252 degrees for slope and 0.060 m for TPI versus convexity. Both routes capture similar broad topographic gradients. The original method uses quadrat-corner elevations and plane slopes, whereas the raster route summarizes cell values and local derivatives. TPI remains a different measure from legacy convexity, so identical thresholds or habitat assignments should not be assumed. This comparison measures agreement on one input surface, not independent terrain accuracy.
 
 # Save results and reuse them
 
@@ -538,7 +627,7 @@ saved.soil <- rast(file.path(output.dir, "bci-soil.tif"))
 stopifnot(compareGeom(saved.soil, soil))
 ```
 
-Keep the original inputs, source licences, parameter choices and executed code with the analysis. The examples above use the same target rows for each variable, while the valid observations contributing to each summary can differ. Any subsequent complete-case filtering or coverage threshold should be explicit in that analysis.
+Keep the original inputs, source licences, parameter choices and executed code with the analysis. The examples above use the same target rows for each variable, while the valid observations contributing to each summary can differ. Any subsequent filtering should be explicit in that analysis.
 
 # Software references and versions
 
