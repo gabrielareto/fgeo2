@@ -25,15 +25,19 @@ Forest research teams often have several sources of environmental information fo
 -   quadrats;
 -   polygons of arbitrary shape.
 
+# Data and setup
+
+## Example data
+
 The example data used here combines real elevation and soil data for the 50-ha Barro Colorado Island (BCI) plot in Panama. Terrain layers come from the `derive_topography()` workflow applied to elevational data. Soil layers are prepared independently. Native raster grids are retained for extraction, and an additional example shows how to create a common grid when an analysis needs one. Habitat classification and categorical extraction are covered separately. All inputs are in `data_examples/` at the repository root. See its [dataset notes](../../data_examples/README.md) for provenance.
 
 -   **`census1.txt`** and **`census2.txt`** contain the first two BCI tree censuses, nominally 1982 and 1985. They are historical census exports already included in fgeo2. Census 1 measurements span 1981--1983. Credit goes to the BCI census team, including Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators, and Smithsonian/ForestGEO.
 -   **`bci-elevation.csv`** contains 20,301 elevation grid locations, with columns `x`, `y` and `z` in metres. Its numerical contents match `BCIelev.tsv` in the Condit et al. archive, released under CC0. Positions run from 0 to 1,000 m in x and 0 to 500 m in y, at 5 m intervals. These are input grid locations, rather than raster-cell boundaries.
 -   **`bci-soils-wolf-2015.csv`** is the complete soil dataset of Wolf et al. (2015), [Geospatial observations on tropical forest surface soil chemistry](https://doi.org/10.1890/15-0558.1). It includes 625 sampled locations, all soil variables and both local and UTM coordinates. The [publisher's dataset deposit](https://doi.org/10.6084/m9.figshare.3562863) is CC0. P and Ca illustrate the main workflow, while all measurements remain available for other analyses.
 
-# Setup and loading
+## Locate project
 
-Run from the repository root or this tutorial's folder. When working elsewhere, replace `path.to.fgeo2` with the full path to your local repository. Output files go to a temporary folder by default.
+Run the following code from the repository root or this tutorial's folder. When working elsewhere, replace `path.to.fgeo2` with the full path to your local repository. Output files go to a temporary folder by default.
 
 ```{r}
 #| label: setup-environment
@@ -63,7 +67,7 @@ set.seed(123)
 knitr::opts_chunk$set(comment = "#>", fig.width = 7, fig.height = 5)
 ```
 
-## Census records and stable identifiers
+## Load census records and stable identifiers
 
 Read tags and identifiers as character strings, preserving leading zeros. The stem identifier is unique within each supplied census. A combined census--stem key distinguishes repeated observations of the same stem. Several stems can belong to one tree.
 
@@ -88,7 +92,7 @@ stopifnot(!anyNA(trees$point_id), !anyDuplicated(trees$point_id))
 
 ```
 
-## Elevation and soil tables
+## Load elevation and soil tables
 
 Keep the complete input tables. Variable selection takes place when preparing layers for a particular analysis. The original soil file contains a space before the `utm_n` column name, which is removed on import here. Its [metadata](https://esapubs.org/archive/ecol/E096/204/metadata.php) describes methods, units, missing values and detection limits.
 
@@ -110,16 +114,18 @@ head(soils[c("uid", "gx", "gy", "M3P", "M3Ca")])
 
 ## Coordinate congruence
 
-Census `PX, PY`, Wolf's soil `gx, gy` and elevation `x, y` use the same local plot coordinates, in metres. Here x increases eastward from the western edge and y increases northward from the southern edge. We use `"local"` throughout; check that any additional plot data share this origin, axis directions and units.
+Census `PX, PY`, Wolf's soil `gx, gy` and elevation `x, y` use the same local plot coordinates, in metres. Here "x" increases eastward from the western edge and "y" increases northward from the southern edge. We use `"local"` as coordinate reference system (CRS) throughout. This will be enough for most standard applications in plot-based ecology. Check that any additional plot data share origin, axis directions and units.
 
-External sources such as remote-sensing products need CRS alignment and standard GIS checks before use (`sf::st_transform()` or `terra::project()`, as appropriate). Assigning a CRS label alone does not align coordinates.
+External sources such as remote-sensing products need CRS alignment and standard GIS checks before use (`sf::st_transform()` or `terra::project()`, as appropriate). Remember that simply assigning a CRS label alone does not align coordinates!
 
 ## Terrain from the elevation grid
 
-The call uses default linear interpolation and selects variables available without WhiteboxTools. Elevation is returned automatically. This is an application of the completed [terrain workflow](derive-topographical-variables.qmd). TPI describes relative topographic position at the selected neighbourhood scale. Northness and eastness are relative to the local plot-grid axes here.
+The example call uses default linear interpolation and selects a few of the variables available through `derive_topography()` fgeo2 function. Elevation is returned automatically too. This is an application of the completed [terrain workflow](derive-topographical-variables.qmd). TPI describes relative topographic position at the selected neighbourhood scale. Northness and eastness are relative to the local plot-grid axes here.
 
 ```{r}
 #| label: prepare-terrain
+
+head(xyz)
 
 terrain <- derive_topography(
 	xyz = xyz,
@@ -135,7 +141,7 @@ names(terrain)
 
 ## Soil measurements to continuous layers
 
-The soil coordinates are sampling locations. They form an approximately 28 m sampling design with small positional offsets. For this tutorial example, inverse-distance weighting estimates P and Ca on a 20 m grid. A 60 m search radius, up to 12 neighbours, at least 3 observations and power 2 are explicit example settings. The resulting cells describe interpolated estimates, not true measurement accuracy or uniform density of information. But this is standard practice, so in general you don't have to worry about this if data comes from a reasonable representative survey.
+The soil coordinates are sampling locations. In the dataset we are using, they form an approximately 28 m sampling design with small positional offsets. For this tutorial example, inverse-distance weighting estimates P and Ca on a 20 m grid. Other example settings are: 60 m search radius, up to 12 neighbours, at least 3 observations and power 2. Visualize results to tune these parameters satisfactorily to your case. Note that the resulting cells describe interpolated estimates, not true measurement accuracy or uniform density of information. But this is standard practice, so in general you don't have to worry about this if data comes from a reasonable representative survey.
 
 ```{r}
 #| label: prepare-soil
@@ -149,6 +155,7 @@ for(i in seq_along(soil.variables))
 {
 	variable <- soil.variables[i]
 	keep <- is.finite(soils$gx) & is.finite(soils$gy) & is.finite(soils[[variable]])
+	
 	measurements <- as.matrix(soils[keep, c("gx", "gy", variable)])
 	soil.layers[[i]] <- interpIDW(soil.template, measurements,
 	                              radius = 60, power = 2,
@@ -178,9 +185,9 @@ regular.layers <- rast(my.table[c("x", "y", "soil_P", "soil_Ca")],
 
 If environmental values are already recorded for the supplied quadrats, a direct ID join may be sufficient. Raster conversion is useful when the subsequent analysis actually needs a surface.
 
-## Optional soil principal components
+## Optional: use principal components
 
-Soil surveys often contain many correlated variables, and soils are usually described in terms of "soil axes". This optional example standardizes the measurement columns and fits PCA to complete rows. It excludes identifiers and coordinates, and preserves row alignment when storing scores.
+Many environmental datasets, including soil surveys, often contain many correlated variables, and could be described in terms of environmental (soil) axes. This optional example standardizes the soil measurement columns and fits PCA to complete rows. It excludes identifiers and coordinates, and preserves row alignment when storing scores.
 
 ```{r}
 #| label: soil-pca
@@ -192,7 +199,7 @@ keep <- complete.cases(soils[soil.columns])
 soil.pca <- prcomp(soils[keep, soil.columns], center = TRUE, scale. = TRUE)
 soils$soil_PC1 <- NA_real_
 soils$soil_PC1[keep] <- soil.pca$x[, 1]
-summary(soil.pca)
+summary(soil.pca)$importance[,1:5]
 
 # To map PC1, apply the soil-interpolation block to soil_PC1.
 # Retain soil.pca itself to inspect loadings and reproduce the scores.
@@ -291,7 +298,7 @@ aggregate(point.env[c("elevation_m", "soil_P_mgkg", "soil_Ca_mgkg")],
 
 # Extract from buffers
 
-All polygon-based extractions work in the same way. The tutorial separates buffers, quadrats and arbitrary polygons for didactic purposes; only the target construction changes. Terra is sufficient for means. Exactextractr conveniently supplies several overlap-weighted statistics and valid-area totals together.
+**Note: All polygon-based extractions work in the same way.** The tutorial separates buffers, quadrats and arbitrary polygons for didactic purposes, and is clearly repetitive: only the target construction changes. Package `terra` is sufficient for means. Package `exactextractr` conveniently supplies several overlap-weighted statistics and valid-area totals together.
 
 ## Construct buffers
 
@@ -341,8 +348,10 @@ for(layers in environment)
 	extracted <- exact_extract(layers, buffers[buffer.i, ],
 		fun = c("mean", "median", "stdev", "count"),
 		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
+	
 	coverage <- extracted[paste0("count.", names(layers))] / buffer.area[buffer.i]
 	names(coverage) <- paste0("coverage.", names(layers))
+	
 	extracted <- cbind(extracted, coverage)
 	extracted <- extracted[match(seq_len(nrow(targets)), buffer.i), , drop = FALSE]
 	buffer.env <- cbind(buffer.env, extracted)
@@ -417,8 +426,10 @@ for(layers in environment)
 	extracted <- exact_extract(layers, quadrats,
 		fun = c("mean", "median", "stdev", "count"),
 		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
+	
 	coverage <- extracted[paste0("count.", names(layers))] / quadrat.area
 	names(coverage) <- paste0("coverage.", names(layers))
+	
 	extracted <- cbind(extracted, coverage)
 	quadrat.env <- cbind(quadrat.env, extracted)
 }
@@ -438,7 +449,7 @@ head(quadrat.env[c("quadrat_id", "mean.soil_P_mgkg", "coverage.soil_P_mgkg")])
 
 ## Construct the polygons
 
-One polygon lies inside the plot; the other crosses its western boundary. Existing `sf` polygons or multipolygons in the same local frame can enter here. Correct invalid shapes before extraction. If some locations are unresolved, `polygon.i` selects non-empty geometries while their original output rows remain available.
+In this example, one polygon lies inside the plot and the other crosses its western boundary. Existing `sf` polygons or multipolygons in the same local frame can enter here. Correct invalid shapes before extraction. If some locations are unresolved, `polygon.i` selects non-empty geometries while their original output rows remain available.
 
 ```{r}
 #| label: irregular-polygons
@@ -449,6 +460,7 @@ regions <- st_sf(polygon_id = c("interior", "western_edge"),
 		st_polygon(list(cbind(c(-15, 60, 60, -15, -15), c(30, 30, 80, 100, 30)))),
 		crs = st_crs(crs(terrain))
 	))
+
 polygon.table <- st_drop_geometry(regions)
 polygon.i <- which(!st_is_empty(regions))
 polygon.area <- as.numeric(st_area(regions))
@@ -485,8 +497,10 @@ for(layers in environment)
 	extracted <- exact_extract(layers, regions[polygon.i, ],
 		fun = c("mean", "median", "stdev", "count"),
 		coverage_area = TRUE, full_colnames = TRUE, progress = FALSE)
+	
 	coverage <- extracted[paste0("count.", names(layers))] / polygon.area[polygon.i]
 	names(coverage) <- paste0("coverage.", names(layers))
+	
 	extracted <- cbind(extracted, coverage)
 	extracted <- extracted[match(seq_len(nrow(polygon.table)), polygon.i), , drop = FALSE]
 	polygon.env <- cbind(polygon.env, extracted)
