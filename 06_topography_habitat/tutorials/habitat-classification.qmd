@@ -8,7 +8,6 @@ format:
     toc: true
     toc-depth: 2
     number-sections: true
-    code-fold: false
   pdf:
     pdf-engine: pdflatex
     code-overflow: wrap
@@ -22,531 +21,465 @@ format:
     colorlinks: true
     toccolor: blue
 execute:
-  warning: true
   message: false
-editor: source
-  markdown: 
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    fig.width: 7
+    fig.height: 4.5
+editor:
+  mode: source
+  markdown:
     wrap: 72
 ---
 
 # Introduction
 
-A habitat classification summarizes environmental heterogeneity into a small number of classes. Here a habitat is an operational class of spatial units (e.g., quadrats or pixels), defined from environmental measurements, sometimes with composition helping determine the partition. Continuous species--environment models remain appropriate when the question does not require categories.
+A habitat map groups places with similar environmental conditions. It can
+help describe where species grow, for example whether a tree is common on
+steep slopes or near streams. The classes depend on what we measure and
+how we group the measurements. Harms et al. (2001) used topographic and
+hydrological habitats at Barro Colorado Island (BCI). John et al. (2007)
+showed how soil measurements can help explain tree distributions. Here
+each 20 × 20 m quadrat receives a habitat label or a set of memberships.
 
-This tutorial separates **fitting a map** from **testing associations with a fixed map**. It showcases existing R implementations without introducing a new clustering algorithm. The example starts with one census, one community and 20-m quadrats, then adds optional fuzzy membership, floristic guidance and two diameter groups. The last worked analysis uses the fgeo2 point-torus translator to classify species' associations with an environmental habitat map.
+Run the data preparation once and choose a technique. Each recipe uses
+the prepared data and has its main settings at the top of the code.
 
-## Choose a route
+- **CTFS/fgeo hierarchy.** The archived `fgeo_habitat()` workflow uses
+  `hclust()` and `cutree()` on elevation, slope and convexity in their
+  original units. Use this to reproduce a historical classification.
+- **Standardized hierarchy.** Use `scale()`, `hclust()` and `cutree()` to
+  group quadrats with similar environments. Standardization gives each
+  selected variable the same variance before calculating distances.
+- **Fuzzy clustering.** Use `cluster::fanny()` when quadrats may share
+  features with several habitats. The membership scores show those
+  transitions (Kaufman and Rousseeuw, 1990).
+- **Floristic tree.** Use `partykit::ctree()` to find environmental
+  boundaries that help describe changes in tree composition
+  (Hothorn et al., 2006).
+- **Probabilistic regions.** The optional `ecomix::regional_mix()` recipe
+  uses tree composition and environment to estimate the probability
+  that each quadrat belongs to each region (Foster et al., 2013).
 
-Run the shared preparation once, then choose the recipe you need. The classification recipes do not require one another, except that the legacy comparison prepares its own historical metrics. Every main recipe returns ordinary assignments or membership matrices alongside the package's native fit. Options appear at the start of the code chunks; comments travel with copied code.
+Groups such as palms and dicots may respond to different environmental
+features. You can prepare a composition matrix for each group and refit
+a floristic method. Choose the groups for an ecological reason, check
+whether their maps are stable, and look for agreement before deciding
+whether a shared map is useful.
 
-| Your purpose                               | Read and run                                | Main result                                                |
-|------------------------|------------------------|------------------------|
-| Start from this plot's raw files           | [Data and shared objects](#sec-preparation) | Aligned environment, composition, quadrats and individuals |
-| Recover CTFS/fgeo behaviour                | [Legacy classification](#sec-legacy)        | `habitat.raw`                                              |
-| Fit hard environmental classes             | [Standardized hierarchy](#sec-hclust)       | `habitat.hclust`                                           |
-| Retain transitional memberships            | [FANNY](#sec-fanny)                         | `membership.fanny`, `habitat.fanny`                        |
-| Let composition inform environmental rules | [Floristic tree](#sec-ctree)                | `habitat.ctree`, `floristic.tree`                          |
-| Understand a probabilistic alternative     | [Regions of Common Profile](#sec-rcp)       | Optional package workflow                                  |
-| Fit separate maps for two diameter groups  | [Two size classes](#sec-size)               | `habitats.by.size`                                         |
-| Store or extract a categorical layer       | [Habitat layers](#sec-storage)              | `habitat.raster`, categorical fractions                    |
-| Diagnose a small set of maps               | [Bounded comparison](#sec-comparison)       | One compact diagnostic table                               |
-| Test species against an existing fixed map | [Torus association](#sec-association)       | `association`, `null.statistics`                           |
-
-## Decisions that change the ecological question
-
-| Axis                   | Choices to state                                                                                                |
-|------------------------------------|------------------------------------|
-| Definition             | Environmental resemblance; composition-guided environmental rules; expert-defined classes                       |
-| Population             | All eligible individuals; species subsets; species × diameter groups; one census or a stated temporal summary   |
-| Response               | Abundance, presence--absence, basal area or another explicit weight                                             |
-| Spatial support        | Quadrat grain, sampled extent, complete versus missing effort                                                   |
-| Environmental geometry | Variables, units, transformations, scaling, correlated gradients, mixed categorical measurements                |
-| Assignment             | One hard label; fuzzy affiliation; model-based membership probability                                           |
-| Resolution             | Number of assemblages M; classes within each map; minimum class support; transition zones or unclassified sites |
-| Space and transfer     | Disconnected environmental classes or contiguous zones; local description or prediction to other times/plots    |
-
-M denotes the number of separately analysed assemblages, not the number of habitats. With M = 1 there is one map; with M = 2 there are two, each potentially with a different number of classes. Fuzzy memberships, latent-class probabilities and uncertainty in a fitted map are different quantities. None should be interpreted as another merely because its rows sum to one.
+After fitting the maps, the tutorial shows how to inspect one habitat
+map, smooth its boundaries, find indicator species and assess
+species–habitat associations. These checks can guide choices such as the
+number of habitats. For example, a finer map may separate environments
+more clearly while leaving very few quadrats in some habitats.
 
 # Data and shared objects {#sec-preparation}
 
 ## Set up the example
 
-The supplied BCI files contain the first census (nominally 1982, measured during 1981--1983) and elevation observations. The census team includes Stephen P. Hubbell, Robin B. Foster, Richard Condit and collaborators at Smithsonian/ ForestGEO. These are historical exports already distributed with fgeo2; their exact archive release is undocumented. The later Condit et al. (2019) Dryad archive documents the BCI data conventions, including diameters in millimetres. See [dataset notes](../../data_examples/README.md) for provenance and licensing.
+Use the first census (nominally 1982) and the elevation survey from the
+50-ha BCI plot in Panama. The data are historical exports from the
+Smithsonian/ForestGEO team, including Stephen P. Hubbell, Robin B. Foster,
+Richard Condit and collaborators. The BCI archive documents the census
+fields and diameter units (Condit et al., 2019).
+[Dataset notes](../../data_examples/README.md).
 
-Run from the repository root or this tutorial's folder. Set `path.to.fgeo2` explicitly when copying code elsewhere. Outputs go to a temporary folder by default; set `output.dir` to a persistent folder to reuse them after closing R. Preparing the terrain requires `interp` and `FNN` through `derive_topography()`; the remaining native recipes use `cluster`, `partykit`, `terra`, and `indicspecies`. `withr` and `jsonlite` support the optional archived-code comparison.
+Run from the repository root or the tutorial folder. Set
+`path.to.fgeo2` when working elsewhere. With your own prepared data, run
+the setup and continue at the method you want to use.
 
 ```{r}
 #| label: habitat-setup
-#| results: hide
-#| message: false
 
 path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
 # path.to.fgeo2 = "/full/path/to/fgeo2"
-input.dir = file.path(path.to.fgeo2, "data_examples")
-output.dir = file.path(tempdir(), "fgeo2-habitats")
-plot.extent = c(0, 1000, 0, 500)  # xmin, xmax, ymin, ymax; metres.
-quadrat.size = 20
-minimum.dbh.cm = 1
-census.file = "census1.txt"
 
-# Install once if needed:
+census.file = "census1.txt"
+plot.extent = c(0, 1000, 0, 500)  # xmin, xmax, ymin, ymax in metres.
+quadrat.size = 20
+
+# Install the packages for the recipes you want to run.
 # install.packages(c("terra", "interp", "FNN", "cluster", "partykit",
 #                    "indicspecies", "withr", "jsonlite"))
-library(terra)
-library(cluster)
-library(partykit)
-library(indicspecies)
-dir.create(output.dir, recursive = TRUE, showWarnings = FALSE)
-models <- list()  # Native fits; each optional recipe adds its own entry.
-knitr::opts_chunk$set(comment = "#>", fig.width = 7, fig.height = 4.5,
-	message = FALSE, collapse = TRUE)
 
+input.dir <- file.path(path.to.fgeo2, "data_examples")
 source(file.path(path.to.fgeo2, "03_spatial/R/new/quadrats.R"))
-source(file.path(path.to.fgeo2, "03_spatial/R/new/spatial-null-models.R"))
 source(file.path(path.to.fgeo2,
 	"06_topography_habitat/R/new/topography-variables.R"))
 ```
 
 ## Define the counted population
 
-Count one eligible living individual per `TreeID`, represented by its largest living measured stem. This explicit convention avoids counting multi-stemmed trees several times. It does not reproduce every historical main-stem choice and must not be carried into growth calculations without matching stem identity. An all-stems analysis is also legitimate, but has a different target. Report status, diameter and coordinate exclusions with the results.
+Count living trees at least 1 cm in diameter. Each `TreeID` is represented
+by its largest eligible stem. This keeps trees with multiple stems from
+entering the count more than once.
 
 ```{r}
 #| label: habitat-individuals
 
+minimum.dbh.cm = 1
 living.status = "alive"
-dbh.to.cm = 0.1                 # This BCI export stores DBH in mm.
 
-# Read identifiers as text, preserving leading zeros.
+# Keep IDs as text. Diameter in this file is in millimetres.
 census <- read.delim(file.path(input.dir, census.file),
-	colClasses = c(TreeID = "character", StemID = "character",
-		Tag = "character", StemTag = "character", Quadrat = "character"))
-keep <- census$Status %in% living.status & is.finite(census$DBH) &
-	census$DBH * dbh.to.cm >= minimum.dbh.cm & is.finite(census$PX) &
-	is.finite(census$PY) & !is.na(census$Mnemonic) & nzchar(census$Mnemonic)
+	colClasses = c(TreeID = "character", StemID = "character"))
+dbh.cm <- census$DBH / 10
+
+keep <- census$Status %in% living.status &
+	is.finite(dbh.cm) & dbh.cm >= minimum.dbh.cm &
+	is.finite(census$PX) & is.finite(census$PY) &
+	!is.na(census$Mnemonic) & nzchar(census$Mnemonic)
+
 eligible <- census[keep, ]
 eligible <- eligible[order(eligible$TreeID, -eligible$DBH, eligible$StemID), ]
 eligible <- eligible[!duplicated(eligible$TreeID), ]
-individuals <- data.frame(individual_id = eligible$TreeID,
-	x = eligible$PX, y = eligible$PY, species = eligible$Mnemonic,
-	dbh_cm = eligible$DBH * dbh.to.cm)
-stopifnot(!anyNA(individuals$individual_id),
-	!anyDuplicated(individuals$individual_id),
-	all(individuals$x >= plot.extent[1] & individuals$x <= plot.extent[2]),
-	all(individuals$y >= plot.extent[3] & individuals$y <= plot.extent[4]))
-data.frame(stem.rows = nrow(census), eligible.stem.rows = sum(keep),
-	counted.individuals = nrow(individuals),
-	species = length(unique(individuals$species)))
+
+individuals <- data.frame(
+	individual_id = eligible$TreeID,
+	x = eligible$PX, y = eligible$PY,
+	species = eligible$Mnemonic, dbh_cm = eligible$DBH / 10
+)
+
+stopifnot(!anyNA(individuals$individual_id), !anyDuplicated(individuals$individual_id))
+c(individuals = nrow(individuals), species = length(unique(individuals$species)))
 ```
 
 ## Make the quadrat-by-species matrix
 
-Spatial grain and diameter cutoffs affect compositional summaries (Martínez-Villa et al., 2020). The 20-m grain is an exposed starting point, not an optimized resolution. Retain empty sampled quadrats as zero rows. Missing sampling effort is not a zero. Point coordinates use the plot's actual bounds, not minima and maxima inferred from occupied locations.
+The row names of `composition` are quadrat IDs. The columns are species
+codes and the entries are numbers of trees. Keep empty sampled quadrats
+as rows of zeros. Report the quadrat size and diameter threshold because
+both can affect patterns of composition (Martínez-Villa et al., 2020).
 
 ```{r}
 #| label: habitat-composition
 
-boundary.rule = "left_bottom"
+# Give the whole plot a grid, including quadrats with no eligible trees.
+quadrats <- make_quadrats_fast(
+	outer.xmin = plot.extent[1], outer.xmax = plot.extent[2],
+	outer.ymin = plot.extent[3], outer.ymax = plot.extent[4],
+	quadrat.side.x = quadrat.size, quadrat.side.y = quadrat.size
+)
 
-# The full rectangle includes cells with no eligible individuals.
-quadrats <- make_quadrats_fast(outer.xmin = plot.extent[1],
-	outer.ymin = plot.extent[3], outer.xmax = plot.extent[2],
-	outer.ymax = plot.extent[4], quadrat.side.x = quadrat.size,
-	quadrat.side.y = quadrat.size)
-rownames(quadrats) <- quadrats$quadrat_id
-membership <- assign_points_to_quadrats(outer.x = individuals$x,
-	outer.y = individuals$y, point.id = individuals$individual_id,
-	quadrat.locations = quadrats, boundary.rule = boundary.rule)
-individuals$quadrat_id <- membership$quadrat_id[
-	match(individuals$individual_id, membership$point_id)]
-stopifnot(!anyNA(individuals$quadrat_id), nrow(membership) == nrow(individuals))
+membership <- assign_points_to_quadrats(
+	outer.x = individuals$x, outer.y = individuals$y,
+	point.id = individuals$individual_id, quadrat.locations = quadrats,
+	boundary.rule = "left_bottom"
+)
 
-species.codes <- sort(unique(individuals$species))
-composition <- table(
+stopifnot(identical(membership$point_id, individuals$individual_id),
+	!anyNA(membership$quadrat_id))
+individuals$quadrat_id <- membership$quadrat_id
+
+composition <- unclass(table(
 	factor(individuals$quadrat_id, levels = quadrats$quadrat_id),
-	factor(individuals$species, levels = species.codes))
-dimnames(composition) <- list(quadrat_id = quadrats$quadrat_id,
-	species = species.codes)
-composition <- unclass(composition)  # Keep a plain numeric matrix, not a table.
+	factor(individuals$species)
+))
+
 stopifnot(sum(composition) == nrow(individuals))
-c(quadrats = nrow(composition), species = ncol(composition),
-	individuals = sum(composition), empty.quadrats = sum(rowSums(composition) == 0))
+dim(composition)
 ```
 
 ## Match the environmental table
 
-This brief preparation reuses the completed [topography](derive-topographical-variables.qmd) and [environmental extraction](environmental-extraction.qmd) workflows. It makes 5-m terrain layers and averages them within the matching 20-m grid. Elevation, slope and TPI are the default classification features. TPI is a neighbourhood-relative elevation measure, not the CTFS convexity formula. Northness and eastness remain available without treating circular aspect as a linear variable. Do not add them automatically as extra votes for topography.
+Calculate the terrain variables on a 5 m grid and average them within
+each quadrat. TPI measures how high or low a place is relative to nearby
+terrain. The [topography tutorial](derive-topographical-variables.qmd)
+explains this calculation. To add soil, canopy or disturbance data,
+prepare one value per quadrat and join it by ID. See the
+[environmental extraction tutorial](environmental-extraction.qmd).
 
 ```{r}
 #| label: habitat-environment
 
 terrain.resolution = 5
-position.radius = 20            # TPI square-neighbourhood radius, metres.
-fill.missing = TRUE              # Retain the fill mask for provenance.
+position.radius = 20  # Radius of the square neighbourhood for TPI, in metres.
+fill.missing = TRUE
 
-# This short aggregation route assumes aligned square grids of divisible size.
-stopifnot(quadrat.size %% terrain.resolution == 0,
-	diff(plot.extent[1:2]) %% quadrat.size == 0,
-	diff(plot.extent[3:4]) %% quadrat.size == 0)
 xyz <- read.csv(file.path(input.dir, "bci-elevation.csv"))
-terrain <- derive_topography(xyz = xyz,
-	variables = c("slope", "tpi", "northness", "eastness"),
+terrain <- derive_topography(
+	xyz = xyz, variables = c("slope", "tpi"),
 	resolution = terrain.resolution, extent = plot.extent, crs = "local",
-	position.radius = position.radius, fill.missing = fill.missing)
-terrain.filled <- attr(terrain, "filled.cells")
-terrain.quadrats <- aggregate(terrain,
+	position.radius = position.radius, fill.missing = fill.missing
+)
+
+# Aggregate the fine grid to the same 20 m cells as the quadrat table.
+stopifnot(quadrat.size %% terrain.resolution == 0)
+terrain.quadrats <- terra::aggregate(terrain,
 	fact = quadrat.size / terrain.resolution, fun = "mean", na.rm = TRUE)
-quadrat.xy <- cbind(x = (quadrats$xmin + quadrats$xmax) / 2,
-	y = (quadrats$ymin + quadrats$ymax) / 2)
+
+quadrat.xy <- cbind(
+	x = (quadrats$xmin + quadrats$xmax) / 2,
+	y = (quadrats$ymin + quadrats$ymax) / 2
+)
 environment <- as.data.frame(terra::extract(terrain.quadrats, quadrat.xy))
 rownames(environment) <- quadrats$quadrat_id
+
 stopifnot(identical(rownames(environment), rownames(composition)),
 	all(is.finite(as.matrix(environment))))
-summary(environment[, c("elevation_m", "slope_deg", "tpi_m")])
 ```
 
-For other data, join each environmental variable by stable quadrat ID before reordering to `quadrats$quadrat_id`. Soil, canopy and disturbance variables can be added to this same table. Check dates, units, sampling support and missing coverage. The supplied BCI soil measurements date from 2010 (Wolf et al., 2015): using them with 1982 composition assumes a persistent environmental template. They are not contemporaneous measurements. A complete rectangular terrain map keeps the core torus example free of soil-interpolation boundary gaps.
-
-## Start here with your own prepared objects
-
-| Object        | Rows / columns                 | Meaning                                                                |
-|------------------------|------------------------|------------------------|
-| `environment` | N × P                          | Selected environmental measurements; numeric for the core recipes      |
-| `composition` | N × S                          | Raw counts of eligible individuals; retain this before transformations |
-| `quadrats`    | N rows                         | Stable `quadrat_id` and rectangle bounds                               |
-| `individuals` | One row per counted individual | Coordinates, species and optional diameter / census features           |
-
-All N-row objects refer to the same spatial units **in the same order**. Fitting needs `environment` and, for floristic methods, `composition`. The continuous point-torus test additionally needs the original `individuals`: quadrat counts alone cannot reconstruct point locations. For arbitrary site geometry, the classification recipes still work, but the rectangular torus recipe does not. With prepared inputs, run the setup chunk for packages, paths and `models`, then skip the BCI preparation and enter your chosen method. The independent torus entry below has its own load-and-source recipe and does not need those packages.
-
-```{r}
-#| label: save-habitat-inputs
-
-inputs.file = file.path(output.dir, "habitat-inputs.rds")
-
-saveRDS(list(environment = environment, composition = composition,
-	quadrats = quadrats, individuals = individuals, plot.extent = plot.extent),
-	inputs.file)
-# In another script: inputs <- readRDS(inputs.file)
-# environment <- inputs$environment; composition <- inputs$composition
-# quadrats <- inputs$quadrats; individuals <- inputs$individuals
-# plot.extent <- inputs$plot.extent
-```
-
-### More than one census
-
-For a later census, rerun the population and composition preparation using the same grid and counting rules, then align species columns explicitly. A fixed map can describe temporal change. Alternatively, refitting a floristic tree addresses whether its environmental partition changes. Shared individuals and locations mean these censuses are not independent validation samples. Current diameter classes, baseline cohorts and recruits answer different questions.
-
-Pooling raw records weights long-lived individuals by their number of observed censuses. A mean quadrat-by-species abundance across complete censuses instead describes average standing composition. These are different estimands; specify one before pooling, and retain census-specific matrices. Basal area and presence--absence are useful alternative **classification responses**; the torus counting code below specifically expects individual counts.
+For your own data, keep the rows of `environment` and `composition` in
+the order of `quadrats$quadrat_id`. Keep the original coordinates and
+species in `individuals` for the torus analysis. For another census,
+prepare a separate composition matrix using the same counting rules
+and grid. You can then compare associations across censuses on a fixed map.
 
 # Environmental classifications
 
-These methods group quadrats by environmental resemblance. They do not use the species matrix. Their classes can occupy several disconnected parts of the plot; none of the methods below requires spatially contiguous classes. Habitat numbers are labels, not an ordering from favourable to unfavourable conditions.
+These recipes group quadrats using the environmental table. Habitat
+numbers serve as labels. Quadrats in separate parts of the plot can have
+the same label.
 
-## Recover the legacy classification explicitly {#sec-legacy}
+## CTFS/fgeo hierarchy {#sec-legacy}
 
-`fgeo.analyze::fgeo_habitat()` first derives quadrat topography, then applies Euclidean distance to **unscaled** mean elevation, convexity and slope, complete-linkage hierarchical clustering, and a cut into a supplied number of classes. This is the repository's legacy clustering workflow; it should not be confused with the expert-defined BCI habitat map used by Harms et al. (2001).
+`fgeo.analyze::fgeo_habitat()` calculates mean elevation, convexity and
+slope. It then uses Euclidean distance, complete linkage and a fixed
+number of classes. Harms et al. (2001) used field-defined habitats at BCI.
 
-First recover the original quadrat topography, then source the archived clustering stage with the repository's snapshot loader. The historical functions expect a zero-origin regular grid, as in this BCI example. This works without installing the full `fgeo.analyze` suite; the unchanged stage requires `withr`. The direct `stats` calculation retains the tree, which the legacy output omits.
+The first chunk loads the archived CTFS terrain calculation and the
+archived fgeo clustering step. The second shows the equivalent base R
+clustering, using the same variables and number of classes.
 
 ```{r}
 #| label: legacy-topography-inputs
 #| code-fold: true
-#| code-summary: "Recover and align archived CTFS topography"
+#| code-summary: "Load the archived CTFS and fgeo code"
 
-legacy.commit = "0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d"
+ctfs.commit = "0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d"
+fgeo.commit = "d69bfe711263305fcbaf322d402eba2f1edfb084"
 
 source(file.path(path.to.fgeo2, "evaluation/0-code-to-source.r"))
 legacy <- new.env()
-load_github_snapshot(commit = legacy.commit,
+
+load_github_snapshot(commit = ctfs.commit, envir = legacy,
 	scripts = c("evaluation/Condit/spatial/quadfunc.r",
-		"evaluation/Condit/topography/slope.r"), envir = legacy)
+		"evaluation/Condit/topography/slope.r"))
+load_github_snapshot(repo = "forestgeo/fgeo.analyze", commit = fgeo.commit,
+	scripts = "R/add_cluster.R", envir = legacy)
+
 legacy.xyz <- xyz[order(xyz$x, xyz$y), ]
 names(legacy.xyz)[names(legacy.xyz) == "z"] <- "elev"
-legacy.topography <- legacy$allquadratslopes(list(col = legacy.xyz),
-	gridsize = quadrat.size, plotdim = c(diff(plot.extent[1:2]),
-		diff(plot.extent[3:4])), edgecorrect = TRUE)
+plot.dimensions <- c(diff(plot.extent[1:2]), diff(plot.extent[3:4]))
 
-# Verify the legacy x-then-y ordering against the four corners of each cell.
+legacy.metrics <- legacy$allquadratslopes(list(col = legacy.xyz),
+	gridsize = quadrat.size, plotdim = plot.dimensions, edgecorrect = TRUE)
+legacy.metrics <- legacy.metrics[, c("meanelev", "convex", "slope")]
+
+# Confirm that each row describes the same quadrat as in the new grid.
 xyz.keys <- paste(xyz$x, xyz$y)
-corner.elevations <- cbind(
+corners <- cbind(
 	xyz$z[match(paste(quadrats$xmin, quadrats$ymin), xyz.keys)],
 	xyz$z[match(paste(quadrats$xmin, quadrats$ymax), xyz.keys)],
 	xyz$z[match(paste(quadrats$xmax, quadrats$ymin), xyz.keys)],
-	xyz$z[match(paste(quadrats$xmax, quadrats$ymax), xyz.keys)])
-stopifnot(nrow(legacy.topography) == nrow(quadrats),
-	max(abs(legacy.topography$meanelev - rowMeans(corner.elevations))) < 1e-7)
-rownames(legacy.topography) <- quadrats$quadrat_id
+	xyz$z[match(paste(quadrats$xmax, quadrats$ymax), xyz.keys)]
+)
+
+stopifnot(nrow(legacy.metrics) == nrow(quadrats),
+	all(abs(legacy.metrics$meanelev - rowMeans(corners)) < 1e-7))
+rownames(legacy.metrics) <- quadrats$quadrat_id
 ```
 
 ```{r}
 #| label: legacy-habitat-clustering
-#| message: false
 
 habitat.k = 4L
-legacy.commit = "d69bfe711263305fcbaf322d402eba2f1edfb084"
-
-source(file.path(path.to.fgeo2, "evaluation/0-code-to-source.r"))
-legacy.clustering <- new.env()
-load_github_snapshot(repo = "forestgeo/fgeo.analyze", commit = legacy.commit,
-	scripts = "R/add_cluster.R", envir = legacy.clustering)
-
-# The preparation section checks these rows against the original quadrat index.
-legacy.metrics <- legacy.topography[, c("meanelev", "convex", "slope")]
-rownames(legacy.metrics) <- quadrats$quadrat_id
-if(any(!is.finite(as.matrix(legacy.metrics))))
-	stop("Resolve missing legacy topography before this comparison.")
-
-legacy.input <- structure(legacy.metrics,
-	class = c("fgeo_topography", "data.frame"))
-legacy.result <- legacy.clustering$add_cluster(legacy.input, n = habitat.k)
 
 raw.tree <- hclust(dist(legacy.metrics), method = "complete")
 habitat.raw <- cutree(raw.tree, k = habitat.k)
+
+# Check the result against the archived fgeo clustering step.
+legacy.input <- structure(legacy.metrics, class = c("fgeo_topography", "data.frame"))
+legacy.result <- legacy$add_cluster(legacy.input, n = habitat.k)
 stopifnot(identical(unname(habitat.raw), legacy.result$cluster))
-models$raw <- raw.tree
+
 table(habitat.raw)
 ```
 
-The agreement above isolates the clustering implementation because both calls receive identical metric values and the same k. Replacing CTFS convexity with raster TPI also changes the environmental definition; a changed map would then reflect more than the clustering algorithm. Changing metres to centimetres in only one raw variable can change the result because raw Euclidean distances retain the supplied units.
+If you have the legacy package installed, you can also call
+`fgeo.analyze::fgeo_habitat()` with
+`list(col = legacy.xyz, xdim = 1000, ydim = 500)`, `gridsize = 20`,
+`n = habitat.k` and `edgecorrect = TRUE`.
 
-For an installation of `fgeo.analyze`, its original whole workflow remains:
+## Standardized environmental hierarchy {#sec-hclust}
 
-```{r}
-#| label: installed-fgeo-habitat
-#| eval: false
-
-habitat.k = 4L
-quadrat.side = 20
-plot.dimensions = c(1000, 500)
-
-# xyz is the original surveyed elevation table, with columns x, y and z.
-legacy.xyz <- xyz[order(xyz$x, xyz$y), ]
-names(legacy.xyz)[names(legacy.xyz) == "z"] <- "elev"
-legacy.habitat <- fgeo.analyze::fgeo_habitat(
-	list(col = legacy.xyz, xdim = plot.dimensions[1], ydim = plot.dimensions[2]),
-	gridsize = quadrat.side, n = habitat.k, edgecorrect = TRUE)
-```
-
-## Standardized environmental hierarchical clustering {#sec-hclust}
-
-Standardizing each selected variable to unit standard deviation changes its weight in Euclidean distance. This is a sensitivity choice, not an automatic improvement: it gives equal variance weight to the supplied variables, while several correlated variables can still emphasize the same gradient. Select columns for the ecological question before searching for k.
-
-The small candidate set below is screened by mean silhouette width, which compares within-class resemblance with the nearest alternative class. A larger value supports separation under this particular distance. It does not prove that a continuous environmental gradient contains discrete ecological habitats. Inspect the class sizes and map alongside the diagnostic.
+Scaling makes distances less sensitive to the units of the variables.
+Several correlated variables can still give extra weight to the same
+gradient. If you want to isolate the effect of scaling, use the same
+three columns and the same number of habitats as in the legacy recipe.
+The example below changes both the scaling and the terrain measures.
 
 ```{r}
 #| label: standardized-hierarchical-habitats
 
 environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 candidate.k = 2:6
-habitat.k = NULL                 # Or set one value after inspecting diagnostics.
-minimum.class.quadrats = 10L     # Exposed minimum spatial representation.
-linkage = "complete"            # Same linkage as the legacy comparison.
-use.pca = FALSE
-variance.target = 0.9           # Used only when use.pca = TRUE.
+habitat.k = NULL  # Supply a k from the table to choose it yourself.
+minimum.class.quadrats = 10L
+linkage = "complete"
 
 environment.scaled <- scale(environment[, environment.columns, drop = FALSE])
-if(any(!is.finite(environment.scaled)))
-	stop("Selected variables need complete values and nonzero variance.")
+stopifnot(all(is.finite(environment.scaled)))
 
-# PCA is optional. Retaining all axes leaves Euclidean distances unchanged.
-environment.scores <- environment.scaled
-if(use.pca)
-{
-	environment.pca <- prcomp(environment.scaled, center = FALSE, scale. = FALSE)
-	explained <- cumsum(environment.pca$sdev^2) / sum(environment.pca$sdev^2)
-	number.axes <- which(explained >= variance.target)[1]
-	environment.scores <- environment.pca$x[, seq_len(number.axes), drop = FALSE]
-}
-
-environment.distance <- dist(environment.scores)
+environment.distance <- dist(environment.scaled)
 cluster.tree <- hclust(environment.distance, method = linkage)
-if(any(candidate.k < 2 | candidate.k >= nrow(environment)))
-	stop("Candidate k values must be between 2 and N - 1.")
 
-cluster.diagnostics <- data.frame(k = candidate.k, mean.silhouette = NA_real_,
+cluster.diagnostics <- data.frame(k = candidate.k, silhouette = NA_real_,
 	smallest.class = NA_integer_)
+
 for(j in seq_along(candidate.k))
 {
 	groups <- cutree(cluster.tree, k = candidate.k[j])
-	widths <- silhouette(groups, environment.distance)
-	cluster.diagnostics$mean.silhouette[j] <- mean(widths[, "sil_width"])
+	widths <- cluster::silhouette(groups, environment.distance)
+
+	cluster.diagnostics$silhouette[j] <- mean(widths[, "sil_width"])
 	cluster.diagnostics$smallest.class[j] <- min(table(groups))
 }
-eligible <- cluster.diagnostics$smallest.class >= minimum.class.quadrats
-cluster.diagnostics$eligible <- eligible
-print(cluster.diagnostics)
-if(!any(eligible)) stop("No candidate partition satisfies minimum.class.quadrats.")
+
+# Choose the best silhouette among partitions with large enough classes.
+eligible <- subset(cluster.diagnostics, smallest.class >= minimum.class.quadrats)
+if(nrow(eligible) == 0)
+	stop("No candidate k meets minimum.class.quadrats.")
+
 if(is.null(habitat.k))
-{
-	scores <- cluster.diagnostics$mean.silhouette
-	scores[!eligible] <- -Inf
-	habitat.k <- candidate.k[which.max(scores)]
-}
-selected <- match(habitat.k, candidate.k)
-if(is.na(selected) || !eligible[selected])
-	stop("Choose an eligible k from the hierarchical diagnostic table.")
+	habitat.k <- eligible$k[which.max(eligible$silhouette)]
+stopifnot(habitat.k %in% eligible$k)
 
 habitat.hclust <- cutree(cluster.tree, k = habitat.k)
-names(habitat.hclust) <- rownames(environment)
-models$hclust <- cluster.tree
+cluster.diagnostics
 table(habitat.hclust)
-plot(cluster.diagnostics$k, cluster.diagnostics$mean.silhouette,
-	type = "b", xlab = "Number of classes", ylab = "Mean silhouette width")
 ```
 
-To isolate the effect of scaling, repeat both raw and standardized calls with the **same three metric columns and k**. To add soils or canopy measurements, change `environment.columns`; inspect skewed variables and use a stated transformation when needed. The minimum class size states the smallest acceptable spatial representation; it is not a biological constant. The default still allows small groups, so inspect the reported sizes and map. With many correlated numeric predictors, retaining only some PCA axes is an additional modelling choice. For genuinely mixed numeric and categorical measurements, a separate option is `cluster::daisy(..., metric = "gower")` followed by average or complete linkage; do not turn categories into arbitrary numeric scores or apply Ward's Euclidean criterion indiscriminately to mixed-data distances.
+Silhouette width compares how close a quadrat is to its own group and
+to the nearest alternative group. Higher values indicate clearer
+separation in the chosen environmental variables. Inspect the smallest
+habitat and its location before choosing a value of `k`.
 
 ## Fuzzy environmental classes with FANNY {#sec-fanny}
 
-FANNY, described by Kaufman and Rousseeuw (1990), lets each quadrat have degrees of affiliation with several classes. Their row sum is one, but these values are **fuzzy memberships, not occurrence probabilities**. The native object also contains a nearest hard classification. Preserve both outputs: a hard map hides quadrats with intermediate memberships.
-
-This comparison uses the same standardized columns independently of the previous fit. Its bounded k screen describes the nearest hard partitions; the normalized partition coefficient additionally describes membership crispness. Neither diagnostic is a universal ecological criterion for k.
+FANNY gives each quadrat one membership score per habitat. The scores
+sum to one and describe how strongly the quadrat belongs to each class.
+They describe similarity in the selected variables. The hard label
+uses the largest membership score. Keep the full matrix to see where
+boundaries are gradual.
 
 ```{r}
 #| label: fuzzy-environmental-habitats
 
 environment.columns = c("elevation_m", "slope_deg", "tpi_m")
-candidate.k = 2:4               # Keep this small: FANNY uses pairwise distances.
-habitat.k = NULL
-membership.exponent = 1.5       # Larger values make affiliations more diffuse.
-maximum.iterations = 500L
-convergence.tolerance = 1e-8
+habitat.k = 2L
+membership.exponent = 1.5  # Higher values make memberships more similar.
 
 environment.scaled <- scale(environment[, environment.columns, drop = FALSE])
-if(any(!is.finite(environment.scaled)))
-	stop("Selected variables need complete values and nonzero variance.")
-if(any(candidate.k < 2 | candidate.k >= nrow(environment) / 2))
-	stop("FANNY candidate k values must satisfy 2 <= k < N / 2.")
-environment.distance <- dist(environment.scaled)
+stopifnot(all(is.finite(environment.scaled)))
 
-fuzzy.fits <- vector("list", length(candidate.k))
-fuzzy.diagnostics <- data.frame(k = candidate.k, mean.silhouette = NA_real_,
-	partition.coefficient = NA_real_, crisp.classes = NA_integer_, converged = FALSE)
-for(j in seq_along(candidate.k))
-{
-	fuzzy.fits[[j]] <- fanny(environment.distance, k = candidate.k[j],
-		diss = TRUE, memb.exp = membership.exponent, keep.diss = FALSE,
-		maxit = maximum.iterations, tol = convergence.tolerance)
-	if(!is.null(fuzzy.fits[[j]]$silinfo$avg.width))
-		fuzzy.diagnostics$mean.silhouette[j] <- fuzzy.fits[[j]]$silinfo$avg.width
-	fuzzy.diagnostics$partition.coefficient[j] <- fuzzy.fits[[j]]$coeff[2]
-	fuzzy.diagnostics$crisp.classes[j] <- fuzzy.fits[[j]]$k.crisp
-	fuzzy.diagnostics$converged[j] <- fuzzy.fits[[j]]$convergence["converged"] == 1
-}
-print(fuzzy.diagnostics)
+fuzzy.fit <- cluster::fanny(environment.scaled, k = habitat.k,
+	memb.exp = membership.exponent, maxit = 500, tol = 1e-8)
 
-# Do not select an unconverged fit or one whose hard classes have collapsed.
-eligible <- fuzzy.diagnostics$converged &
-	fuzzy.diagnostics$crisp.classes == candidate.k &
-	is.finite(fuzzy.diagnostics$mean.silhouette)
-if(!any(eligible))
-	stop("No eligible FANNY fit; inspect diagnostics and membership.exponent.")
-if(is.null(habitat.k))
-{
-	scores <- fuzzy.diagnostics$mean.silhouette
-	scores[!eligible] <- -Inf
-	habitat.k <- candidate.k[which.max(scores)]
-}
-selected <- match(habitat.k, candidate.k)
-if(is.na(selected) || !eligible[selected])
-	stop("Choose an eligible k from the FANNY diagnostic table.")
-
-fuzzy.fit <- fuzzy.fits[[selected]]
-habitat.fanny <- fuzzy.fit$clustering
-names(habitat.fanny) <- rownames(environment)
+habitat.fanny <- setNames(fuzzy.fit$clustering, rownames(environment))
 membership.fanny <- fuzzy.fit$membership
 rownames(membership.fanny) <- rownames(environment)
-colnames(membership.fanny) <- paste0("habitat_", seq_len(ncol(membership.fanny)))
-models$fanny <- fuzzy.fit
-stopifnot(all(abs(rowSums(membership.fanny) - 1) < 1e-8))
+
+fuzzy.fit$convergence
 table(habitat.fanny)
 summary(apply(membership.fanny, 1, max))
 ```
 
-If memberships approach 1/k everywhere or fewer hard classes remain than requested, inspect the warning and try a smaller membership exponent. Values near one produce crisper solutions and can converge more slowly. Show maximum membership, or individual membership columns, as well as the hard map.
+Check convergence and the number of hard habitats. If memberships are
+nearly equal everywhere or some hard classes disappear, try a lower
+`membership.exponent` or a smaller `habitat.k`.
 
 # Floristically informed classifications
 
-Here community composition helps define the environmental partition. The resulting map answers a different question from clustering the environment alone. Keep the sampled population and size threshold explicit: refitting on another species group or size class can produce another map. Repeating an environment-only fit on an unchanged environmental matrix cannot change that map merely because different trees were selected.
+These recipes use composition to find environmental differences that
+matter for the sampled community. Choose composition data that match
+your ecological question.
 
-## Multivariate conditional inference tree {#sec-ctree}
+## Conditional inference tree {#sec-ctree}
 
-De'ath (2002) introduced multivariate regression trees for species-environment relationships. The maintained `partykit::ctree()` implementation below uses the **conditional inference algorithm of Hothorn, Hornik and Zeileis (2006)**, which selects splits by association tests. It is not an implementation of De'ath's sum-of-squares MRT algorithm. Its terminal nodes nevertheless provide an explicit environmental partition informed by the species matrix.
-
-The Hellinger transformation takes square roots of within-quadrat relative abundances (Legendre and Gallagher, 2001). This example therefore describes relative composition rather than total tree density. The species-occurrence filter is an exposed computational and ecological choice; the denominator below is the abundance of the retained species. Empty retained communities are excluded from fitting, while their environmental values can still receive a model-based prediction.
+A tree splits the quadrats into groups by environmental rules, such as
+an elevation threshold. Multivariate regression trees use this idea
+(De'ath, 2002). Here `ctree()` uses conditional tests to choose variables
+and splits (Hothorn et al., 2006). The number of habitats follows from
+the stopping rule, minimum node size and maximum depth.
 
 ```{r}
 #| label: floristically-informed-tree
 #| fig-width: 8
-#| fig-height: 6
+#| fig-height: 5
 
 environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 minimum.occupied.quadrats = 10L
-test.statistic = "quadratic"    # Joint multivariate association test.
-split.statistic = "maximum"     # Set separately; affects the split search.
+minimum.node.size = 50L
+maximum.depth = 3L
+split.criterion = 0.99
+test.statistic = "quadratic"
+split.statistic = "maximum"
 tree.seed = 20261120
 
-set.seed(tree.seed)
-split.criterion = 0.99
-minimum.node.size = 50L
-maximum.depth = 3L             # At most 2^maximum.depth terminal classes.
-
+stopifnot(identical(rownames(environment), rownames(composition)))
 species.keep <- colSums(composition > 0) >= minimum.occupied.quadrats
 community <- composition[, species.keep, drop = FALSE]
-if(ncol(community) < 2)
-	stop("At least two retained species are needed for this multivariate example.")
 training.rows <- rowSums(community) > 0
+
+stopifnot(ncol(community) >= 2, any(training.rows))
+
+# Hellinger transformation of the retained species' relative abundances.
+community <- community[training.rows, , drop = FALSE]
+community.hel <- sqrt(community / rowSums(community))
 environment.tree <- environment[, environment.columns, drop = FALSE]
-if(any(!is.finite(as.matrix(environment.tree))))
-	stop("Resolve missing environmental values before fitting or mapping the tree.")
+stopifnot(all(is.finite(as.matrix(environment.tree))))
 
-community.hel <- sqrt(sweep(community[training.rows, , drop = FALSE], 1,
-	rowSums(community[training.rows, , drop = FALSE]), "/"))
-
-# Separate response columns are supported by native printing and plotting.
-# data.frame() makes syntactically valid, unique names for the formula.
-floristic.data <- data.frame(community.hel,
-	environment.tree[training.rows, , drop = FALSE], check.names = TRUE)
+# Join response and predictor columns and build the native tree formula.
+floristic.data <- data.frame(community.hel, environment.tree[training.rows, , drop = FALSE])
 response.names <- names(floristic.data)[seq_len(ncol(community.hel))]
-predictor.names <- names(floristic.data)[ncol(community.hel) + seq_len(ncol(environment.tree))]
-floristic.formula <- as.formula(paste(paste(response.names, collapse = " + "),
-	"~", paste(predictor.names, collapse = " + ")))
-floristic.tree <- ctree(floristic.formula, data = floristic.data,
-	control = ctree_control(teststat = test.statistic, splitstat = split.statistic,
-		testtype = "Bonferroni",
-		mincriterion = split.criterion, minbucket = minimum.node.size,
-		minsplit = 2L * minimum.node.size, maxdepth = maximum.depth))
+predictor.names <- tail(names(floristic.data), ncol(environment.tree))
+floristic.formula <- reformulate(predictor.names,
+	response = paste(response.names, collapse = " + "))
 
-# Node IDs are the native hard habitat labels; they need not be consecutive.
-prediction.data <- environment.tree
-names(prediction.data) <- predictor.names
-habitat.ctree <- predict(floristic.tree, newdata = prediction.data, type = "node")
+set.seed(tree.seed)
+floristic.tree <- partykit::ctree(floristic.formula, data = floristic.data,
+	control = partykit::ctree_control(
+		teststat = test.statistic, splitstat = split.statistic,
+		mincriterion = split.criterion,
+		minbucket = minimum.node.size, minsplit = 2L * minimum.node.size,
+		maxdepth = maximum.depth
+	))
+
+# Assign each quadrat to a terminal node using its environmental values.
+names(environment.tree) <- predictor.names
+habitat.ctree <- predict(floristic.tree, newdata = environment.tree, type = "node")
 names(habitat.ctree) <- rownames(environment)
-models$ctree <- floristic.tree
-print(floristic.tree)
+
 table(habitat.ctree)
 plot(floristic.tree, type = "simple")
 ```
 
-The global test uses a quadratic multivariate statistic. The split search uses the largest standardized component, a separate native control that keeps the search practical with hundreds of species. Using a quadratic split statistic is another choice and may be slower. These criteria can yield different trees; neither is De'ath's sum-of-squares MRT.
+The Hellinger transformation takes the square root of the proportion of
+each species in a quadrat, here among the retained species
+(Legendre and Gallagher, 2001). The tree uses differences in relative
+composition. A quadrat with no retained trees can still receive a label
+from its environmental values. The split tests guide the fit. Check
+predictions with held-out spatial blocks if you need evidence that the
+rules work at new locations (Roberts et al., 2017).
 
-The number of classes emerges from stopping, minimum node size and the depth limit, rather than a supplied k. Inspect the tree and class sizes; rerun a small, stated sensitivity to these controls if the map is too fragmented or too coarse for the question. With spatially autocorrelated quadrats, internal split-test p-values are model-building controls, not independent evidence of habitat associations. Predictive claims need held-out spatial blocks. Species summaries made from the same composition used to fit this map are descriptive.
+## Optional probabilistic regions {#sec-rcp}
 
-With many response columns, trying `"maximum"` for both statistic options can make the native calculation substantially faster. This changes the multivariate criterion and can change the boundaries; it is a modelling alternative, not a promise to reproduce the quadratic tree more quickly.
+Regions of Common Profile use a mixture model to relate composition to
+environment (Foster et al., 2013). For each quadrat, `postProbs` uses both
+the observed flora and environment. `predict()` gives probabilities
+based on the environment alone, using a model fitted with the flora.
 
-For exact De'ath MRT, a revived `aurelienboye/mvpart` fork is available with a worked ecological example. It is an optional GitHub dependency rather than a drop-in relabelling of `ctree`; its cross-validation and one-standard-error tree-size selection belong to that separate workflow.
-
-## Optional: probabilistic Regions of Common Profile {#sec-rcp}
-
-Foster et al. (2013) model groups of sites using both multispecies observations and environment. `ecomix::regional_mix()` implements these Regions of Common Profile (RCP). Unlike `ecomix::species_mix()`, it groups **sites**, so it can produce a habitat-membership matrix. Its fitted `postProbs` use the observed flora, whereas `pis` and `predict()` give environmental prior probabilities learned through the fitted model. These are latent-class probabilities, not FANNY affiliations or proportions of several habitats in a quadrat.
-
-This native template is deliberately **not evaluated** in the core tutorial. It requires a compiler and the GitHub `ecomix` package, and likelihood searches can be costly. Install once with `remotes::install_github("skiptoniam/ecomix@17418626")` and inspect the package's RCP example before running it. The interface was checked with version 2.0.1, commit `17418626e5c9e12337a335bbffe1b294e95f924b`, on a small simulated 40-site, 10-species dataset; the full BCI likelihood search is not run here. Keep untransformed counts for the negative-binomial family. The short start count below is for trying the interface; increase it and check that independent starts agree before relying on BIC to select k.
+This optional chunk uses the GitHub package `ecomix`. It was checked on
+simulated data. Fitting the full BCI data can take time. [Package
+example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
 
 ```{r}
 #| label: optional-rcp-habitats
 #| eval: false
 #| code-fold: true
-#| code-summary: "Optional native RCP template"
 
 environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 minimum.occupied.quadrats = 10L
@@ -554,764 +487,566 @@ candidate.k = 2:4
 number.starts = 10L
 seed = 20261120
 
+# remotes::install_github("skiptoniam/ecomix@17418626")
 library(ecomix)
 set.seed(seed)
+
 rcp.environment <- as.data.frame(scale(environment[, environment.columns, drop = FALSE]))
 species.keep <- colSums(composition > 0) >= minimum.occupied.quadrats
-rcp.data <- make_mixture_data(species_data = composition[, species.keep, drop = FALSE],
-	covariate_data = rcp.environment)
+rcp.data <- make_mixture_data(
+	species_data = composition[, species.keep, drop = FALSE],
+	covariate_data = rcp.environment
+)
 
-# Use the constructor and multivariate formula supported by the package source.
-# Some regional_mix help text still describes an older list interface.
+# The constructor puts species columns first and environmental columns last.
 response.names <- names(rcp.data)[seq_len(sum(species.keep))]
-predictor.names <- names(rcp.data)[sum(species.keep) + 1L + seq_len(ncol(rcp.environment))]
+predictor.names <- tail(names(rcp.data), ncol(rcp.environment))
 names(rcp.environment) <- predictor.names
-rcp.formula <- as.formula(paste("cbind(", paste(response.names, collapse = ", "),
-	") ~", paste(predictor.names, collapse = " + ")))
+rcp.formula <- reformulate(predictor.names,
+	response = paste0("cbind(", paste(response.names, collapse = ", "), ")"))
 
 rcp.fits <- vector("list", length(candidate.k))
+
 for(j in seq_along(candidate.k))
 {
-	starts <- regional_mix.multifit(rcp_formula = rcp.formula, species_formula = ~1,
+	starts <- regional_mix.multifit(
+		rcp_formula = rcp.formula, species_formula = ~1,
 		data = rcp.data, nRCP = candidate.k[j], family = "negative.binomial",
-		nstart = number.starts, mc.cores = 1, titbits = TRUE)
+		nstart = number.starts, mc.cores = 1, titbits = TRUE
+	)
+
 	log.likelihood <- sapply(starts$multiple_fits, function(x)
 		if(x$conv == 0) x$logl else -Inf)
-	if(!any(is.finite(log.likelihood))) stop("No converged RCP start at k = ", candidate.k[j])
+	if(!any(is.finite(log.likelihood)))
+		stop("No converged RCP start at k = ", candidate.k[j])
+
 	rcp.fits[[j]] <- starts$multiple_fits[[which.max(log.likelihood)]]
 }
+
 rcp.diagnostics <- data.frame(k = candidate.k, BIC = sapply(rcp.fits, BIC))
-print(rcp.diagnostics)
 regional.fit <- rcp.fits[[which.min(rcp.diagnostics$BIC)]]
+rcp.diagnostics
 
 posterior.rcp <- regional.fit$postProbs
 prediction.rcp <- predict(regional.fit, newdata = rcp.environment)
 rownames(posterior.rcp) <- rownames(prediction.rcp) <- rownames(environment)
 habitat.rcp <- setNames(max.col(posterior.rcp, ties.method = "first"), rownames(environment))
-habitat.rcp.environment <- setNames(max.col(prediction.rcp, ties.method = "first"),
-	rownames(environment))
-models$rcp <- regional.fit
 ```
 
-Map `posterior.rcp` when describing the observed communities. Map `prediction.rcp` when describing what the fitted environmental model predicts at these or new sites. Compare BIC only between converged models fitted to the same responses and covariate specification, then inspect class sizes, residuals and stability. RCP, like the other methods here, does not itself impose spatial contiguity.
+Check that several starts give similar fits before using BIC to choose
+the number of regions. Use the probabilities to describe gradual
+changes in membership or use `habitat.rcp` for one label per quadrat.
 
-## Two maps for two size classes {#sec-size}
+# Spatial smoothing {#sec-smoothing}
 
-To make M = 2, keep the same environmental table and quadrat grid, but rebuild composition and refit the floristic tree for each stated population. These are size classes, not universal juvenile/adult categories. Each column of `habitats.by.size` is a different hard map; its rows retain the same quadrat IDs. Environmental clustering need not be repeated because its inputs have not changed. Comita et al. (2007) found differences between small- and large-tree habitat associations at BCI, motivating size-specific questions without justifying one universal diameter boundary.
+Nearby quadrats often have similar conditions. Smoothing can reduce
+isolated cells and make larger patches easier to see. It can also remove
+real features. For example, a stream habitat one quadrat wide can
+disappear when most neighbouring quadrats belong to the surrounding
+forest. Compare the two maps before choosing which one to use.
 
-```{r}
-#| label: size-specific-floristic-maps
-
-size.breaks = c(1, 10, Inf)       # DBH in cm; left-closed intervals.
-size.labels = c("1 to <10 cm", "10 cm or more")
-environment.columns = c("elevation_m", "slope_deg", "tpi_m")
-minimum.occupied.quadrats = 10L
-test.statistic = "quadratic"
-split.statistic = "maximum"
-tree.seed = 20261120
-
-set.seed(tree.seed)
-split.criterion = 0.99
-minimum.node.size = 50L
-maximum.depth = 3L
-
-size.class <- cut(individuals$dbh_cm, breaks = size.breaks,
-	labels = size.labels, right = FALSE)
-environment.tree <- environment[, environment.columns, drop = FALSE]
-models.by.size <- composition.by.size <- vector("list", length(size.labels))
-names(models.by.size) <- names(composition.by.size) <- size.labels
-habitats.by.size <- matrix(NA_integer_, nrow(environment), length(size.labels),
-	dimnames = list(rownames(environment), size.labels))
-size.diagnostics <- data.frame(size.class = size.labels, individuals = NA_integer_,
-	retained.species = NA_integer_, training.quadrats = NA_integer_, habitats = NA_integer_)
-
-for(m in seq_along(size.labels))
-{
-	keep <- !is.na(size.class) & size.class == size.labels[m]
-	community <- table(factor(individuals$quadrat_id[keep], levels = quadrats$quadrat_id),
-		factor(individuals$species[keep], levels = colnames(composition)))
-	community <- unclass(community)
-	composition.by.size[[m]] <- community
-	species.keep <- colSums(community > 0) >= minimum.occupied.quadrats
-	community <- community[, species.keep, drop = FALSE]
-	training.rows <- rowSums(community) > 0
-	size.diagnostics$individuals[m] <- sum(keep)
-	size.diagnostics$retained.species[m] <- ncol(community)
-	size.diagnostics$training.quadrats[m] <- sum(training.rows)
-	if(ncol(community) < 2 || sum(training.rows) < 2L * minimum.node.size)
-	{
-		warning("Insufficient composition for size class: ", size.labels[m])
-		next
-	}
-
-	community.hel <- sqrt(sweep(community[training.rows, , drop = FALSE], 1,
-		rowSums(community[training.rows, , drop = FALSE]), "/"))
-	floristic.data <- data.frame(community.hel,
-		environment.tree[training.rows, , drop = FALSE], check.names = TRUE)
-	response.names <- names(floristic.data)[seq_len(ncol(community.hel))]
-	predictor.names <- names(floristic.data)[ncol(community.hel) + seq_len(ncol(environment.tree))]
-	floristic.formula <- as.formula(paste(paste(response.names, collapse = " + "),
-		"~", paste(predictor.names, collapse = " + ")))
-	models.by.size[[m]] <- ctree(floristic.formula, data = floristic.data,
-		control = ctree_control(teststat = test.statistic, splitstat = split.statistic,
-			testtype = "Bonferroni",
-			mincriterion = split.criterion, minbucket = minimum.node.size,
-			minsplit = 2L * minimum.node.size, maxdepth = maximum.depth))
-	prediction.data <- environment.tree
-	names(prediction.data) <- predictor.names
-	habitats.by.size[, m] <- predict(models.by.size[[m]],
-		newdata = prediction.data, type = "node")
-	size.diagnostics$habitats[m] <- length(unique(habitats.by.size[, m]))
-}
-print(size.diagnostics)
-```
-
-Do not compare node numbers across these fits as if they named the same habitat. Compare the maps, split rules and environmental profiles. Reusing the same flora to fit and describe either map still gives a descriptive comparison, so these two fitted maps do not supply an independent size-specific association test. The separate occurrence filters also retain different species panels and Hellinger denominators. Differences reflect species turnover, sample size and filtering as well as size-related environmental pattern. When asking about within-species size responses, compare a shared species panel as a sensitivity.
-
-# Choose a map for the common downstream workflow
-
-Every evaluated method above leaves a named integer vector in quadrat order. Choose one explicitly for mapping, community summaries and the later fixed-map torus demonstration; retain the method-specific objects to compare alternatives.
+Choose a map in the first line below. The rest of the tutorial evaluates
+this one map. To compare alternative maps, repeat these sections for
+each one using the same quadrats and species data. Class sizes,
+environmental profiles and indicator species can help you choose a
+useful number of habitats. Choose your map before using species data to
+test associations with it.
 
 ```{r}
-#| label: choose-habitat-classification
-
-selected.map = "standardized hclust"
-selected.features = c("elevation_m", "slope_deg", "tpi_m")
-map.uses.test.flora = FALSE      # TRUE if the association species helped fit/select it.
+#| label: choose-habitat-map
 
 habitats <- habitat.hclust
 # habitats <- habitat.raw
 # habitats <- habitat.fanny
 # habitats <- habitat.ctree
-# For the floristic tree, also set map.uses.test.flora = TRUE above.
+# habitats <- habitat.rcp  # If you ran the optional recipe.
+use.smoothed.map = FALSE  # Set TRUE to use the filtered map below.
 
 stopifnot(identical(names(habitats), quadrats$quadrat_id),
-	length(habitats) == nrow(composition), !anyNA(habitats))
+	identical(names(habitats), rownames(composition)), !anyNA(habitats))
+
+habitats.original <- habitats
 ```
 
-The selected map can be reused without rerunning its fit. Save the native model and its preprocessing choices alongside the assignments; save fuzzy memberships or RCP probabilities separately when using them. Selecting a flora-informed map changes the interpretation of any subsequent species-association summary.
+The filter uses each quadrat and the eight neighbours in its 3 × 3
+window. It replaces the habitat with the most common label in that
+window. At the edge of the plot, it uses the cells within the plot. When
+several labels are equally common, the quadrat keeps its original label.
+All windows use the original map.
+
+```{r}
+#| label: smooth-habitat-map
+#| fig-height: 5.5
+
+# Put the habitat labels on the 20 m grid, using quadrat centres for alignment.
+habitat.grid <- terra::rast(terra::ext(plot.extent),
+	resolution = quadrat.size, crs = "")
+quadrat.xy <- cbind(x = (quadrats$xmin + quadrats$xmax) / 2,
+	y = (quadrats$ymin + quadrats$ymax) / 2)
+quadrat.cells <- terra::cellFromXY(habitat.grid, quadrat.xy)
+
+stopifnot(length(quadrat.cells) == terra::ncell(habitat.grid),
+	!anyNA(quadrat.cells), !anyDuplicated(quadrat.cells),
+	isTRUE(all.equal(quadrat.xy, terra::xyFromCell(habitat.grid, quadrat.cells))))
+
+habitat.labels <- levels(factor(habitats.original))
+habitat.key <- data.frame(code = seq_along(habitat.labels),
+	habitat = habitat.labels)
+original.codes <- integer(terra::ncell(habitat.grid))
+original.codes[quadrat.cells] <- match(habitats.original, habitat.labels)
+terra::values(habitat.grid) <- original.codes
+
+# Each row gives the labels in one window. tabulate() skips NA at the edges.
+windows <- terra::focalValues(habitat.grid, w = 3)
+smoothed.codes <- original.codes
+
+for(i in seq_len(nrow(windows)))
+{
+	counts <- tabulate(windows[i, ], nbins = length(habitat.labels))
+	most.common <- which(counts == max(counts))
+
+	if(length(most.common) == 1L)
+		smoothed.codes[i] <- most.common
+}
+
+# Back in quadrat order, even when the raster has a different cell order.
+habitats.smoothed <- habitat.labels[smoothed.codes[quadrat.cells]]
+names(habitats.smoothed) <- quadrats$quadrat_id
+c(changed.quadrats = sum(habitats.smoothed != habitats.original),
+	total.quadrats = length(habitats.original))
+
+original.map <- habitat.grid
+smoothed.map <- habitat.grid
+terra::values(smoothed.map) <- smoothed.codes
+levels(original.map) <- habitat.key
+levels(smoothed.map) <- habitat.key
+
+old.par <- par(mfrow = c(2, 1))
+terra::plot(original.map, main = "Original map", all_levels = TRUE)
+terra::plot(smoothed.map, main = "After one 3 × 3 filter", all_levels = TRUE)
+par(old.par)
+
+# Switch the map for the rest of the tutorial using the option above.
+habitat.raster <- original.map
+
+if(use.smoothed.map)
+{
+	habitats <- habitats.smoothed
+	habitat.raster <- smoothed.map
+}
+```
+
+One pass changes 102 of the 1,250 quadrats in the default BCI map.
+
+Check how much area each habitat covers and which conditions it
+represents. The table gives the class size and median environmental
+values for the chosen map.
 
 ```{r}
 #| label: habitat-environmental-profiles
 
 profile.columns = c("elevation_m", "slope_deg", "tpi_m")
 
-# Read class numbers through area and environmental measurements, not their order.
-profiles <- expand.grid(habitat = sort(unique(as.character(habitats))),
-	variable = profile.columns, stringsAsFactors = FALSE)
-profiles$area.ha <- NA_real_
-profiles$median <- NA_real_
-profiles$q25 <- NA_real_
-profiles$q75 <- NA_real_
-for(i in seq_len(nrow(profiles)))
-{
-	keep <- as.character(habitats) == profiles$habitat[i]
-	values <- environment[keep, profiles$variable[i]]
-	profiles$area.ha[i] <- sum((quadrats$xmax[keep] - quadrats$xmin[keep]) *
-		(quadrats$ymax[keep] - quadrats$ymin[keep])) / 10000
-	profiles$median[i] <- median(values)
-	profiles$q25[i] <- quantile(values, 0.25)
-	profiles$q75[i] <- quantile(values, 0.75)
-}
+profiles <- aggregate(environment[, profile.columns, drop = FALSE],
+	by = list(habitat = habitats), FUN = median)
+
+sizes <- table(habitats)
+profiles$quadrats <- as.integer(sizes[as.character(profiles$habitat)])
+profiles$area_ha <- profiles$quadrats * quadrat.size^2 / 10000
+
 knitr::kable(profiles, digits = 2, row.names = FALSE)
 ```
 
-Use these profiles for provisional descriptions such as lower-elevation steep terrain or relatively elevated, gentle terrain. Preserve the measured ranges: an attractive name can hide substantial overlap between classes. These labels describe the environmental partition, not which species should prefer it. With the supplied standardized BCI defaults, classes 4 and 5 occupy 18.2 and 19.6 ha, with median elevations of about 141.2 and 152.0 m and gentle median slopes. Classes 1 and 3 cover only 0.60 and 0.52 ha: both are steep, but their median TPI has opposite signs. That small spatial support deserves attention when interpreting their species associations.
+# Indicator species {#sec-indicators}
+
+An indicator species is common across quadrats of a habitat and
+concentrated in that habitat. `indicspecies::strassoc()` describes both
+properties with `IndVal.g`. It uses the mean abundance in each habitat
+to measure concentration, so habitats can have different numbers of
+quadrats. The score is the square root of the product of concentration
+and the fraction of quadrats in the habitat where the species occurs (De
+Cáceres and Legendre, 2009).
 
 ```{r}
-#| label: save-fixed-habitat-map
+#| label: indicator-species
 
-fixed.map.file = file.path(output.dir, "fixed-map-inputs.rds")
+minimum.indicator.abundance = 1L  # Individuals in the whole plot.
+number.to.show = 3L               # Species to show per habitat.
 
-# This checkpoint is sufficient for the independent torus route below.
-saveRDS(list(quadrats = quadrats, composition = composition, habitats = habitats,
-	individuals = individuals, plot.extent = plot.extent,
-	map.uses.test.flora = map.uses.test.flora), fixed.map.file)
-```
+keep <- colSums(composition) >= minimum.indicator.abundance
+stopifnot(any(keep), identical(names(habitats), rownames(composition)))
 
-# Habitat layers and spatial coherence {#sec-storage}
+groups <- factor(habitats)
+indicator.values <- indicspecies::strassoc(composition[, keep, drop = FALSE],
+	cluster = as.integer(groups), func = "IndVal.g")
+colnames(indicator.values) <- levels(groups)
 
-Similarity in environment does not imply geographical adjacency. Several disconnected slopes may reasonably share one class. Contiguous zones answer a different mapping objective: packages such as `adespatial` offer spatially constrained methods, whereas posthoc smoothing changes an existing partition. This section stores the original map and offers one explicit sensitivity filter. Neither a neighbourhood penalty nor a majority filter necessarily guarantees that every habitat forms one connected region.
+# Keep the full score matrix. Show the highest positive scores for each habitat.
+top.indicators <- vector("list", ncol(indicator.values))
 
-## Store a categorical layer
-
-Run after choosing `habitats`; this section needs only `quadrats`, `habitats`, and `individuals`, not a fitted model. Classes are nominal: a mean of their numeric codes has no ecological interpretation. An explicit key preserves arbitrary labels, including nonconsecutive tree-node numbers or text labels.
-
-```{r}
-#| label: categorical-habitat-raster
-# output.dir = "/full/path/to/outputs"  # Otherwise retain the setup's folder.
-overwrite.outputs = FALSE
-
-# Requires: one named habitat label for every cell of a complete regular grid.
-stopifnot(identical(names(habitats), quadrats$quadrat_id), !anyNA(habitats))
-cell.width <- unique(quadrats$xmax - quadrats$xmin)
-cell.height <- unique(quadrats$ymax - quadrats$ymin)
-stopifnot(length(cell.width) == 1, length(cell.height) == 1)
-habitat.raster <- terra::rast(xmin = min(quadrats$xmin),
-    xmax = max(quadrats$xmax), ymin = min(quadrats$ymin),
-    ymax = max(quadrats$ymax), resolution = c(cell.width, cell.height), crs = "")
-quadrat.xy <- cbind((quadrats$xmin + quadrats$xmax) / 2,
-    (quadrats$ymin + quadrats$ymax) / 2)
-quadrat.cells <- terra::cellFromXY(habitat.raster, quadrat.xy)
-stopifnot(!anyNA(quadrat.cells), !anyDuplicated(quadrat.cells),
-    length(quadrat.cells) == terra::ncell(habitat.raster),
-    max(abs(quadrat.xy - terra::xyFromCell(habitat.raster, quadrat.cells))) <
-        min(cell.width, cell.height) * 1e-8)
-
-# Use cell indexes: quadrat order need not be raster order (north to south).
-habitat.labels <- sort(unique(as.character(habitats)))
-habitat.key <- data.frame(habitat_code = seq_along(habitat.labels),
-    habitat_label = habitat.labels)
-raster.codes <- rep(NA_integer_, terra::ncell(habitat.raster))
-raster.codes[quadrat.cells] <- match(as.character(habitats), habitat.labels)
-terra::values(habitat.raster) <- raster.codes
-levels(habitat.raster) <- habitat.key
-names(habitat.raster) <- "habitat_code"
-stopifnot(identical(habitat.key$habitat_label[
-    terra::values(habitat.raster)[quadrat.cells, 1]], as.character(habitats)))
-
-dir.create(output.dir, recursive = TRUE, showWarnings = FALSE)
-terra::writeRaster(habitat.raster, file.path(output.dir, "habitat-map.tif"),
-    datatype = "INT4S", overwrite = overwrite.outputs)
-write.csv(habitat.key, file.path(output.dir, "habitat-key.csv"), row.names = FALSE)
-write.csv(data.frame(quadrat_id = quadrats$quadrat_id, cell = quadrat.cells,
-    habitat_code = raster.codes[quadrat.cells]),
-    file.path(output.dir, "habitat-quadrats.csv"), row.names = FALSE)
-plot(habitat.raster, main = "Chosen habitat classification")
-if(exists("terrain.filled") && !is.null(terrain.filled))
-	writeRaster(terrain.filled, file.path(output.dir, "terrain-filled-cells.tif"),
-		overwrite = overwrite.outputs)
-```
-
-Coordinates remain in the plot's local metres (`crs = ""`). Do not attach a geographic CRS without a real coordinate transformation. Keep the GeoTIFF and its sidecar files together; the CSV key also documents the code-to-label mapping.
-
-## Optional: one modal-filter sensitivity map
-
-This replaces every cell simultaneously with its 3 × 3 neighbourhood mode, including the focal cell. Outside-grid neighbours are missing and ignored; there is no toroidal wrapping. Ties choose the lowest storage code, an arbitrary but reproducible convention. This can erase small real habitats, so retain the original and compare results rather than assuming smoothing improves the map.
-
-```{r}
-#| label: optional-modal-habitat-map
-run.modal.filter = FALSE
-tie.rule = "lowest"
-
-# Requires the stored raster/key, quadrat.cells and the original habitats.
-if(run.modal.filter)
+for(h in seq_len(ncol(indicator.values)))
 {
-    # The nine layers all come from the original map: one synchronous pass.
-    neighbourhood <- terra::rast(habitat.raster, nlyrs = 9)
-    terra::values(neighbourhood) <- terra::focalValues(habitat.raster, w = 3, fill = NA)
-    habitat.raster.modal <- terra::modal(neighbourhood, ties = tie.rule, na.rm = TRUE)
-    levels(habitat.raster.modal) <- habitat.key
-    names(habitat.raster.modal) <- "habitat_code"
-    filtered.codes <- terra::values(habitat.raster.modal)[quadrat.cells, 1]
-    habitat.modal <- habitat.key$habitat_label[filtered.codes]
-    names(habitat.modal) <- names(habitats)
-    print(c(changed_cells = sum(habitat.modal != as.character(habitats)),
-        changed_fraction = mean(habitat.modal != as.character(habitats))))
-    print(table(original = as.character(habitats), filtered = habitat.modal))
-    plot(habitat.raster.modal, main = "One modal-filter pass")
+	scores <- indicator.values[, h]
+	best <- order(scores, decreasing = TRUE)
+	best <- head(best[scores[best] > 0], number.to.show)
+
+	top.indicators[[h]] <- data.frame(habitat = rep(colnames(indicator.values)[h], length(best)),
+		species = rownames(indicator.values)[best], indicator = scores[best])
 }
+
+top.indicators <- do.call(rbind, top.indicators)
+knitr::kable(top.indicators, digits = 2, row.names = FALSE)
 ```
 
-`habitats` and `habitat.raster` remain the selected original map. To analyse the filtered map, explicitly select `habitat.modal` as a separate sensitivity analysis.
+Use the scores to describe each habitat, including habitats fitted with
+these same species. An independent evaluation requires other
+observations. `indicspecies::multipatt()` can also examine combinations
+of habitats (De Cáceres et al., 2010).
 
-## Points
+# Species–habitat associations with torus translations {#sec-association}
 
-For the prepared census, retained quadrat IDs give exactly the original boundary convention. For new points use simple categorical extraction, never bilinear interpolation. `terra` assigns a point on an internal horizontal grid line to the cell below; the preparation's bottom-inclusive rule assigns it above. Use the existing quadrat-assignment recipe first when matching that convention.
-
-```{r}
-#| label: extract-habitat-at-points
-point.rows = seq_len(min(5L, nrow(individuals)))
-
-# Census lookup preserves the assignments used to build composition.
-census.habitats <- data.frame(individual_id = individuals$individual_id,
-    habitat_label = as.character(habitats)[
-        match(individuals$quadrat_id, quadrats$quadrat_id)])
-
-# Replace these example coordinates with new query points in local metres.
-query.points <- terra::vect(individuals[point.rows, c("x", "y"), drop = FALSE],
-    geom = c("x", "y"), crs = "")
-point.codes <- terra::extract(habitat.raster, query.points,
-    method = "simple", ID = FALSE, raw = TRUE)[, 1]
-point.habitats <- data.frame(point_row = point.rows, habitat_code = point.codes,
-    habitat_label = habitat.key$habitat_label[match(point.codes, habitat.key$habitat_code)])
-point.habitats
-```
-
-## Buffers, quadrats and arbitrary polygons
-
-The same recipe gives class areas for all three geometries. Fractions below use the **mapped part** of each geometry as denominator; outside-map area is excluded. An absent class has zero area; a geometry with no mapped overlap has `NA` fractions. Overlapping query regions are summarised separately. `exact = TRUE` weights each class by the fraction of each raster cell covered by the query polygon.
-
-```{r}
-#| label: extract-habitat-area-fractions
-buffer.rows = c(1L, 2L)
-buffer.radius.m = 25
-quadrat.rows = c(1L, 2L)
-polygon.wkt = "POLYGON ((100 100, 200 100, 150 200, 100 100))"
-
-# Requires the stored map/key; geometry coordinates use the same local metres.
-buffer.points <- terra::vect(individuals[buffer.rows, c("x", "y"), drop = FALSE],
-    geom = c("x", "y"), crs = "")
-buffers <- terra::buffer(buffer.points, width = buffer.radius.m)
-terra::values(buffers) <- data.frame(region_id = paste0("buffer_", buffer.rows))
-quadrat.polygons <- terra::as.polygons(habitat.raster,
-    aggregate = FALSE, values = FALSE)[quadrat.cells[quadrat.rows], ]
-terra::values(quadrat.polygons) <- data.frame(
-    region_id = paste0("quadrat_", quadrats$quadrat_id[quadrat.rows]))
-polygons <- terra::vect(polygon.wkt, crs = "")
-terra::values(polygons) <- data.frame(region_id = paste0("polygon_", seq_len(nrow(polygons))))
-regions <- rbind(buffers, quadrat.polygons, polygons)
-
-overlap <- as.data.frame(terra::extract(habitat.raster, regions,
-    exact = TRUE, raw = TRUE))
-keep <- !is.na(overlap$habitat_code) & is.finite(overlap$fraction) & overlap$fraction > 0
-overlap <- overlap[keep, , drop = FALSE]
-overlap$area_m2 <- overlap$fraction * prod(terra::res(habitat.raster))
-areas <- data.frame(ID = integer(), habitat_code = integer(), area_m2 = numeric())
-if(nrow(overlap) > 0)
-    areas <- aggregate(area_m2 ~ ID + habitat_code, data = overlap, FUN = sum)
-
-# Include zero-area classes and preserve query regions with no overlap.
-area.fractions <- merge(expand.grid(ID = seq_len(nrow(regions)),
-    habitat_code = habitat.key$habitat_code), areas, all.x = TRUE)
-area.fractions$area_m2[is.na(area.fractions$area_m2)] <- 0
-area.fractions$mapped_area_m2 <- ave(area.fractions$area_m2, area.fractions$ID, FUN = sum)
-area.fractions$fraction_mapped <- NA_real_
-has.area <- area.fractions$mapped_area_m2 > 0
-area.fractions$fraction_mapped[has.area] <- area.fractions$area_m2[has.area] /
-    area.fractions$mapped_area_m2[has.area]
-area.fractions$region_id <- regions$region_id[area.fractions$ID]
-area.fractions$habitat_label <- habitat.key$habitat_label[
-    match(area.fractions$habitat_code, habitat.key$habitat_code)]
-area.fractions[, c("region_id", "habitat_label", "area_m2",
-    "mapped_area_m2", "fraction_mapped")]
-```
-
-For FANNY, keep all columns of `membership.fanny` alongside the hard map. On this same grid, place each column into a raster layer through `quadrat.cells`, as above, and save the stack as continuous memberships. Weighted polygon means then describe mean affiliation, not the area of a hard habitat. Model-based probabilities can use the same storage pattern, with their distinct meaning recorded. Avoid bilinear interpolation of hard habitat codes.
-
-# A bounded diagnostic comparison {#sec-comparison}
-
-Compare a few plausible maps on the same quadrats, rather than treating every combination of M, k, predictors and smoothing as a tournament. The table below asks whether a partition is adequately represented, separates a **common** environmental space and has recognizable indicator species. These are diagnostics, not independent validation or a universal ranking of methods. More classes usually improve within-class fit; that alone does not justify their complexity.
-
-The indicator calculation uses the group-equalized `IndVal.g` of `indicspecies`. It combines specificity and fidelity to groups of sites; the package reports its square root. A species can indicate a combination of habitats rather than a single one (De Cáceres et al., 2010). Here, single-group strengths keep the comparison small, and **no permutation p-values are calculated**. The species used to fit or choose a map cannot then provide an independent test of its quality (De Cáceres and Legendre, 2009).
-
-```{r}
-#| label: compare-habitat-maps
-
-diagnostic.columns = c("elevation_m", "slope_deg", "tpi_m")
-minimum.indicator.abundance = 50L
-
-# Keep only maps that you fitted. This list is the sole method-specific edit.
-maps <- list(legacy = habitat.raw, standardized = habitat.hclust,
-	fanny.hard = habitat.fanny, floristic.tree = habitat.ctree)
-diagnostic.environment <- scale(environment[, diagnostic.columns, drop = FALSE])
-diagnostic.distance <- dist(diagnostic.environment)
-diagnostic.species <- colSums(composition) >= minimum.indicator.abundance
-diagnostics <- data.frame(method = names(maps), habitats = NA_integer_,
-	smallest.class = NA_integer_, largest.class = NA_integer_,
-	environment.silhouette = NA_real_, environment.within.fraction = NA_real_,
-	mean.best.indicator = NA_real_)
-indicator.strength <- vector("list", length(maps))
-names(indicator.strength) <- names(maps)
-total.ss <- sum(scale(diagnostic.environment, center = TRUE, scale = FALSE)^2)
-
-for(j in seq_along(maps))
-{
-	if(!is.null(names(maps[[j]])))
-		stopifnot(identical(names(maps[[j]]), rownames(composition)))
-	groups <- match(as.character(maps[[j]]), unique(as.character(maps[[j]])))
-	stopifnot(length(groups) == nrow(composition), !anyNA(groups))
-	sizes <- tabulate(groups)
-	diagnostics$habitats[j] <- length(sizes)
-	diagnostics$smallest.class[j] <- min(sizes)
-	diagnostics$largest.class[j] <- max(sizes)
-	if(length(sizes) > 1 && length(sizes) < length(groups))
-		diagnostics$environment.silhouette[j] <-
-			mean(silhouette(groups, diagnostic.distance)[, "sil_width"])
-	centres <- rowsum(diagnostic.environment, groups) / sizes
-	within.ss <- sum((diagnostic.environment - centres[groups, , drop = FALSE])^2)
-	diagnostics$environment.within.fraction[j] <- within.ss / total.ss
-	indicator.strength[[j]] <- strassoc(composition[, diagnostic.species, drop = FALSE],
-		cluster = groups, func = "IndVal.g")
-	diagnostics$mean.best.indicator[j] <-
-		mean(apply(indicator.strength[[j]], 1, max))
-}
-print(diagnostics, digits = 3, row.names = FALSE)
-```
-
-This common-space silhouette differs from the FANNY selection diagnostic if its distance or PCA options differ. The within-class fraction is a description in the declared standardized space, not out-of-sample prediction error. Compare environmental profiles and class areas as well as these numbers. Changing the number of classes or retained species changes the opportunities for a strong indicator. For M \> 1, report each assemblage's size and k separately; do not compare indicator strength across different populations as a controlled method comparison.
-
-For a bounded sensitivity analysis, change **one** consequential choice: for example, compare k = 3, 4 and 5 at fixed predictors, or include one soil variable at fixed k. Keep the same eligible population. Record whether environmental interpretation and association conclusions change, including the cost of small classes. A later census assesses temporal robustness when prepared with the same rules. Predictive tuning requires held-out spatial blocks and all preprocessing fitted within each training fold; ordinary leave-one-quadrat-out validation can be optimistic under spatial dependence (Roberts et al., 2017). Neither this table nor a torus test validates the entire map-selection process.
-
-# Species--habitat association with a fixed map {#sec-association}
-
-Use a map defined from environmental information, fixed before examining the focal species. Indicator strengths above describe a map; the following spatial randomization asks whether observed species shares depart from random alignment with that map. Selecting a floristically fitted map changes this interpretation.
+Harms et al. (2001) moved the habitat map to assess species associations
+at BCI. Here `translate_around_torus()` moves the trees together and
+keeps the quadrats and their habitat labels fixed. Trees that cross
+one edge of the rectangle enter from the opposite edge. Each shift
+keeps the tree pattern intact on the wrapped plot.
 
 ## Set up an independent fixed-map analysis
 
-Read these ordinary objects directly if they were saved earlier; fitted classifiers and environmental rasters are not required here.
+Use the selected `habitats` vector, the aligned `composition` matrix
+and the matching `quadrats` table. The original `individuals` table
+must contain `x`, `y` and `species` for the trees counted in the matrix.
+Use the bounds of the full rectangular `plot.extent`, with a habitat
+label for every quadrat.
 
-| Object        | Required contents                                                                                                    |
-|------------------------------------|------------------------------------|
-| `quadrats`    | Complete Cartesian rectangular tiling with `quadrat_id`, `xmin`, `xmax`, `ymin`, `ymax`; include empty quadrats.     |
-| `composition` | Quadrat-by-species individual-count matrix for all eligible species; row names equal `quadrats$quadrat_id` in order. |
-| `habitats`    | One fixed, nonmissing class per quadrat, aligned with `composition`.                                                 |
-| `individuals` | One row per eligible individual with `x`, `y`, `species`; the same population that produced `composition`.           |
-| `plot.extent` | Known bounds `c(xmin, xmax, ymin, ymax)` in the same coordinate system.                                              |
+Choose the map before assessing associations. If the same trees helped
+fit or choose the map, use the labels as descriptions of those trees.
+For an independent test, use data that played no part in choosing or
+fitting the map.
 
-The following optional entry chunk starts a new script from the checkpoint above. Set real paths first; otherwise continue with the objects already in memory. It needs only base R and the original translator, not the classifiers. For your own map, supply the same objects directly and declare whether the test flora helped fit **or select** it.
+To use a saved map in a separate script, load the objects saved under
+[Store results](#sec-storage).
 
 ```{r}
 #| label: restart-fixed-map-analysis
 #| eval: false
-#| code-fold: true
-#| code-summary: "Start a separate script from saved ordinary objects"
 
 path.to.fgeo2 = "/full/path/to/fgeo2"
-fixed.map.file = "/full/path/to/fixed-map-inputs.rds"
+map.file = "/full/path/to/habitat-map.rds"
 
-inputs <- readRDS(fixed.map.file)
-quadrats <- inputs$quadrats
-composition <- inputs$composition
-habitats <- inputs$habitats
-individuals <- inputs$individuals
-plot.extent <- inputs$plot.extent
-map.uses.test.flora <- inputs$map.uses.test.flora
-source(file.path(path.to.fgeo2, "03_spatial/R/new/spatial-null-models.R"))
+map <- readRDS(map.file)
+habitats <- map$habitats
+composition <- map$composition
+quadrats <- map$quadrats
+individuals <- map$individuals
+plot.extent <- map$plot.extent
 ```
 
-Prepare **one census and one eligible population**, resolving multiple stems, status and dbh limits beforehand. Selecting focal species below does not remove other species from the community background. For a dbh-specific analysis, first regenerate both community inputs for that class. Do not infer plot bounds from occupied tree locations.
-
-The existing `translate_around_torus()` returns one matrix per coordinate dimension, with points in rows and simulations in columns. We request one simulation per iteration and keep the habitat map fixed. All marked individuals receive the same x displacement and the same y displacement. This preserves species totals and within- and between-species **toroidal** geometry. Ordinary Euclidean distances across the wrapped rectangle's edges need not be preserved. There are no reflections, rotations or separate shifts for different species.
-
-The null is random alignment of this intact community with the map under uniform continuous translations. Its interpretation requires translation exchangeability; a rectangle alone does not establish stationarity or ecological periodicity. Inspect directional trends and artificial joins across opposite edges. Missing habitat cells and irregular plot masks require another explicit null design; this example rejects them rather than dropping translated points.
-
-::: {.callout-note collapse="true"}
 ## Check a small rectangle by hand
 
-For $[10,18)\times[20,24)$, shifting $(15,21)$ by $(3,1)$ gives $(10,22)$. Initially each habitat contains three individuals: A's relative-density ratios are `(2, 0)`, B's are `(0, 2)` and C's are `(1, 1)`.
-
-```{r}
-#| label: torus-rectangular-check
-
-# Use the repository path configured in setup or the independent entry.
-source(file.path(path.to.fgeo2, "03_spatial/R/new/spatial-null-models.R"))
-
-toy.xy <- cbind(x = c(11, 12, 15, 16, 13, 17),
-                y = c(21, 23, 21, 23, 21, 23))
-toy.species <- c("A", "A", "B", "B", "C", "C")
-toy.mins = c(10, 20)
-toy.maxs = c(18, 24)
-toy.step = c(3, 1)
-toy.wrapped <- toy.xy
-for(d in 1:2)
-	toy.wrapped[, d] <- toy.mins[d] +
-		(toy.xy[, d] + toy.step[d] - toy.mins[d]) %% (toy.maxs[d] - toy.mins[d])
-stopifnot(all(toy.wrapped == cbind(c(14, 15, 10, 11, 16, 12),
-                                  c(22, 20, 22, 20, 22, 20))))
-toy.counts <- table(toy.species, habitat = ifelse(toy.xy[, 1] < 14, "left", "right"))
-toy.ratio <- sweep(sweep(toy.counts, 2, colSums(toy.counts), "/"),
-                   1, rowSums(toy.counts) / sum(toy.counts), "/")
-stopifnot(all(toy.ratio == rbind(c(2, 0), c(0, 2), c(1, 1))))
-toy.shifted.counts <- table(toy.species,
-                            habitat = ifelse(toy.wrapped[, 1] < 14, "left", "right"))
-stopifnot(all(toy.shifted.counts == rbind(c(0, 2), c(2, 0), c(1, 1))))
-toy.counts
-toy.ratio
-
-# Reproduce the existing translator's random steps; verify shared displacements.
-set.seed(904)
-toy.random.step <- c(runif(1, 0, 8), runif(1, 0, 4))
-set.seed(904)
-toy.translation <- translate_around_torus(toy.xy, mins = toy.mins,
-                                         maxs = toy.maxs, nsim = 1)
-for(d in 1:2)
-	stopifnot(max(abs((toy.translation[[d]][, 1] - toy.xy[, d]) %%
-	                 (toy.maxs[d] - toy.mins[d]) - toy.random.step[d])) < 1e-10)
-```
-:::
+Put two 20 × 20 m quadrats side by side in a 40 × 20 m rectangle. Two
+trees of species A are in the left quadrat at (5, 5) and (8, 15).
+Two trees of species B are in the right quadrat at (25, 5) and (28, 15).
+A shift of 20 m in x puts A in the right quadrat and B in the left.
+For A in the left habitat, the observed count is 2 and the count
+after this shift is 0. A real analysis draws many shifts in x and y.
 
 ## Specify the statistic
 
-Let $n_{sh}$ be species $s$'s individual count in habitat $h$, $n_h$ the count of **all eligible individuals** there, $n_s$ its plot-wide count and $n$ the community total. The [legacy `tt_test()` source](https://github.com/forestgeo/fgeo.analyze/blob/d69bfe711263305fcbaf322d402eba2f1edfb084/R/tt_test.R) calculates `spstcnthab / totstcnthab`, or $n_{sh}/n_h$, recomputing both counts for each translated map. We divide it by the species' constant plot-wide frequency:
+For each species and habitat, `OBS` is the observed number of trees and
+`EXP` contains the counts after 999 shifts. The score is
+`mean(EXP > OBS)`, the proportion of shifted counts above the observed
+count. A small score places the observation near the upper end of
+the null distribution, subject to ties. A large score puts it near the
+lower end.
 
-$$R_{sh}=\frac{n_{sh}/n_h}{n_s/n}.$$
-
-This rescaling preserves its ordering across shifts. Two means twice the plot-wide species share. One is a composition reference, not necessarily the mean of the simulated ratios. Our continuous point shifts differ from the legacy exhaustive quadrat-map shifts and reflections: these are not identical nulls.
-
-The alternative `"area_density"` uses $R^{\mathrm{area}}_{sh}=(n_{sh}/A_h)/(n_s/A)$. Its fixed area denominator makes testing this ratio equivalent to testing the species count. It tests species intensity per area, without controlling for community density. Choose the scientific denominator before running the analysis.
+Harms et al. (2001) and the legacy `tt_test()` compare the species'
+share of all stems within each habitat. Here we compare individual
+counts within each fixed habitat. A count can be high where tree
+density is high in general.
 
 ```{r}
 #| label: torus-options
 
-nsim = 999             # Use 999 for a quick check, with coarser p resolution.
+nsim = 999L
 torus.seed = 123L
-minimum.abundance = 50L  # Focal reporting filter; background stays complete.
-focal.species = NULL     # Or an explicit vector of species codes.
-association.statistic = "relative_density"  # Alternative: "area_density".
-p.adjust.method = "BH"  # Alternatives: "holm" or "none".
-alpha = 0.05
+minimum.abundance = 50L  # Minimum number of individuals of a species in the plot.
+tail.cutoff = 0.025      # Proportion in each tail used to assign a label.
 
-# This worked inference requires a map chosen independently of the test flora.
-# For a supplied map, declare map.uses.test.flora explicitly before this chunk.
-if(!identical(map.uses.test.flora, FALSE))
-	stop("Use an independent fixed map for inference; describe a floristically fitted map separately.")
+stopifnot(nsim >= 1L, nsim == floor(nsim), tail.cutoff > 0, tail.cutoff < 0.5)
+source(file.path(path.to.fgeo2, "03_spatial/R/new/spatial-null-models.R"))
 ```
 
 ## Align the map, counts and points
 
-The boundary lookup handles arbitrary quadrat-table order. Internal edges belong to the cell on their right/top; observed points at the outer maximum belong to the final cell, matching the native left/bottom boundary convention.
+Use the quadrat edges to assign trees after each shift. A tree on an
+internal edge belongs to the quadrat to its right or above, as in
+the data preparation.
 
 ```{r}
 #| label: torus-align-inputs
 #| code-fold: true
-#| code-summary: "Check alignment and construct the rectangular point lookup"
+#| code-summary: "Align the grid and check that the coordinates reproduce the counts"
 
-stopifnot(nsim >= 1, nsim == floor(nsim),
-          association.statistic %in% c("relative_density", "area_density"))
-composition <- as.matrix(composition)
-stopifnot(all(is.finite(composition)), all(composition >= 0),
-          all(composition == floor(composition)), !is.null(colnames(composition)),
-          !anyNA(colnames(composition)), !anyDuplicated(colnames(composition)),
-          !anyNA(quadrats$quadrat_id), !anyDuplicated(quadrats$quadrat_id),
-          identical(rownames(composition), as.character(quadrats$quadrat_id)),
-          length(habitats) == nrow(quadrats), !anyNA(habitats))
-if(!is.null(names(habitats)))
-	stopifnot(identical(names(habitats), rownames(composition)))
+stopifnot(identical(rownames(composition), quadrats$quadrat_id),
+	identical(names(habitats), quadrats$quadrat_id), !anyNA(habitats))
 
-torus.mins <- plot.extent[c(1, 3)]
-torus.maxs <- plot.extent[c(2, 4)]
-stopifnot(all(is.finite(plot.extent)), all(torus.maxs > torus.mins),
-          all(is.finite(as.matrix(quadrats[c("xmin", "xmax", "ymin", "ymax")]))),
-          all(quadrats$xmax > quadrats$xmin), all(quadrats$ymax > quadrats$ymin))
-x.breaks <- sort(unique(c(quadrats$xmin, quadrats$xmax)))
-y.breaks <- sort(unique(c(quadrats$ymin, quadrats$ymax)))
-nx <- length(x.breaks) - 1L
-ny <- length(y.breaks) - 1L
-qx <- match(quadrats$xmin, x.breaks)
-qy <- match(quadrats$ymin, y.breaks)
-cell <- qx + (qy - 1L) * nx
-stopifnot(nrow(quadrats) == nx * ny, !anyDuplicated(cell),
-          all(quadrats$xmax == x.breaks[qx + 1L]),
-          all(quadrats$ymax == y.breaks[qy + 1L]),
-          all(c(x.breaks[1], tail(x.breaks, 1)) == plot.extent[1:2]),
-          all(c(y.breaks[1], tail(y.breaks, 1)) == plot.extent[3:4]))
-cell.to.quadrat <- integer(nx * ny)
-cell.to.quadrat[cell] <- seq_len(nrow(quadrats))
+# Map each grid position to its row in the quadrat table.
+x.edges <- sort(unique(c(quadrats$xmin, quadrats$xmax)))
+y.edges <- sort(unique(c(quadrats$ymin, quadrats$ymax)))
+nx <- length(x.edges) - 1L
+ny <- length(y.edges) - 1L
 
-coordinates <- as.matrix(individuals[c("x", "y")])
-species.i <- match(as.character(individuals$species), colnames(composition))
-stopifnot(nrow(individuals) > 0, all(is.finite(coordinates)), !anyNA(species.i),
-          all(individuals$x >= torus.mins[1] & individuals$x <= torus.maxs[1]),
-          all(individuals$y >= torus.mins[2] & individuals$y <= torus.maxs[2]))
-ix <- pmin(findInterval(individuals$x, x.breaks), nx)
-iy <- pmin(findInterval(individuals$y, y.breaks), ny)
-quadrat.i <- cell.to.quadrat[ix + (iy - 1L) * nx]
-point.counts <- matrix(tabulate(quadrat.i + (species.i - 1L) * nrow(quadrats),
-                                nbins = length(composition)), nrow = nrow(quadrats))
+qx <- match(quadrats$xmin, x.edges)
+qy <- match(quadrats$ymin, y.edges)
+grid.cells <- cbind(qy, qx)
+
+stopifnot(nrow(quadrats) == nx * ny, !anyDuplicated(grid.cells),
+	all(quadrats$xmax == x.edges[qx + 1L]),
+	all(quadrats$ymax == y.edges[qy + 1L]),
+	all(c(range(x.edges), range(y.edges)) == plot.extent))
+
+grid.rows <- matrix(NA_integer_, nrow = ny, ncol = nx)
+grid.rows[grid.cells] <- seq_len(nrow(quadrats))
+
+# Check that the observed coordinates give the same quadrat counts.
+coordinates <- as.matrix(individuals[, c("x", "y")])
+species.index <- match(individuals$species, colnames(composition))
+
+ix <- findInterval(coordinates[, 1], x.edges, rightmost.closed = TRUE)
+iy <- findInterval(coordinates[, 2], y.edges, rightmost.closed = TRUE)
+stopifnot(all(ix >= 1L & ix <= nx), all(iy >= 1L & iy <= ny), !anyNA(species.index))
+
+quadrat.index <- grid.rows[cbind(iy, ix)]
+count.index <- quadrat.index + (species.index - 1L) * nrow(quadrats)
+point.counts <- matrix(tabulate(count.index, nbins = length(composition)),
+	nrow = nrow(quadrats))
+
 if(!all(point.counts == composition))
-	stop("individuals and composition describe different populations or quadrat assignments")
+	stop("The coordinates and composition matrix give different quadrat counts.")
 
-species.total <- colSums(composition)
-if(is.null(focal.species))
-	focal.species <- names(sort(species.total[species.total >= minimum.abundance],
-	                            decreasing = TRUE))
-stopifnot(length(focal.species) > 0, !anyNA(focal.species),
-          !anyDuplicated(focal.species), all(focal.species %in% colnames(composition)),
-          all(species.total[focal.species] > 0))
-habitat.levels <- sort(unique(as.character(habitats)))
-habitat.i <- match(as.character(habitats), habitat.levels)
-nh <- length(habitat.levels)
-nf <- length(focal.species)
-n.total <- nrow(individuals)
-focal.total <- as.numeric(species.total[focal.species])
-focal.i <- match(as.character(individuals$species), focal.species)
-focal.points <- !is.na(focal.i)
-habitat.area <- as.numeric(rowsum((quadrats$xmax - quadrats$xmin) *
-                                   (quadrats$ymax - quadrats$ymin), habitat.i))
-observed.habitat <- habitat.i[quadrat.i]
-observed.community <- tabulate(observed.habitat, nbins = nh)
-observed.counts <- matrix(tabulate(focal.i[focal.points] +
-                                    (observed.habitat[focal.points] - 1L) * nf,
-                                  nbins = nf * nh), nrow = nf)
-observed.relative <- sweep(sweep(observed.counts, 2, observed.community, "/"),
-                           1, focal.total / n.total, "/")
-area.expected <- outer(focal.total, habitat.area / sum(habitat.area))
-observed.statistic <- observed.relative
-if(association.statistic == "area_density")
-	observed.statistic <- observed.counts / area.expected
+# Keep the species to be assessed and add the observed counts by habitat.
+focal.species <- colnames(composition)[colSums(composition) >= minimum.abundance]
+stopifnot(length(focal.species) > 0)
+
+groups <- factor(habitats)
+habitat.index <- as.integer(groups)
+observed <- rowsum(composition[, focal.species, drop = FALSE], habitat.index)
+rownames(observed) <- levels(groups)
+
+focal.index <- match(individuals$species, focal.species)
+keep <- !is.na(focal.index)
+coordinates <- coordinates[keep, , drop = FALSE]
+focal.index <- focal.index[keep]
 ```
 
-## Shift the intact marked community
+## Shift the trees
 
-Store the small focal-species-by-habitat-by-simulation statistic array, not all translated coordinates. For 250 species, four habitats and 9,999 simulations this array occupies about 80 MB. Other calculations need additional working memory. Each iteration recomputes the habitat's **whole-community** denominator.
+Draw one displacement per iteration. All focal trees move by the same
+distance and direction, which keeps their spatial patterns and species
+totals. Store the resulting counts by habitat, species and shift.
 
 ```{r}
 #| label: torus-simulation
 
-null.statistics <- array(NA_real_, dim = c(nf, nh, nsim),
-                          dimnames = list(focal.species, habitat.levels, NULL))
+torus.mins <- plot.extent[c(1, 3)]
+torus.maxs <- plot.extent[c(2, 4)]
+
+expected <- array(0L, dim = c(dim(observed), nsim),
+	dimnames = c(dimnames(observed), list(NULL)))
+
 set.seed(torus.seed)
+
 for(b in seq_len(nsim))
 {
-	translated <- translate_around_torus(coordinates, mins = torus.mins,
-	                                     maxs = torus.maxs, nsim = 1)
-	ix <- pmin(findInterval(translated[[1]][, 1], x.breaks), nx)
-	iy <- pmin(findInterval(translated[[2]][, 1], y.breaks), ny)
-	translated.habitat <- habitat.i[cell.to.quadrat[ix + (iy - 1L) * nx]]
-	sim.community <- tabulate(translated.habitat, nbins = nh)
-	sim.counts <- matrix(tabulate(focal.i[focal.points] +
-	                               (translated.habitat[focal.points] - 1L) * nf,
-	                             nbins = nf * nh), nrow = nf)
-	stopifnot(sum(sim.community) == n.total, all(rowSums(sim.counts) == focal.total))
-	null.statistics[, , b] <- sweep(sweep(sim.counts, 2, sim.community, "/"),
-	                                1, focal.total / n.total, "/")
-	if(association.statistic == "area_density")
-		null.statistics[, , b] <- sim.counts / area.expected
+	shifted <- translate_around_torus(coordinates,
+		mins = torus.mins, maxs = torus.maxs, nsim = 1)
+
+	ix <- findInterval(shifted[[1]][, 1], x.edges, rightmost.closed = TRUE)
+	iy <- findInterval(shifted[[2]][, 1], y.edges, rightmost.closed = TRUE)
+	quadrat.index <- grid.rows[cbind(iy, ix)]
+	shifted.habitat <- habitat.index[quadrat.index]
+
+	# Each species has one set of slots, one slot per habitat.
+	count.index <- shifted.habitat + (focal.index - 1L) * nrow(observed)
+	expected[, , b] <- tabulate(count.index, nbins = length(observed))
 }
-null.statistics[!is.finite(null.statistics)] <- NA_real_
 ```
 
-## Summarize evidence, including unresolved cases
+## Summarize the associations
 
-With $B$ shifts, enrichment is $(1+\#\{R^{(b)}\geq R^{\mathrm{obs}}\})/(B+1)$; depletion uses $\leq$. Ties enter both tails; p-values cannot be zero. Double the smaller tail, capped at one, before adjusting one two-sided test per table row.
-
-An empty community in a habitat makes its relative-density statistic undefined. Count these shifts without redrawing, and withhold affected p-values even if only one shift was undefined. Finite-draw summaries are then partial. Consider the scientifically different area/count statistic or a predeclared broader population or less fragmented map, and restart; do not condition silently on nonempty habitats.
+Use a cutoff of 2.5% in each tail. A species is positively associated
+with a habitat if at least 97.5% of the shifts give fewer trees than
+observed. It is negatively associated if at least 97.5% give more.
+Otherwise the label is neutral at these cutoffs. If every shift gives
+the same count as observed, the label is neutral.
 
 ```{r}
 #| label: torus-results
 
-association <- expand.grid(species = focal.species, habitat = habitat.levels,
-                            KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
-association$n.sh <- as.vector(observed.counts)
-association$n.h <- rep(observed.community, each = nf)
-association$n.s <- rep(focal.total, times = nh)
-association$n.total <- n.total
-association$habitat.area <- rep(habitat.area, each = nf)
-association$effect.ratio <- as.vector(observed.statistic)
-association$statistic <- association.statistic
-association$null.n <- as.vector(apply(is.finite(null.statistics), c(1, 2), sum))
-association$undefined.shifts <- nsim - association$null.n
-association$null.mean <- as.vector(apply(null.statistics, c(1, 2), mean, na.rm = TRUE))
-association$null.sd <- as.vector(apply(null.statistics, c(1, 2), sd, na.rm = TRUE))
-null.quantiles <- apply(null.statistics, c(1, 2), quantile,
-                        probs = c(0.025, 0.5, 0.975), na.rm = TRUE)
-association$null.q025 <- as.vector(null.quantiles[1, , ])
-association$null.median <- as.vector(null.quantiles[2, , ])
-association$null.q975 <- as.vector(null.quantiles[3, , ])
-association$null.mean[association$null.n == 0] <- NA_real_
+association <- expand.grid(habitat = rownames(observed), species = colnames(observed),
+	KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
 
-null.difference <- sweep(null.statistics, c(1, 2), observed.statistic, "-")
-association$p.enrichment <- (1 + as.vector(apply(null.difference >= 0,
-                                                c(1, 2), sum, na.rm = TRUE))) / (nsim + 1)
-association$p.depletion <- (1 + as.vector(apply(null.difference <= 0,
-                                               c(1, 2), sum, na.rm = TRUE))) / (nsim + 1)
-complete.null <- is.finite(association$effect.ratio) & association$null.n == nsim
-association$p.enrichment[!complete.null] <- association$p.depletion[!complete.null] <- NA_real_
-association$p.two.sided <- pmin(1, 2 * pmin(association$p.enrichment, association$p.depletion))
-association$p.adjusted <- p.adjust(association$p.two.sided, method = p.adjust.method,
-                                    n = nrow(association))
-association$status <- "inconclusive"
-association$status[!complete.null] <- "undefined statistic"
-association$status[which(association$p.adjusted <= alpha &
-                           association$p.enrichment < association$p.depletion)] <- "enriched versus shifts"
-association$status[which(association$p.adjusted <= alpha &
-                           association$p.depletion < association$p.enrichment)] <- "depleted versus shifts"
-data.frame(simulations = nsim, family.tests = nrow(association),
-           minimum.two.sided.p = min(1, 2 / (nsim + 1)),
-           first.rank.threshold = alpha / nrow(association))
-table(association$status)
-species.preferences <- matrix(association$status, nrow = nf,
-	dimnames = list(species = focal.species, habitat = habitat.levels))
-# Keep the complete association table; print a short, readable view.
-report.columns <- c("species", "habitat", "n.sh", "effect.ratio",
-	"p.two.sided", "p.adjusted", "status")
-head(association[order(association$p.adjusted, na.last = TRUE), report.columns], 12)
+association$observed <- as.vector(observed)
+association$proportion.above <- NA_real_
+association$association <- "neutral"
+
+for(i in seq_len(nrow(association)))
+{
+	obs.count <- association$observed[i]
+	exp.counts <- expected[association$habitat[i], association$species[i], ]
+
+	above <- mean(exp.counts > obs.count)
+	below <- mean(exp.counts < obs.count)
+	association$proportion.above[i] <- above
+
+	if(below >= 1 - tail.cutoff)
+		association$association[i] <- "positive"
+	if(above >= 1 - tail.cutoff)
+		association$association[i] <- "negative"
+}
+
+table(association$association)
 ```
 
-In this run, `r sum(association$status == "enriched versus shifts")` pairs are enriched, `r sum(association$status == "depleted versus shifts")` depleted and `r sum(association$status == "inconclusive")` inconclusive after BH adjustment. For the supplied defaults, code `ouralu` is depleted in class 2 (ratio 0.36) and enriched in class 4 (ratio 1.51), both with adjusted p about 0.026. A species can therefore have different associations with several parts of the same map; the result is not a single exclusive habitat label per species.
-
-`association` is the full table; null quantiles are distribution summaries, not confidence intervals. Enrichment/depletion refers to the shift distribution; above/below one refers to the chosen density reference. Inconclusive does not mean neutrality or ecological equivalence. With 999 shifts the minimum two-sided p is 0.002; 500 tests give a first BH/Holm threshold of 0.0001 at $\alpha=0.05$, too small for an isolated discovery. BH can retain a sufficiently large set of small p-values. More shifts improve resolution, not the validity of the ecological null. For these BCI defaults there are 1,164 species--habitat tests. A 999-shift trial left all of them inconclusive after BH adjustment; the longer run improves Monte Carlo resolution while retaining exactly the same map and species family.
-
-BH's usual false-discovery-rate guarantees require independence or suitable positive dependence, not automatically provided here. Holm controls family-wise error under arbitrary dependence when the underlying p-values are valid. `"none"` leaves p-values unadjusted. None repairs selection of the map, species, $M$ or $k$ after inspecting associations. The main table tests single habitats: searching for the best habitat union requires repeating that search inside every null draw, or testing all prespecified unions within the declared family.
+These labels describe departure from the shifts for each pair. For a
+community question involving many correlated species, use a null model
+that captures their joint variation. Zambrano et al. (2022) used
+simulations to set joint thresholds for two overlap metrics within each
+species pair. They then compared how often each association type
+occurred across the community with its expected frequency.
 
 ## Inspect two example null distributions
 
+The vertical line shows the observed count. The histogram shows the
+counts from the shifted communities for that same species and habitat.
+Use the table to find the score and label for any pair.
+
 ```{r}
 #| label: torus-null-diagnostics
-#| fig-width: 8
 #| fig-height: 3.5
 
-previous.par <- par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-for(i in seq_len(min(2, nrow(association))))
+example.species = "ouralu"  # Ouratea lucens in the BCI species table.
+example.habitats = NULL     # Or select two labels, for example c("2", "4").
+
+examples <- subset(association, species == example.species)
+if(!is.null(example.habitats))
+	examples <- subset(examples, habitat %in% example.habitats)
+
+examples <- head(examples, 2L)
+if(nrow(examples) == 0L)
+	stop("Choose a species and habitat labels from the association table.")
+
+knitr::kable(examples, digits = 3, row.names = FALSE)
+
+old.par <- par(mfrow = c(1, nrow(examples)), mar = c(4, 4, 3, 1))
+
+for(i in seq_len(nrow(examples)))
 {
-	values <- null.statistics[association$species[i], association$habitat[i], ]
-	values <- values[is.finite(values)]
-	if(length(values) == 0) next
-	hist(values, breaks = 20, col = "grey85", border = "white",
-	     xlim = range(c(values, association$effect.ratio[i]), finite = TRUE),
-	     xlab = association.statistic,
-	     main = paste(association$species[i], "habitat", association$habitat[i]))
-	if(is.finite(association$effect.ratio[i]))
-		abline(v = association$effect.ratio[i], col = "firebrick", lwd = 2)
+	exp.counts <- expected[examples$habitat[i], examples$species[i], ]
+	obs.count <- examples$observed[i]
+
+	hist(exp.counts, xlim = range(c(exp.counts, obs.count)), col = "grey85",
+		main = paste(examples$species[i], "in habitat", examples$habitat[i]),
+		xlab = "Number of individuals")
+	abline(v = obs.count, col = "firebrick", lwd = 2)
 }
-par(previous.par)
+
+par(old.par)
 ```
 
-The red line marks the observation. These fixed example panels do not search for the strongest association. The test assesses alignment under the specified null; it does not establish an optimal map, discrete rather than continuous habitats, or a causal effect of habitat on species distribution.
+# Store results {#sec-storage}
 
-# Reuse the results
-
-Save the selected labels, preprocessing choices and native fitted object rather than only a coloured figure. The checkpoint retains point coordinates because another association analysis may need them. For long-term storage, GeoTIFF layers and their class keys complement the ordinary R objects; do not serialize a live `SpatRaster` with a bare `saveRDS()` and expect its external pointer to survive another session. Use `writeRaster()` as shown above, or `terra::wrap()` when an R-only representation is needed.
+Save the selected map as a categorical `terra` raster. The GeoTIFF
+stores integer codes and the key records the corresponding habitat
+labels. Keep any GeoTIFF sidecars with the raster. Save the quadrat
+labels and analysis inputs in an R file so you can reuse them without
+refitting the map.
 
 ```{r}
-#| label: save-habitat-results
+#| label: store-habitat-map
 
-results.file = file.path(output.dir, "habitat-analysis.rds")
+output.dir = file.path(tempdir(), "fgeo2-habitats")
+# output.dir = "/full/path/to/outputs"  # Use a permanent folder to keep the files.
+overwrite = FALSE
 
-# This final checkpoint requires the completed analysis; map-only users use
-# fixed-map-inputs.rds above instead.
-saveRDS(list(quadrats = quadrats, environment = environment,
-	composition = composition, individuals = individuals, plot.extent = plot.extent,
-	habitats = habitats, models = models, association = association,
-	null.statistics = null.statistics, species.preferences = species.preferences,
-	settings = list(census = census.file, minimum.dbh.cm = minimum.dbh.cm,
-		quadrat.size = quadrat.size, selected.map = selected.map,
-		classification.columns = selected.features,
-		torus.seed = torus.seed, nsim = nsim, statistic = association.statistic,
-		p.adjust.method = p.adjust.method)), results.file)
-sessionInfo()
+dir.create(output.dir, recursive = TRUE, showWarnings = FALSE)
+
+terra::writeRaster(habitat.raster, file.path(output.dir, "habitat-map.tif"),
+	datatype = "INT4S", overwrite = overwrite)
+write.csv(habitat.key, file.path(output.dir, "habitat-key.csv"), row.names = FALSE)
+
+map <- list(habitats = habitats, quadrats = quadrats, environment = environment,
+	composition = composition, individuals = individuals, plot.extent = plot.extent)
+
+saveRDS(map, file.path(output.dir, "habitat-map.rds"))
 ```
 
-The saved setting names describe this demonstration. Update them when changing the selected map or preprocessing. An inconclusive species result does not establish ecological equivalence. A floristically informed classification describes the population used to fit it; independent species testing requires a design that separates fitting and testing, or a null that repeats the relevant fitting/selection procedure. A later census of surviving trees alone does not create that independence.
+If you ran the indicator or torus analysis, save the results you need.
+Keep `membership.fanny` or the region probabilities if you use those
+methods. They have one row per quadrat and one column per habitat.
 
-# Further options and scope
+```{r}
+#| label: store-associations
 
-The core deliberately keeps M = 1, hard labels for inference, and one complete rectangular plot. The two diameter groups illustrate user-controlled M without inventing an assemblage-discovery algorithm. Species groups can also be supplied from traits or an independently justified composition/co-occurrence analysis; crossing these with a few diameter classes gives species × size assemblages. Sparse groups may support no useful split. Optimizing their definitions is a separate research problem with another layer of selection to validate.
+# Run the lines for the analyses you used.
+write.csv(indicator.values, file.path(output.dir, "indicator-scores.csv"))
+write.csv(association, file.path(output.dir, "species-habitat-associations.csv"),
+	row.names = FALSE)
 
-Other well-supported directions include mixed environmental distances with `cluster::daisy()`, ordination and continuous composition models in `vegan`, and spatially constrained classification in `adespatial`. Euclidean Ward clustering requires an appropriate Euclidean representation; constrained trees and spatial smoothing express different objectives. Fuzzy class affiliation is not a substitute for bootstrapping a classifier's stability. A partition fitted in one plot is not automatically a transferable habitat definition, and hierarchical clustering itself supplies no environmental prediction rule for new sites. The conditional tree does provide such a rule, subject to covariate coverage and external validation.
+saveRDS(list(counts = expected, nsim = nsim, seed = torus.seed, tail.cutoff = tail.cutoff),
+	file.path(output.dir, "torus-counts.rds"))
+```
 
-The literature review also considered spatial extent separately from quadrat grain (Garzon-Lopez et al., 2014), sampling artefacts in regional mixture models (Foster et al., 2017), and species-combination indicators (De Cáceres et al., 2012). Those extensions are not added to the executable core. Detailed map styling and reusable plotting helpers belong in `07_mapping_plotting`.
+# References
 
-# References and software
-
-Ecological and method references below were checked against original papers or publisher records on 20 November 2026. The De'ath and Foster (2013) entries were available as original abstracts; implementation details were checked in package documentation and source, rather than inferred from those abstracts.
-
--   Comita, L. S., Condit, R. & Hubbell, S. P. (2007). Developmental changes in habitat associations of tropical trees. *Journal of Ecology*, 95, 482--492. [doi:10.1111/j.1365-2745.2007.01229.x](https://doi.org/10.1111/j.1365-2745.2007.01229.x).
--   Condit, R., Pérez, R., Aguilar, S., Lao, S., Foster, R. B. & Hubbell, S. P. (2019). Complete data from the Barro Colorado 50-ha plot: 423617 trees, 35 years, 2019 version. *Dryad*. [doi:10.15146/5xcp-0d46](https://doi.org/10.15146/5xcp-0d46).
--   De'ath, G. (2002). Multivariate regression trees: a new technique for modeling species--environment relationships. *Ecology*, 83, 1105--1117. [doi:10.1890/0012-9658(2002)083\[1105:MRTANT\]2.0.CO;2](https://doi.org/10.1890/0012-9658%282002%29083%5B1105%3AMRTANT%5D2.0.CO%3B2).
--   De Cáceres, M. & Legendre, P. (2009). Associations between species and groups of sites: indices and statistical inference. *Ecology*, 90, 3566--3574. [doi:10.1890/08-1823.1](https://doi.org/10.1890/08-1823.1).
--   De Cáceres, M., Legendre, P. & Moretti, M. (2010). Improving indicator species analysis by combining groups of sites. *Oikos*, 119, 1674--1684. [doi:10.1111/j.1600-0706.2010.18334.x](https://doi.org/10.1111/j.1600-0706.2010.18334.x).
--   De Cáceres, M., Legendre, P., Wiser, S. K. & Brotons, L. (2012). Using species combinations in indicator value analyses. *Methods in Ecology and Evolution*, 3, 973--982. [doi:10.1111/j.2041-210X.2012.00246.x](https://doi.org/10.1111/j.2041-210X.2012.00246.x).
--   Foster, S. D., Givens, G. H., Dornan, G. J., Dunstan, P. K. & Darnell, R. (2013). Modelling biological regions from multi-species and environmental data. *Environmetrics*, 24, 489--499. [doi:10.1002/env.2245](https://doi.org/10.1002/env.2245).
--   Foster, S. D., Hill, N. A. & Lyons, M. (2017). Ecological grouping of survey sites when sampling artefacts are present. *Journal of the Royal Statistical Society: Series C*, 66, 1031--1047. [doi:10.1111/rssc.12211](https://doi.org/10.1111/rssc.12211).
--   Garzon-Lopez, C. X., Jansen, P. A., Bohlman, S. A., Ordonez, A. & Olff, H. (2014). Effects of sampling scale on patterns of habitat association in tropical trees. *Journal of Vegetation Science*, 25, 349--362. [doi:10.1111/jvs.12090](https://doi.org/10.1111/jvs.12090).
--   Harms, K. E., Condit, R., Hubbell, S. P. & Foster, R. B. (2001). Habitat associations of trees and shrubs in a 50-ha neotropical forest plot. *Journal of Ecology*, 89, 947--959. [doi:10.1111/j.1365-2745.2001.00615.x](https://doi.org/10.1111/j.1365-2745.2001.00615.x).
--   Hothorn, T., Hornik, K. & Zeileis, A. (2006). Unbiased recursive partitioning: a conditional inference framework. *Journal of Computational and Graphical Statistics*, 15, 651--674. [doi:10.1198/106186006X133933](https://doi.org/10.1198/106186006X133933).
--   Kaufman, L. & Rousseeuw, P. J. (1990). *Finding Groups in Data: An Introduction to Cluster Analysis*. Wiley. Algorithm reference supplied by `cluster`.
--   Legendre, P. & Gallagher, E. D. (2001). Ecologically meaningful transformations for ordination of species data. *Oecologia*, 129, 271--280. [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
--   Martínez-Villa, J. A., González-Caro, S. & Duque, Á. (2020). The importance of grain and cut-off size in shaping tree beta diversity along an elevational gradient in the northwest of Colombia. *Forest Ecosystems*, 7, 2. [doi:10.1186/s40663-020-0214-y](https://doi.org/10.1186/s40663-020-0214-y).
--   Roberts, D. R., et al. (2017). Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure. *Ecography*, 40, 913--929. [doi:10.1111/ecog.02881](https://doi.org/10.1111/ecog.02881).
--   Wolf, J. A., Hubbell, S. P., Fricker, G. A. & Turner, B. L. (2015). Geospatial observations on tropical forest surface soil chemistry. *Ecology*, 96, 2313. [doi:10.1890/15-0558.1](https://doi.org/10.1890/15-0558.1).
-
-Native software documentation: [cluster](https://cran.r-project.org/package=cluster), [partykit](https://cran.r-project.org/package=partykit), [indicspecies](https://cran.r-project.org/package=indicspecies), [terra](https://cran.r-project.org/package=terra), [ecomix RCP example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html), [adespatial](https://cran.r-project.org/package=adespatial), and [vegan](https://cran.r-project.org/package=vegan). The core uses maintained CRAN packages; the archived CTFS/fgeo calls are comparison material, and the GitHub mixture-model alternative is optional. Use `citation("cluster")`, `citation("partykit")`, `citation("indicspecies")` and `citation("terra")` for software citations in an analysis manuscript.
+- Condit, R., Pérez, R., Aguilar, S., Lao, S., Foster, R. B. & Hubbell, S.
+  P. (2019). Complete data from the Barro Colorado 50-ha plot: 423617 trees,
+  35 years, 2019 version. *Dryad*.
+  [doi:10.15146/5xcp-0d46](https://doi.org/10.15146/5xcp-0d46).
+- De'ath, G. (2002). Multivariate regression trees: a new technique for
+  modeling species--environment relationships. *Ecology*, 83, 1105--1117.
+  [doi:10.1890/0012-9658(2002)083\[1105:MRTANT\]2.0.CO;2](https://doi.org/10.1890/0012-9658%282002%29083%5B1105%3AMRTANT%5D2.0.CO%3B2).
+- De Cáceres, M. & Legendre, P. (2009). Associations between species and
+  groups of sites: indices and statistical inference. *Ecology*, 90,
+  3566--3574. [doi:10.1890/08-1823.1](https://doi.org/10.1890/08-1823.1).
+- De Cáceres, M., Legendre, P. & Moretti, M. (2010). Improving indicator
+  species analysis by combining groups of sites. *Oikos*, 119, 1674--1684.
+  [doi:10.1111/j.1600-0706.2010.18334.x](https://doi.org/10.1111/j.1600-0706.2010.18334.x).
+- Foster, S. D., Givens, G. H., Dornan, G. J., Dunstan, P. K. & Darnell, R.
+  (2013). Modelling biological regions from multi-species and environmental
+  data. *Environmetrics*, 24, 489--499.
+  [doi:10.1002/env.2245](https://doi.org/10.1002/env.2245).
+- Harms, K. E., Condit, R., Hubbell, S. P. & Foster, R. B. (2001). Habitat
+  associations of trees and shrubs in a 50-ha neotropical forest plot.
+  *Journal of Ecology*, 89, 947--959.
+  [doi:10.1111/j.1365-2745.2001.00615.x](https://doi.org/10.1111/j.1365-2745.2001.00615.x).
+- Hothorn, T., Hornik, K. & Zeileis, A. (2006). Unbiased recursive
+  partitioning: a conditional inference framework. *Journal of Computational
+  and Graphical Statistics*, 15, 651--674.
+  [doi:10.1198/106186006X133933](https://doi.org/10.1198/106186006X133933).
+- John, R., et al. (2007). Soil nutrients influence spatial distributions of
+  tropical tree species. *Proceedings of the National Academy of Sciences*,
+  104, 864–869.
+  [doi:10.1073/pnas.0604666104](https://doi.org/10.1073/pnas.0604666104).
+- Kaufman, L. & Rousseeuw, P. J. (1990). *Finding Groups in Data: An
+  Introduction to Cluster Analysis*. Wiley. Algorithm reference supplied by
+  `cluster`.
+- Legendre, P. & Gallagher, E. D. (2001). Ecologically meaningful
+  transformations for ordination of species data. *Oecologia*, 129,
+  271--280.
+  [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
+- Martínez-Villa, J. A., González-Caro, S. & Duque, Á. (2020). The
+  importance of grain and cut-off size in shaping tree beta diversity along
+  an elevational gradient in the northwest of Colombia. *Forest Ecosystems*,
+  7, 2.
+  [doi:10.1186/s40663-020-0214-y](https://doi.org/10.1186/s40663-020-0214-y).
+- Roberts, D. R., et al. (2017). Cross-validation strategies for data with
+  temporal, spatial, hierarchical, or phylogenetic structure. *Ecography*,
+  40, 913--929.
+  [doi:10.1111/ecog.02881](https://doi.org/10.1111/ecog.02881).
+- Zambrano, J., Arellano, G., Swenson, N. G., Staniczenko, P. P. A.,
+  Thompson, J. & Fagan, W. F. (2022). Analyses of three-dimensional species
+  associations reveal departures from neutrality in a tropical forest.
+  *Ecology*, 103, e3681.
+  [doi:10.1002/ecy.3681](https://doi.org/10.1002/ecy.3681).
