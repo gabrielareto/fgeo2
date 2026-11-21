@@ -48,22 +48,22 @@ Here, we use different techniques to assign habitat labels or a set of
 memberships to each 20 x 20 m quadrat in a ForestGEO plot:
 
 -   **CTFS/fgeo classification.** This is the historical approach that
-    has been used by many ForestGEO plots. Use
+    has been used by many ForestGEO plots. It uses
     `fgeo.analyze::fgeo_habitat()` to classify quadrats by elevation,
     slope and convexity in their original units.
--   **Standardized environmental classification.** Use `prcomp()`,
+-   **Standardized environmental classification.** It uses `prcomp()`,
     `hclust()` and `cutree()` to group quadrats using distances on
     weighted principal component scores.
--   **Fuzzy clustering.** Use `cluster::fanny()` when quadrats may share
-    features with several habitats. The membership scores show those
-    transitions (Kaufman and Rousseeuw, 1990).
--   **Floristic tree.** Use `partykit::ctree()` to find environmental
-    boundaries that help describe changes in tree composition (Hothorn
-    et al., 2006).
--   **Probabilistic regions.** The optional `ecomix::regional_mix.multifit()`
-    recipe uses tree composition and environment to estimate the
-    probability that each quadrat belongs to each region (Foster et al.,
-    2013).
+-   **Fuzzy clustering.** It uses `cluster::fanny()` when quadrats may
+    share features with several habitats. The membership scores show
+    those transitions (Kaufman and Rousseeuw, 1990).
+-   **Floristic tree.** It uses `partykit::ctree()` to find
+    environmental boundaries that help describe changes in tree
+    composition (Hothorn et al., 2006).
+-   **Probabilistic regions.** The optional
+    `ecomix::regional_mix.multifit()` technique uses tree composition
+    and environment to estimate the probability that each quadrat
+    belongs to each region (Foster et al., 2013).
 
 Groups such as palms and dicots may respond to different environmental
 features. The methods to classify habitats may be applied independently
@@ -201,8 +201,9 @@ dim(composition)
 
 First, we leverage all the topographical variables available through
 `derive_topography()`. Average northness and eastness to represent
-aspect in each quadrat. The direction in degrees is circular. See the [topography
-tutorial](derive-topographical-variables.qmd).
+aspect in each quadrat. The direction in degrees is circular and not
+appropriate for Euclidean distances, so it is excluded here. See the
+[topography tutorial](derive-topographical-variables.qmd).
 
 ```{r}
 #| label: habitat-environment
@@ -287,9 +288,7 @@ scores preserves Euclidean distances in the scaled variables. Here we
 multiply each score by its share of explained variance raised to the
 power `0.25`, giving the main gradients extra weight. Set the power to
 `0` for the original scaled distances. Several related measurements can
-give one gradient more influence. Choose columns for your question and
-check [soil measurement
-quality](https://esapubs.org/archive/ecol/E096/204/metadata.php).
+give one gradient more influence. ƒ
 
 ```{r}
 #| label: environment-pca
@@ -317,8 +316,8 @@ environment.distance <- dist(environment.pc.weighted)
 
 ## Map habitat labels
 
-Each label vector is named by quadrat ID. Link the labels to the
-common raster grid using the quadrat centres.
+Each label vector is named by quadrat ID. Link the labels to the common
+raster grid using the quadrat centres.
 
 ```{r}
 #| label: habitat-grid
@@ -375,6 +374,7 @@ legacy.elevation <- list(
 # fgeo_habitat() calculates the topography internally and returns labels.
 topography.legacy <- fgeo.analyze::fgeo_topography(legacy.elevation,
 	gridsize = quadrat.size, edgecorrect = TRUE)
+
 legacy.result <- fgeo.analyze::fgeo_habitat(legacy.elevation,
 	gridsize = quadrat.size, n = habitat.k, edgecorrect = TRUE)
 
@@ -526,7 +526,8 @@ new locations (Roberts et al., 2017).
 Regions of Common Profile use a mixture model to relate composition to
 environment (Foster et al., 2013). The membership probabilities below
 use the observed flora and a small set of scaled terrain and soil
-variables. The map assigns each fitted quadrat to its most likely region.
+variables. The map assigns each fitted quadrat to its most likely
+region.
 
 **Start small.** Fits can be slow with many quadrats or species. This
 example uses a rectangle in the lower-left corner of the BCI plot and
@@ -534,8 +535,8 @@ the most abundant species in that rectangle. Increase the two fractions
 in steps and check elapsed time and agreement among converged starts
 before fitting the full dataset.
 
-This chunk runs when the optional package is installed. See the
-[package example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
+This chunk runs when the optional package is installed. See the [package
+example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
 
 ```{r}
 #| label: optional-rcp-habitats
@@ -613,10 +614,10 @@ table(habitat.ecomix)
 terra::plot(habitat_to_raster(habitat.ecomix), main = "ecomix, fitted rectangle")
 ```
 
-The printed log likelihoods show how the converged fits agree.
-`-Inf` marks a failed start. Some converged fits can leave regions empty,
-so also check the habitat counts. Timing progressively larger subsets
-gives a rough guide to cost as the data grow.
+The printed log likelihoods show how the converged fits agree. `-Inf`
+marks a failed start. Some converged fits can leave regions empty, so
+also check the habitat counts. Timing progressively larger subsets gives
+a rough guide to cost as the data grow.
 
 # Spatial smoothing {#sec-smoothing}
 
@@ -638,11 +639,13 @@ test associations with it.
 ```{r}
 #| label: choose-habitat-map
 
-habitats <- habitat.full.environment
+# Pick one habitat map
+# habitats <- habitat.full.environment
 # habitats <- habitat.legacy
 # habitats <- habitat.fanny
-# habitats <- habitat.ctree
+habitats <- habitat.ctree
 # habitats <- habitat.ecomix  # Fit the full plot before selecting this map.
+
 use.smoothed.map = FALSE  # Set TRUE to use the filtered map below.
 
 stopifnot(identical(names(habitats), quadrats$quadrat_id),
@@ -797,7 +800,7 @@ To use a saved map in a separate script, load the objects saved under
 #| label: restart-fixed-map-analysis
 #| eval: false
 
-path.to.fgeo2 = "/full/path/to/fgeo2"
+path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" 
 map.file = "/full/path/to/habitat-map.rds"
 
 map <- readRDS(map.file)
@@ -832,6 +835,8 @@ needs at least one tree for the share to be defined.
 
 ```{r}
 #| label: torus-options
+
+path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update to your path
 
 nsim = 999L
 torus.seed = 123L
@@ -987,12 +992,11 @@ for(i in seq_len(nrow(association)))
 table(association$association)
 ```
 
-These labels describe departure from the shifts for each pair. For a
-community question involving many correlated species, use a null model
-that captures their joint variation. Zambrano et al. (2022) used
-simulations to set joint thresholds for two overlap metrics within each
-species pair. They then compared how often each association type
-occurred across the community with its expected frequency.
+We are doing many comparisons and you may be tempted to apply
+Bonferroni-like corrections. Don't do that. Species are strongly
+correlated with each other. Zambrano, Arellano, et al. (2022) contains
+an example on how to choose sensible thresholds for siginficance in
+cases of many correlated tests in species-rich communities.
 
 ## Inspect two example null distributions
 
@@ -1090,37 +1094,13 @@ for(i in seq_len(ncol(map.pairs)))
 knitr::kable(agreement, digits = 2, row.names = FALSE)
 ```
 
-## How to choose k = the number of habitats {#sec-choose-k}
-
-Cut the same Ward tree at different levels of detail. Mean silhouette
-summarizes how well quadrats are separated in the environmental
-distances used for clustering. Inspect the size and location of the
-smallest classes alongside that number.
-
-```{r}
-#| label: compare-ward-cuts
-#| fig-height: 8
-
-k.values = c(3L, 5L, 7L)
-
-old.par <- par(mfrow = c(3, 1), mar = c(2, 2, 2, 1))
-for(k in k.values)
-{
-	groups <- cutree(cluster.tree, k = k)
-	widths <- cluster::silhouette(groups, environment.distance)[, "sil_width"]
-	caption <- sprintf("k = %d   silhouette %.2f   smallest habitat %d quadrats",
-		k, mean(widths), min(table(groups)))
-	terra::plot(habitat_to_raster(groups), main = caption)
-}
-par(old.par)
-```
-
-At BCI, the five-class cut isolates a scattered group of just ten
-quadrats. The seven-class cut also picks out a narrow strip in the
-southwest and has lower mean silhouette. Check whether such features
-matter for your question. Indicator scores and species associations can
-help describe candidate maps. Use independent species data to test
-associations after choosing a map with those summaries.
+It is surprising, or maybe not, the level of agreement between the
+legacy CTFS/fgeo classification, which only looks at three environmental
+variables, and the floristically-informed map, which uses all
+environmental variables and the entire floristic composition. This means
+that those few topographical variables encode much of what is relevant
+for this tree community in particular, and explains why the CTFS/fgeo
+choice, apparently the simplest one, has remained useful for decades.
 
 # Store results {#sec-storage}
 
@@ -1219,8 +1199,8 @@ saveRDS(list(relative.density = expected, nsim = nsim,
 -   Su, S.-H., Hsieh, C.-F., Chang-Yang, C.-H., Lu, C.-L. & Guan, B. T.
     (2010). Micro-topographic differentiation of the tree species
     composition in a subtropical submontane rainforest in northeastern
-    Taiwan. *Taiwan Journal of Forest Science*, 25, 63--80.
-    [Full text](https://ws.tfri.gov.tw/001/Upload/OldFile/files/25-1_07.pdf).
+    Taiwan. *Taiwan Journal of Forest Science*, 25, 63--80. [Full
+    text](https://ws.tfri.gov.tw/001/Upload/OldFile/files/25-1_07.pdf).
 -   Wolf, J. A., Hubbell, S. P., Fricker, G. A. & Turner, B. L. (2015).
     Geospatial observations on tropical forest surface soil chemistry.
     *Ecology*, 96, 2313.
