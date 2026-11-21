@@ -721,9 +721,9 @@ tree pattern intact on the wrapped plot.
 
 Use the selected `habitats` vector, the aligned `composition` matrix and
 the matching `quadrats` table. The original `individuals` table must
-contain `x`, `y` and `species` for the trees counted in the matrix. Use
-the bounds of the full rectangular `plot.extent`, with a habitat label
-for every quadrat.
+contain `x`, `y` and `species` for all eligible trees counted in the
+matrix. Use the bounds of the full rectangular `plot.extent`, with a
+habitat label for every quadrat.
 
 Choose the map before assessing associations. If the same trees helped
 fit or choose the map, use the labels as descriptions of those trees.
@@ -753,23 +753,22 @@ plot.extent <- map$plot.extent
 Put two 20 × 20 m quadrats side by side in a 40 × 20 m rectangle. Two
 trees of species A are in the left quadrat at (5, 5) and (8, 15). Two
 trees of species B are in the right quadrat at (25, 5) and (28, 15). A
-shift of 20 m in x puts A in the right quadrat and B in the left. For A
-in the left habitat, the observed count is 2 and the count after this
-shift is 0. A real analysis draws many shifts in x and y.
+shift of 20 m in x puts A in the right quadrat and B in the left. For
+species A in the left habitat, the observed relative density is 2/2 = 1.
+After the shift it is 0/2 = 0.
 
 ## Specify the statistic
 
-For each species and habitat, `OBS` is the observed number of trees and
-`EXP` contains the counts after 999 shifts. The score is
-`mean(EXP > OBS)`, the proportion of shifted counts above the observed
-count. A small score places the observation near the upper end of the
-null distribution, subject to ties. A large score puts it near the lower
-end.
+Harms et al. (2001) and the legacy `tt_test()` use relative stem density.
+For each species and habitat, divide the species count by the total
+count of all species in that habitat. Here we count individuals using
+one record per tree. The abundance cutoff selects the species to report.
+All eligible trees contribute to the habitat totals.
 
-Harms et al. (2001) and the legacy `tt_test()` compare the species'
-share of all stems within each habitat. Here we compare individual
-counts within each fixed habitat. A count can be high where tree density
-is high in general.
+`OBS` is the observed share and `EXP` holds the shares from 999 shifts,
+each calculated using its own habitat total. The score
+`mean(EXP > OBS)` is the fraction of shifted shares above the observed
+share. A habitat needs at least one tree for the share to be defined.
 
 ```{r}
 #| label: torus-options
@@ -831,26 +830,33 @@ point.counts <- matrix(tabulate(count.index, nbins = length(composition)),
 if(!all(point.counts == composition))
 	stop("The coordinates and composition matrix give different quadrat counts.")
 
-# Keep the species to be assessed and add the observed counts by habitat.
+# Select the species to report.
 focal.species <- colnames(composition)[colSums(composition) >= minimum.abundance]
 stopifnot(length(focal.species) > 0)
 
 groups <- factor(habitats)
 habitat.index <- as.integer(groups)
-observed <- rowsum(composition[, focal.species, drop = FALSE], habitat.index)
+counts.by.habitat <- rowsum(composition, habitat.index)
+habitat.total <- rowSums(counts.by.habitat)
+
+if(any(habitat.total == 0L))
+	stop("Relative density is undefined for a habitat with no observed trees.")
+
+# Divide each habitat row by its total across all species.
+observed <- counts.by.habitat[, focal.species, drop = FALSE] / habitat.total
 rownames(observed) <- levels(groups)
 
 focal.index <- match(individuals$species, focal.species)
 keep <- !is.na(focal.index)
-coordinates <- coordinates[keep, , drop = FALSE]
 focal.index <- focal.index[keep]
 ```
 
 ## Shift the trees
 
-Draw one displacement per iteration. All focal trees move by the same
-distance and direction, which keeps their spatial patterns and species
-totals. Store the resulting counts by habitat, species and shift.
+Generate all 999 shifts in one call. Each column of the two coordinate
+matrices gives one shifted tree pattern. The matrices use about 3.8 GB
+for this BCI example. Use each shift's habitat totals to calculate the
+relative densities and store them by habitat, species and shift.
 
 ```{r}
 #| label: torus-simulation
@@ -858,34 +864,40 @@ totals. Store the resulting counts by habitat, species and shift.
 torus.mins <- plot.extent[c(1, 3)]
 torus.maxs <- plot.extent[c(2, 4)]
 
-expected <- array(0L, dim = c(dim(observed), nsim),
+set.seed(torus.seed)
+shifted <- translate_around_torus(coordinates,
+	mins = torus.mins, maxs = torus.maxs, nsim = nsim)
+
+expected <- array(NA_real_, dim = c(dim(observed), nsim),
 	dimnames = c(dimnames(observed), list(NULL)))
 
-set.seed(torus.seed)
-
+# Read each pair of coordinate columns and count trees by habitat.
 for(b in seq_len(nsim))
 {
-	shifted <- translate_around_torus(coordinates,
-		mins = torus.mins, maxs = torus.maxs, nsim = 1)
-
-	ix <- findInterval(shifted[[1]][, 1], x.edges, rightmost.closed = TRUE)
-	iy <- findInterval(shifted[[2]][, 1], y.edges, rightmost.closed = TRUE)
+	ix <- findInterval(shifted[[1]][, b], x.edges, rightmost.closed = TRUE)
+	iy <- findInterval(shifted[[2]][, b], y.edges, rightmost.closed = TRUE)
 	quadrat.index <- grid.rows[cbind(iy, ix)]
 	shifted.habitat <- habitat.index[quadrat.index]
 
-	# Each species has one set of slots, one slot per habitat.
-	count.index <- shifted.habitat + (focal.index - 1L) * nrow(observed)
-	expected[, , b] <- tabulate(count.index, nbins = length(observed))
+	habitat.total <- tabulate(shifted.habitat, nbins = nrow(observed))
+	if(any(habitat.total == 0L))
+		stop("Relative density is undefined for a shifted habitat with no trees.")
+
+	# Each focal species has one set of slots, one slot per habitat.
+	count.index <- shifted.habitat[keep] + (focal.index - 1L) * nrow(observed)
+	focal.counts <- matrix(tabulate(count.index, nbins = length(observed)),
+		nrow = nrow(observed))
+
+	expected[, , b] <- focal.counts / habitat.total
 }
 ```
 
 ## Summarize the associations
 
-Use a cutoff of 2.5% in each tail. A species is positively associated
-with a habitat if at least 97.5% of the shifts give fewer trees than
-observed. It is negatively associated if at least 97.5% give more.
-Otherwise the label is neutral at these cutoffs. If every shift gives
-the same count as observed, the label is neutral.
+At the 2.5% tail cutoff, the association is positive if at least 97.5% of
+the shifted shares are below the observed share. It is negative if at
+least 97.5% are above. Otherwise it is neutral. Equal shares count
+toward neither tail.
 
 ```{r}
 #| label: torus-results
@@ -899,11 +911,11 @@ association$association <- "neutral"
 
 for(i in seq_len(nrow(association)))
 {
-	obs.count <- association$observed[i]
-	exp.counts <- expected[association$habitat[i], association$species[i], ]
+	obs.share <- association$observed[i]
+	exp.shares <- expected[association$habitat[i], association$species[i], ]
 
-	above <- mean(exp.counts > obs.count)
-	below <- mean(exp.counts < obs.count)
+	above <- mean(exp.shares > obs.share)
+	below <- mean(exp.shares < obs.share)
 	association$proportion.above[i] <- above
 
 	if(below >= 1 - tail.cutoff)
@@ -924,9 +936,9 @@ occurred across the community with its expected frequency.
 
 ## Inspect two example null distributions
 
-The vertical line shows the observed count. The histogram shows the
-counts from the shifted communities for that same species and habitat.
-Use the table to find the score and label for any pair.
+The vertical line shows the observed relative density. The histogram
+shows the relative densities from the shifts for the same species and
+habitat. Use the table to find the score and label for any pair.
 
 ```{r}
 #| label: torus-null-diagnostics
@@ -949,13 +961,13 @@ old.par <- par(mfrow = c(1, nrow(examples)), mar = c(4, 4, 3, 1))
 
 for(i in seq_len(nrow(examples)))
 {
-	exp.counts <- expected[examples$habitat[i], examples$species[i], ]
-	obs.count <- examples$observed[i]
+	exp.shares <- expected[examples$habitat[i], examples$species[i], ]
+	obs.share <- examples$observed[i]
 
-	hist(exp.counts, xlim = range(c(exp.counts, obs.count)), col = "grey85",
+	hist(exp.shares, xlim = range(c(exp.shares, obs.share)), col = "grey85",
 		main = paste(examples$species[i], "in habitat", examples$habitat[i]),
-		xlab = "Number of individuals")
-	abline(v = obs.count, col = "firebrick", lwd = 2)
+		xlab = "Relative density (proportion)")
+	abline(v = obs.share, col = "firebrick", lwd = 2)
 }
 
 par(old.par)
@@ -1000,8 +1012,9 @@ write.csv(indicator.values, file.path(output.dir, "indicator-scores.csv"))
 write.csv(association, file.path(output.dir, "species-habitat-associations.csv"),
 	row.names = FALSE)
 
-saveRDS(list(counts = expected, nsim = nsim, seed = torus.seed, tail.cutoff = tail.cutoff),
-	file.path(output.dir, "torus-counts.rds"))
+saveRDS(list(relative.density = expected, nsim = nsim,
+	seed = torus.seed, tail.cutoff = tail.cutoff),
+	file.path(output.dir, "torus-relative-density.rds"))
 ```
 
 # References
