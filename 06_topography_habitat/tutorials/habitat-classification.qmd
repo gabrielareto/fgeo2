@@ -36,14 +36,16 @@ editor:
 
 # Introduction
 
-A habitat map groups places with similar environmental conditions. A
-common use of categorical habitat maps is to describe species-habitat
-associations (e.g. Harms et al. 2001). They are frequently used to split
-datasets during analyses or to stratify further sampling. \
+A habitat map groups places with similar environmental conditions.
+Harms et al. (2001) and Comita et al. (2007) used categorical habitat
+maps and torus translation tests to assess species--habitat associations
+at Barro Colorado Island. Other ForestGEO examples include Sinharaja
+(Gunatilleke et al., 2006) and Pasoh (Yamada et al., 2010). Habitat maps
+can also guide analyses by habitat and stratified sampling.
 
 The classes depend on what we measure and how we group the measurements.
 Here, we use different techniques to assign habitat labels or a set of
-memberships to each 20 x 20 quadrat in a ForestGEO plot:
+memberships to each 20 x 20 m quadrat in a ForestGEO plot:
 
 -   **CTFS/fgeo classification.** This is the historical approach that
     has been used by many (most) of the ForestGEO plots. The archived
@@ -51,7 +53,7 @@ memberships to each 20 x 20 quadrat in a ForestGEO plot:
     elevation, slope and convexity in their original units.
 -   **Standardized environmental classification.** Use `scale()`,
     `hclust()` and `cutree()` to group quadrats with similar
-    environments, leveraging all availlable environmental data.
+    environments using the environmental variables you select.
 -   **Fuzzy clustering.** Use `cluster::fanny()` when quadrats may share
     features with several habitats. The membership scores show those
     transitions (Kaufman and Rousseeuw, 1990).
@@ -78,8 +80,10 @@ choices such as the number of habitats and other parameters.
 
 ## Set up the example
 
-Use the first census (nominally 1982), the elevation survey from the
-50-ha BCI plot in Panama and Wolf et al. (2015) soil data.
+Use the first census (nominally 1982) and the elevation survey from the
+50-ha BCI plot in Panama. See the BCI archive for data documentation
+(Condit et al., 2019). Soil data from the same plot (Wolf et al., 2015)
+can be added using the [environmental extraction tutorial](environmental-extraction.qmd).
 
 Run from the repository root or the tutorial folder. Set `path.to.fgeo2`
 when working elsewhere. With your own prepared data, run the setup and
@@ -298,9 +302,9 @@ If you have the legacy package installed, you can also call
 `list(col = legacy.xyz, xdim = 1000, ydim = 500)`, `gridsize = 20`,
 `n = habitat.k` and `edgecorrect = TRUE`.
 
-## **Standardized environmental classification**
+## Standardized environmental classification
 
-CTFS/fgeo legacy approach is based entirely on thre topographical
+The CTFS/fgeo classification is based on three topographic
 variables. It does not leverage other topographical variables or other
 available environmental data. This section shows how to do the same
 simple clustering but using more environmental information. Because
@@ -323,7 +327,7 @@ environmental variables. Inspect the smallest habitat and its location
 before choosing a value of `k`.
 
 ```{r}
-#| label: standardized-hierarchical-habitats
+#| label: standardized-environmental-classification
 
 environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 candidate.k = 2:6
@@ -1019,9 +1023,13 @@ saveRDS(list(relative.density = expected, nsim = nsim,
 
 # References
 
+-   Comita, L. S., Condit, R. & Hubbell, S. P. (2007). Developmental
+    changes in habitat associations of tropical trees. *Journal of
+    Ecology*, 95, 482--492.
+    [doi:10.1111/j.1365-2745.2007.01229.x](https://doi.org/10.1111/j.1365-2745.2007.01229.x).
 -   Condit, R., Pérez, R., Aguilar, S., Lao, S., Foster, R. B. &
     Hubbell, S. P. (2019). Complete data from the Barro Colorado 50-ha
-    plot: 423617 trees, 35 years, 2019 version. *Dryad*.
+    plot: 423617 trees, 35 years. *Dryad*.
     [doi:10.15146/5xcp-0d46](https://doi.org/10.15146/5xcp-0d46).
 -   De'ath, G. (2002). Multivariate regression trees: a new technique
     for modeling species--environment relationships. *Ecology*, 83,
@@ -1039,6 +1047,11 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     Darnell, R. (2013). Modelling biological regions from multi-species
     and environmental data. *Environmetrics*, 24, 489--499.
     [doi:10.1002/env.2245](https://doi.org/10.1002/env.2245).
+-   Gunatilleke, C. V. S., Gunatilleke, I. A. U. N., Esufali, S.,
+    Harms, K. E., Ashton, P. M. S., Burslem, D. F. R. P. & Ashton,
+    P. S. (2006). Species--habitat associations in a Sri Lankan
+    dipterocarp forest. *Journal of Tropical Ecology*, 22, 371--384.
+    [doi:10.1017/S0266467406003282](https://doi.org/10.1017/S0266467406003282).
 -   Harms, K. E., Condit, R., Hubbell, S. P. & Foster, R. B. (2001).
     Habitat associations of trees and shrubs in a 50-ha neotropical
     forest plot. *Journal of Ecology*, 89, 947--959.
@@ -1047,10 +1060,6 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     partitioning: a conditional inference framework. *Journal of
     Computational and Graphical Statistics*, 15, 651--674.
     [doi:10.1198/106186006X133933](https://doi.org/10.1198/106186006X133933).
--   John, R., et al. (2007). Soil nutrients influence spatial
-    distributions of tropical tree species. *Proceedings of the National
-    Academy of Sciences*, 104, 864--869.
-    [doi:10.1073/pnas.0604666104](https://doi.org/10.1073/pnas.0604666104).
 -   Kaufman, L. & Rousseeuw, P. J. (1990). *Finding Groups in Data: An
     Introduction to Cluster Analysis*. Wiley. Algorithm reference
     supplied by `cluster`.
@@ -1058,15 +1067,17 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     transformations for ordination of species data. *Oecologia*, 129,
     271--280.
     [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
--   Martínez-Villa, J. A., González-Caro, S. & Duque, Á. (2020). The
-    importance of grain and cut-off size in shaping tree beta diversity
-    along an elevational gradient in the northwest of Colombia. *Forest
-    Ecosystems*, 7, 2.
-    [doi:10.1186/s40663-020-0214-y](https://doi.org/10.1186/s40663-020-0214-y).
 -   Roberts, D. R., et al. (2017). Cross-validation strategies for data
     with temporal, spatial, hierarchical, or phylogenetic structure.
     *Ecography*, 40, 913--929.
     [doi:10.1111/ecog.02881](https://doi.org/10.1111/ecog.02881).
+-   Wolf, J. A., Hubbell, S. P., Fricker, G. A. & Turner, B. L. (2015).
+    Geospatial observations on tropical forest surface soil chemistry.
+    *Ecology*, 96, 2313.
+    [doi:10.1890/15-0558.1](https://doi.org/10.1890/15-0558.1).
+-   Yamada, T., Noor, N. S. M. & Okuda, T. (2010). Habitat association
+    of trees in a 50-ha Malaysian rain forest plot. *Tropics*, 19, 1--8.
+    [doi:10.3759/tropics.19.1](https://doi.org/10.3759/tropics.19.1).
 -   Zambrano, J., Arellano, G., Swenson, N. G., Staniczenko, P. P. A.,
     Thompson, J. & Fagan, W. F. (2022). Analyses of three-dimensional
     species associations reveal departures from neutrality in a tropical
