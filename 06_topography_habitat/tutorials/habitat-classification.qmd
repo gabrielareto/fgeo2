@@ -51,9 +51,9 @@ memberships to each 20 x 20 m quadrat in a ForestGEO plot:
     has been used by many (most) of the ForestGEO plots. The archived
     `fgeo_habitat()` function uses `hclust()` and `cutree()` on
     elevation, slope and convexity in their original units.
--   **Standardized environmental classification.** Use `scale()`,
-    `hclust()` and `cutree()` to group quadrats with similar
-    environments using the environmental variables you select.
+-   **Standardized environmental classification.** Use `prcomp()`,
+    `hclust()` and `cutree()` to group quadrats using distances on
+    weighted principal component scores.
 -   **Fuzzy clustering.** Use `cluster::fanny()` when quadrats may share
     features with several habitats. The membership scores show those
     transitions (Kaufman and Rousseeuw, 1990).
@@ -80,10 +80,21 @@ choices such as the number of habitats and other parameters.
 
 ## Set up the example
 
-Use the first census (nominally 1982) and the elevation survey from the
-50-ha BCI plot in Panama. See the BCI archive for data documentation
-(Condit et al., 2019). Soil data from the same plot (Wolf et al., 2015)
-can be added using the [environmental extraction tutorial](environmental-extraction.qmd).
+Use data from the 50-ha Barro Colorado Island (BCI) plot in Panama.
+All three files are in `data_examples/`. See the [dataset
+notes](../../data_examples/README.md).
+
+-   **`census1.txt`** is the historical first census export, nominally
+    1982, with measurements from 1981--1983. Credit goes to the BCI
+    census team, including Stephen P. Hubbell, Robin B. Foster, Richard
+    Condit and collaborators, and Smithsonian/ForestGEO.
+-   **`bci-elevation.csv`** contains 20,301 elevation locations on a 5 m
+    grid. Its values match `BCIelev.tsv` in the CC0 archive (Condit et
+    al., 2019).
+-   **`bci-soils-wolf-2015.csv`** contains the complete 2010 soil survey
+    of 625 locations, including local and UTM coordinates and 24 soil
+    variables (Wolf et al., 2015). [Publisher's CC0
+    deposit](https://doi.org/10.6084/m9.figshare.3562863).
 
 Run from the repository root or the tutorial folder. Set `path.to.fgeo2`
 when working elsewhere. With your own prepared data, run the setup and
@@ -96,6 +107,7 @@ path.to.fgeo2 = if(file.exists("../../fgeo2.Rproj")) "../.." else "."
 # path.to.fgeo2 = "/full/path/to/fgeo2"
 
 census.file = "census1.txt"
+soil.file = "bci-soils-wolf-2015.csv"
 plot.extent = c(0, 1000, 0, 500)  # xmin, xmax, ymin, ymax in metres.
 quadrat.size = 20
 
@@ -183,12 +195,10 @@ dim(composition)
 
 ## Match the environmental table
 
-Calculate the terrain variables on a 5 m grid and average them within
-each quadrat. TPI measures how high or low a place is relative to nearby
-terrain. The [topography tutorial](derive-topographical-variables.qmd)
-explains this calculation. To add soil, canopy or disturbance data,
-prepare one value per quadrat and join it by ID. See the [environmental
-extraction tutorial](environmental-extraction.qmd).
+Soil and terrain use the same local plot coordinates in metres.
+Calculate terrain on a 5 m grid and average it within each quadrat.
+TPI measures elevation relative to nearby terrain. See the [topography
+tutorial](derive-topographical-variables.qmd).
 
 ```{r}
 #| label: habitat-environment
@@ -216,16 +226,77 @@ quadrat.xy <- cbind(
 
 environment <- as.data.frame(terra::extract(terrain.quadrats, quadrat.xy))
 rownames(environment) <- quadrats$quadrat_id
+```
+
+Estimate soil values at the quadrat centres by inverse-distance weighting
+(IDW), using the settings from the [environmental extraction
+tutorial](environmental-extraction.qmd). We keep estimates just outside
+the sampling hull where enough nearby observations are available. This
+lets the torus test use the full rectangular grid.
+
+```{r}
+#| label: habitat-soil
+
+soil.search.radius = 60  # Metres.
+soil.power = 2
+minimum.soil.neighbours = 3L
+maximum.soil.neighbours = 12L
+
+soils <- read.csv(file.path(input.dir, soil.file), check.names = FALSE)
+names(soils) <- trimws(names(soils))
+soil.columns <- setdiff(names(soils), c("uid", "qid", "gx", "gy", "utm_e", "utm_n"))
+
+# Use the terrain quadrat grid and keep only observed values for each assay.
+for(variable in soil.columns)
+{
+	keep <- is.finite(soils$gx) & is.finite(soils$gy) & is.finite(soils[[variable]])
+	measurements <- as.matrix(soils[keep, c("gx", "gy", variable)])
+	soil.layer <- terra::interpIDW(terrain.quadrats[[1]], measurements,
+		radius = soil.search.radius, power = soil.power,
+		minPoints = minimum.soil.neighbours, maxPoints = maximum.soil.neighbours)
+
+	# Extraction at the centres follows quadrat order.
+	environment[[paste0("soil_", variable)]] <- terra::extract(soil.layer, quadrat.xy)[[1]]
+}
 
 stopifnot(identical(rownames(environment), rownames(composition)),
 	all(is.finite(as.matrix(environment))))
 ```
 
-For your own data, keep the rows of `environment` and `composition` in
-the order of `quadrats$quadrat_id`. Keep the original coordinates and
-species in `individuals` for the torus analysis. For another census,
-prepare a separate composition matrix using the same counting rules and
-grid. You can then compare associations across censuses on a fixed map.
+Join other layers, such as canopy or disturbance, by quadrat ID. Keep
+`environment` and `composition` in the order of `quadrats$quadrat_id`.
+Keep the coordinates and species in `individuals` for the torus analysis.
+Use the same counting rules and grid to compare censuses on a fixed map.
+
+## Prepare environmental distances {#sec-environment-distances}
+
+Scale the variables to unit variance and use principal component analysis
+(PCA) to form uncorrelated axes. The full set of unweighted PC scores
+preserves Euclidean distances in the scaled variables. Here we multiply
+each score by its share of explained variance raised to the power `0.25`,
+giving the main gradients extra weight. Set the power to `0` for the
+original scaled distances. Several related measurements can give one
+gradient more influence. Choose columns for your question and check
+[soil measurement quality](https://esapubs.org/archive/ecol/E096/204/metadata.php).
+
+```{r}
+#| label: environment-pca
+
+environment.columns = names(environment)  # Use all 27 variables, or select columns here.
+pc.weight.power = 0.25
+
+environment.selected <- environment[, environment.columns, drop = FALSE]
+environment.pca <- prcomp(environment.selected, center = TRUE, scale. = TRUE)
+
+variance.share <- environment.pca$sdev^2 / sum(environment.pca$sdev^2)
+pc.weights <- variance.share^pc.weight.power
+environment.pc.weighted <- environment.pca$x
+
+for(j in seq_along(pc.weights))
+	environment.pc.weighted[, j] <- environment.pc.weighted[, j] * pc.weights[j]
+
+environment.distance <- dist(environment.pc.weighted)
+```
 
 # Environment-only classifications
 
@@ -304,20 +375,9 @@ If you have the legacy package installed, you can also call
 
 ## Standardized environmental classification
 
-The CTFS/fgeo classification is based on three topographic
-variables. It does not leverage other topographical variables or other
-available environmental data. This section shows how to do the same
-simple clustering but using more environmental information. Because
-environmental datasets can contain many correlated variables, this
-process has the following steps:
-
--   uncorrelate environmental dimensions using PCA on scaled variables;
--   not all PCs are equally important: re-scale again by explained
-    variance (this is the same as weighting the distances along those
-    dimensions);
--   calculate Euclidean distances on the re-scaled or weighted
-    orthogonal PC space;
--   do the clustering.
+Cluster the quadrats using the [weighted PCA distances](#sec-environment-distances)
+from terrain and soil. Ward linkage aims for compact groups. Change the
+variables or the PC weights in the distance preparation chunk.
 
 The following example tries several values of `k` (= the number of
 habitats) before choosing the level of detail. Silhouette width compares
@@ -329,16 +389,11 @@ before choosing a value of `k`.
 ```{r}
 #| label: standardized-environmental-classification
 
-environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 candidate.k = 2:6
 habitat.k = NULL  # Supply a k from the table to choose it yourself.
 minimum.class.quadrats = 10L
-linkage = "complete"
+linkage = "ward.D2"
 
-environment.scaled <- scale(environment[, environment.columns, drop = FALSE])
-stopifnot(all(is.finite(environment.scaled)))
-
-environment.distance <- dist(environment.scaled)
 cluster.tree <- hclust(environment.distance, method = linkage)
 
 cluster.diagnostics <- data.frame(k = candidate.k, silhouette = NA_real_,
@@ -369,23 +424,18 @@ table(habitat.hclust)
 
 ## Fuzzy environmental classes with FANNY {#sec-fanny}
 
-FANNY gives each quadrat one membership score per habitat. The scores
-sum to one and describe how strongly the quadrat belongs to each
-habitat. They describe similarity in the selected variables. The hard
-label uses the largest membership score. Keep the full matrix to see
-where boundaries are gradual.
+FANNY can use a distance matrix directly. Pass the same weighted PCA
+distances to compare fuzzy and hard classifications in the same space.
+Each quadrat has membership scores that sum to one. The largest score
+gives its hard label. Keep the full matrix to see gradual boundaries.
 
 ```{r}
 #| label: fuzzy-environmental-habitats
 
-environment.columns = c("elevation_m", "slope_deg", "tpi_m")
 habitat.k = 2L
 membership.exponent = 1.5  # Higher values make memberships more similar.
 
-environment.scaled <- scale(environment[, environment.columns, drop = FALSE])
-stopifnot(all(is.finite(environment.scaled)))
-
-fuzzy.fit <- cluster::fanny(environment.scaled, k = habitat.k,
+fuzzy.fit <- cluster::fanny(environment.distance, k = habitat.k, diss = TRUE,
 	memb.exp = membership.exponent, maxit = 500, tol = 1e-8)
 
 habitat.fanny <- setNames(fuzzy.fit$clustering, rownames(environment))
@@ -412,15 +462,16 @@ your ecological question.
 A tree splits the quadrats into groups by environmental rules, such as
 an elevation threshold. Multivariate regression trees use this idea
 (De'ath, 2002). Here `ctree()` uses conditional tests to choose
-variables and splits (Hothorn et al., 2006). The number of habitats
-follows from the stopping rule, minimum node size and maximum depth.
+variables and splits (Hothorn et al., 2006). Use the original soil and
+terrain columns to keep the thresholds in their measured units. The
+number of habitats follows from the stopping rule and tree size limits.
 
 ```{r}
 #| label: floristically-informed-tree
 #| fig-width: 8
 #| fig-height: 5
 
-environment.columns = c("elevation_m", "slope_deg", "tpi_m")
+tree.columns = names(environment)
 minimum.occupied.quadrats = 10L
 minimum.node.size = 50L
 maximum.depth = 3L
@@ -439,7 +490,7 @@ stopifnot(ncol(community) >= 2, any(training.rows))
 # Hellinger transformation of the retained species' relative abundances.
 community <- community[training.rows, , drop = FALSE]
 community.hel <- sqrt(community / rowSums(community))
-environment.tree <- environment[, environment.columns, drop = FALSE]
+environment.tree <- environment[, tree.columns, drop = FALSE]
 stopifnot(all(is.finite(as.matrix(environment.tree))))
 
 # Join response and predictor columns and build the native tree formula.
@@ -481,6 +532,8 @@ Regions of Common Profile use a mixture model to relate composition to
 environment (Foster et al., 2013). For each quadrat, `postProbs` uses
 both the observed flora and environment. `predict()` gives probabilities
 based on the environment alone, using a model fitted with the flora.
+The model uses predictors directly. Here we use a small set of scaled
+terrain and soil variables.
 
 This optional chunk uses the GitHub package `ecomix`. It was checked on
 simulated data. Fitting the full BCI data can take time. [Package
@@ -491,7 +544,7 @@ example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
 #| eval: false
 #| code-fold: true
 
-environment.columns = c("elevation_m", "slope_deg", "tpi_m")
+rcp.columns = c("elevation_m", "slope_deg", "tpi_m", "soil_M3P", "soil_M3Ca")
 minimum.occupied.quadrats = 10L
 candidate.k = 2:4
 number.starts = 10L
@@ -501,7 +554,7 @@ seed = 20261120
 library(ecomix)
 set.seed(seed)
 
-rcp.environment <- as.data.frame(scale(environment[, environment.columns, drop = FALSE]))
+rcp.environment <- as.data.frame(scale(environment[, rcp.columns, drop = FALSE]))
 species.keep <- colSums(composition > 0) >= minimum.occupied.quadrats
 rcp.data <- make_mixture_data(
 	species_data = composition[, species.keep, drop = FALSE],
@@ -646,16 +699,14 @@ if(use.smoothed.map)
 }
 ```
 
-One pass changes 102 of the 1,250 quadrats in the default BCI map.
-
 Check how much area each habitat covers and which conditions it
-represents. The table gives the class size and median environmental
-values for the chosen map.
+represents. The table gives class sizes and medians for selected terrain
+variables and Mehlich-3 phosphorus and calcium (mg/kg).
 
 ```{r}
 #| label: habitat-environmental-profiles
 
-profile.columns = c("elevation_m", "slope_deg", "tpi_m")
+profile.columns = c("elevation_m", "slope_deg", "tpi_m", "soil_M3P", "soil_M3Ca")
 
 profiles <- aggregate(environment[, profile.columns, drop = FALSE],
 	by = list(habitat = habitats), FUN = median)
