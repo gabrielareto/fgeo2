@@ -37,11 +37,11 @@ editor:
 # Introduction
 
 A habitat map groups places with similar environmental conditions.
-Harms et al. (2001) and Comita et al. (2007) used categorical habitat
-maps and torus translation tests to assess species--habitat associations
-at Barro Colorado Island. Other ForestGEO examples include Sinharaja
-(Gunatilleke et al., 2006) and Pasoh (Yamada et al., 2010). Habitat maps
-can also guide analyses by habitat and stratified sampling.
+Habitats maps have multiple uses. A common analysis in forest ecology is
+to test for habitat-species associations (e.g. Harms et al. 2001,
+Gunatilleke et al. 2006, Comita et al. 2007, Yamada et al. 2010).
+Habitat maps can also guide analyses by habitat and inform stratified
+sampling.
 
 The classes depend on what we measure and how we group the measurements.
 Here, we use different techniques to assign habitat labels or a set of
@@ -69,7 +69,8 @@ Groups such as palms and dicots may respond to different environmental
 features. The methods to classify habitats may be applied independently
 to different subsets of the individuals. This remains the user's
 responsibiilty: this tutorial does not develop tools to split the
-individuals/species into groups in a consistent or testable way.\
+individuals/species into groups in a consistent or testable way. (Drop
+me a line if you want to do so, it seems an interesting problem...).\
 \
 After fitting the maps, the tutorial shows how to inspect one habitat
 map, smooth its boundaries, find indicator species and assess
@@ -80,7 +81,7 @@ choices such as the number of habitats and other parameters.
 
 ## Set up the example
 
-Use data from the 50-ha Barro Colorado Island (BCI) plot in Panama.
+We use data from the 50-ha Barro Colorado Island (BCI) plot in Panama.
 All three files are in `data_examples/`. See the [dataset
 notes](../../data_examples/README.md).
 
@@ -121,7 +122,7 @@ source(file.path(path.to.fgeo2,
 	"06_topography_habitat/R/new/topography-variables.R"))
 ```
 
-## Define the counted population
+## Define the population
 
 Count living trees at least 1 cm in diameter. Each `TreeID` is
 represented by its largest stem. This keeps trees with multiple stems
@@ -195,23 +196,25 @@ dim(composition)
 
 ## Match the environmental table
 
-Soil and terrain use the same local plot coordinates in metres.
-Calculate terrain on a 5 m grid and average it within each quadrat.
-TPI measures elevation relative to nearby terrain. See the [topography
+First, we leverage all the topographical variables available through
+`derive_topography()`. See the [topography
 tutorial](derive-topographical-variables.qmd).
 
 ```{r}
 #| label: habitat-environment
+whitebox::install_whitebox()
 
 terrain.resolution = 5
-position.radius = 20  # Radius of the square neighbourhood for TPI, in metres.
 fill.missing = TRUE
 
 xyz <- read.csv(file.path(input.dir, "bci-elevation.csv"))
+
 terrain <- derive_topography(
-	xyz = xyz, variables = c("slope", "tpi"),
-	resolution = terrain.resolution, extent = plot.extent, crs = "local",
-	position.radius = position.radius, fill.missing = fill.missing
+	xyz = xyz,
+	resolution = terrain.resolution,
+	extent = plot.extent,
+	crs = "local",
+	fill.missing = fill.missing
 )
 
 # Aggregate the fine grid to the same 20 m cells as the quadrat table.
@@ -228,8 +231,8 @@ environment <- as.data.frame(terra::extract(terrain.quadrats, quadrat.xy))
 rownames(environment) <- quadrats$quadrat_id
 ```
 
-Estimate soil values at the quadrat centres by inverse-distance weighting
-(IDW), using the settings from the [environmental extraction
+Estimate soil values at the quadrat centres by inverse-distance
+weighting (IDW), using the settings from the [environmental extraction
 tutorial](environmental-extraction.qmd). We keep estimates just outside
 the sampling hull where enough nearby observations are available. This
 lets the torus test use the full rectangular grid.
@@ -250,13 +253,16 @@ soil.columns <- setdiff(names(soils), c("uid", "qid", "gx", "gy", "utm_e", "utm_
 for(variable in soil.columns)
 {
 	keep <- is.finite(soils$gx) & is.finite(soils$gy) & is.finite(soils[[variable]])
+	
 	measurements <- as.matrix(soils[keep, c("gx", "gy", variable)])
+	
 	soil.layer <- terra::interpIDW(terrain.quadrats[[1]], measurements,
 		radius = soil.search.radius, power = soil.power,
 		minPoints = minimum.soil.neighbours, maxPoints = maximum.soil.neighbours)
 
 	# Extraction at the centres follows quadrat order.
 	environment[[paste0("soil_", variable)]] <- terra::extract(soil.layer, quadrat.xy)[[1]]
+	
 }
 
 stopifnot(identical(rownames(environment), rownames(composition)),
@@ -265,36 +271,46 @@ stopifnot(identical(rownames(environment), rownames(composition)),
 
 Join other layers, such as canopy or disturbance, by quadrat ID. Keep
 `environment` and `composition` in the order of `quadrats$quadrat_id`.
-Keep the coordinates and species in `individuals` for the torus analysis.
-Use the same counting rules and grid to compare censuses on a fixed map.
+Keep the coordinates and species in `individuals` for the torus
+analysis. Use the same counting rules and grid to compare censuses on a
+fixed map.
 
 ## Prepare environmental distances {#sec-environment-distances}
 
-Scale the variables to unit variance and use principal component analysis
-(PCA) to form uncorrelated axes. The full set of unweighted PC scores
-preserves Euclidean distances in the scaled variables. Here we multiply
-each score by its share of explained variance raised to the power `0.25`,
-giving the main gradients extra weight. Set the power to `0` for the
-original scaled distances. Several related measurements can give one
-gradient more influence. Choose columns for your question and check
-[soil measurement quality](https://esapubs.org/archive/ecol/E096/204/metadata.php).
+Scale the variables to unit variance and use principal component
+analysis (PCA) to form uncorrelated axes. The full set of unweighted PC
+scores preserves Euclidean distances in the scaled variables. Here we
+multiply each score by its share of explained variance raised to the
+power `0.25`, giving the main gradients extra weight. Set the power to
+`0` for the original scaled distances. Several related measurements can
+give one gradient more influence. Choose columns for your question and
+check [soil measurement
+quality](https://esapubs.org/archive/ecol/E096/204/metadata.php).
 
 ```{r}
 #| label: environment-pca
 
-environment.columns = names(environment)  # Use all 27 variables, or select columns here.
+# Parameter to give weights to PCs
 pc.weight.power = 0.25
 
-environment.selected <- environment[, environment.columns, drop = FALSE]
-environment.pca <- prcomp(environment.selected, center = TRUE, scale. = TRUE)
+# # Use all variables, or select columns here.
+# Exclude aspect_deg from the averaging and PCA because the arithmetic mean of 359° and 1° is 180°, even though both face north.
+environment.columns <- names(environment)
+if("aspect_deg" %in% environment.columns)
+  environment.columns <- environment.columns[environment.columns != "aspect_deg"]
 
+environment.selected <- environment[, environment.columns, drop = FALSE]
+
+# Obtain a weighted PCA-based space:
+environment.pca <- prcomp(environment.selected, center = TRUE, scale. = TRUE)
 variance.share <- environment.pca$sdev^2 / sum(environment.pca$sdev^2)
 pc.weights <- variance.share^pc.weight.power
-environment.pc.weighted <- environment.pca$x
+environment.pc.weighted <- environment.pca$x # initialize
 
 for(j in seq_along(pc.weights))
 	environment.pc.weighted[, j] <- environment.pc.weighted[, j] * pc.weights[j]
 
+# Environmental distances in the rescaled environmental space:
 environment.distance <- dist(environment.pc.weighted)
 ```
 
@@ -336,6 +352,7 @@ plot.dimensions <- c(diff(plot.extent[1:2]), diff(plot.extent[3:4]))
 
 legacy.metrics <- legacy$allquadratslopes(list(col = legacy.xyz),
 	gridsize = quadrat.size, plotdim = plot.dimensions, edgecorrect = TRUE)
+
 legacy.metrics <- legacy.metrics[, c("meanelev", "convex", "slope")]
 
 # Confirm that each row describes the same quadrat as in the new grid.
@@ -375,16 +392,19 @@ If you have the legacy package installed, you can also call
 
 ## Standardized environmental classification
 
-Cluster the quadrats using the [weighted PCA distances](#sec-environment-distances)
-from terrain and soil. Ward linkage aims for compact groups. Change the
-variables or the PC weights in the distance preparation chunk.
+If one has more than the elevation profile, it is reasonable/advisable
+to use more (even all) environmental variables. This section shows how
+to cluster the quadrats using the [weighted PCA
+distances](#sec-environment-distances) from terrain and soil.
 
 The following example tries several values of `k` (= the number of
 habitats) before choosing the level of detail. Silhouette width compares
 how close a quadrat is to its own group and to the nearest alternative
 group. Higher values indicate clearer separation in the chosen
 environmental variables. Inspect the smallest habitat and its location
-before choosing a value of `k`.
+before choosing a value of `k` --- often, marginal habitats pop up in
+this type of automated analyses (for example, due to large gaps) and it
+would be appropriate to merge with surrounding areas.
 
 ```{r}
 #| label: standardized-environmental-classification
@@ -410,11 +430,13 @@ for(j in seq_along(candidate.k))
 
 # Choose the best silhouette among partitions with large enough classes.
 eligible <- subset(cluster.diagnostics, smallest.class >= minimum.class.quadrats)
+
 if(nrow(eligible) == 0)
 	stop("No candidate k meets minimum.class.quadrats.")
 
 if(is.null(habitat.k))
 	habitat.k <- eligible$k[which.max(eligible$silhouette)]
+
 stopifnot(habitat.k %in% eligible$k)
 
 habitat.hclust <- cutree(cluster.tree, k = habitat.k)
@@ -451,11 +473,11 @@ Check convergence and the number of hard habitats. If memberships are
 nearly equal everywhere or some hard classes disappear, try a lower
 `membership.exponent` or a smaller `habitat.k`.
 
-# Floristically informed classifications
+# Floristically-informed classifications
 
-These recipes use composition to find environmental differences that
-matter for the sampled community. Choose composition data that match
-your ecological question.
+These techniques use floristic composition to find environmental
+differences that matter for the sampled community. Choose composition
+data that match your ecological question.
 
 ## Conditional inference tree {#sec-ctree}
 
@@ -531,8 +553,8 @@ new locations (Roberts et al., 2017).
 Regions of Common Profile use a mixture model to relate composition to
 environment (Foster et al., 2013). For each quadrat, `postProbs` uses
 both the observed flora and environment. `predict()` gives probabilities
-based on the environment alone, using a model fitted with the flora.
-The model uses predictors directly. Here we use a small set of scaled
+based on the environment alone, using a model fitted with the flora. The
+model uses predictors directly. Here we use a small set of scaled
 terrain and soil variables.
 
 This optional chunk uses the GitHub package `ecomix`. It was checked on
@@ -555,6 +577,7 @@ library(ecomix)
 set.seed(seed)
 
 rcp.environment <- as.data.frame(scale(environment[, rcp.columns, drop = FALSE]))
+
 species.keep <- colSums(composition > 0) >= minimum.occupied.quadrats
 rcp.data <- make_mixture_data(
 	species_data = composition[, species.keep, drop = FALSE],
@@ -603,10 +626,12 @@ in membership or use `habitat.rcp` for one label per quadrat.
 # Spatial smoothing {#sec-smoothing}
 
 Nearby quadrats often have similar conditions. Smoothing can reduce
-isolated cells and make larger patches easier to see. It can also remove
-real features. For example, a stream habitat one quadrat wide can
-disappear when most neighbouring quadrats belong to the surrounding
-forest. Compare the two maps before choosing which one to use.
+isolated cells and make larger patches more contiguous and easier to see
+and interpret ecologically and in the field. However, spatial smoothing
+can also remove real features. For example, a stream habitat one quadrat
+wide can disappear when most neighbouring quadrats belong to the
+surrounding forest. Compare raw and smoothed maps, and think about
+whether they are realistic and useful, before choosing which one to use.
 
 Choose a map in the first line below. The rest of the tutorial evaluates
 this one map. To compare alternative maps, repeat these sections for
@@ -814,16 +839,16 @@ After the shift it is 0/2 = 0.
 
 ## Specify the statistic
 
-Harms et al. (2001) and the legacy `tt_test()` use relative stem density.
-For each species and habitat, divide the species count by the total
-count of all species in that habitat. Here we count individuals using
-one record per tree. The abundance cutoff selects the species to report.
-All eligible trees contribute to the habitat totals.
+Harms et al. (2001) and the legacy `tt_test()` use relative stem
+density. For each species and habitat, divide the species count by the
+total count of all species in that habitat. Here we count individuals
+using one record per tree. The abundance cutoff selects the species to
+report. All eligible trees contribute to the habitat totals.
 
 `OBS` is the observed share and `EXP` holds the shares from 999 shifts,
-each calculated using its own habitat total. The score
-`mean(EXP > OBS)` is the fraction of shifted shares above the observed
-share. A habitat needs at least one tree for the share to be defined.
+each calculated using its own habitat total. The score `mean(EXP > OBS)`
+is the fraction of shifted shares above the observed share. A habitat
+needs at least one tree for the share to be defined.
 
 ```{r}
 #| label: torus-options
@@ -949,8 +974,8 @@ for(b in seq_len(nsim))
 
 ## Summarize the associations
 
-At the 2.5% tail cutoff, the association is positive if at least 97.5% of
-the shifted shares are below the observed share. It is negative if at
+At the 2.5% tail cutoff, the association is positive if at least 97.5%
+of the shifted shares are below the observed share. It is negative if at
 least 97.5% are above. Otherwise it is neutral. Equal shares count
 toward neither tail.
 
@@ -1099,9 +1124,9 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     and environmental data. *Environmetrics*, 24, 489--499.
     [doi:10.1002/env.2245](https://doi.org/10.1002/env.2245).
 -   Gunatilleke, C. V. S., Gunatilleke, I. A. U. N., Esufali, S.,
-    Harms, K. E., Ashton, P. M. S., Burslem, D. F. R. P. & Ashton,
-    P. S. (2006). Species--habitat associations in a Sri Lankan
-    dipterocarp forest. *Journal of Tropical Ecology*, 22, 371--384.
+    Harms, K. E., Ashton, P. M. S., Burslem, D. F. R. P. & Ashton, P. S.
+    (2006). Species--habitat associations in a Sri Lankan dipterocarp
+    forest. *Journal of Tropical Ecology*, 22, 371--384.
     [doi:10.1017/S0266467406003282](https://doi.org/10.1017/S0266467406003282).
 -   Harms, K. E., Condit, R., Hubbell, S. P. & Foster, R. B. (2001).
     Habitat associations of trees and shrubs in a 50-ha neotropical
