@@ -48,9 +48,9 @@ Here, we use different techniques to assign habitat labels or a set of
 memberships to each 20 x 20 m quadrat in a ForestGEO plot:
 
 -   **CTFS/fgeo classification.** This is the historical approach that
-    has been used by many (most) of the ForestGEO plots. The archived
-    `fgeo_habitat()` function uses `hclust()` and `cutree()` on
-    elevation, slope and convexity in their original units.
+    has been used by many ForestGEO plots. Use
+    `fgeo.analyze::fgeo_habitat()` to classify quadrats by elevation,
+    slope and convexity in their original units.
 -   **Standardized environmental classification.** Use `prcomp()`,
     `hclust()` and `cutree()` to group quadrats using distances on
     weighted principal component scores.
@@ -60,7 +60,7 @@ memberships to each 20 x 20 m quadrat in a ForestGEO plot:
 -   **Floristic tree.** Use `partykit::ctree()` to find environmental
     boundaries that help describe changes in tree composition (Hothorn
     et al., 2006).
--   **Probabilistic regions.** The optional `ecomix::regional_mix()`
+-   **Probabilistic regions.** The optional `ecomix::regional_mix.multifit()`
     recipe uses tree composition and environment to estimate the
     probability that each quadrat belongs to each region (Foster et al.,
     2013).
@@ -72,10 +72,11 @@ responsibiilty: this tutorial does not develop tools to split the
 individuals/species into groups in a consistent or testable way. (Drop
 me a line if you want to do so, it seems an interesting problem...).\
 \
-After fitting the maps, the tutorial shows how to inspect one habitat
-map, smooth its boundaries, find indicator species and assess
-species--habitat associations. These analyses, in turn, can guide
-choices such as the number of habitats and other parameters.
+We use five habitats in the worked examples, as in the old-growth BCI
+association analyses of Harms et al. (2001) and Comita et al. (2007).
+After fitting the maps, choose one to smooth, describe with indicator
+species and use for species--habitat associations. The final comparison
+brings the maps together.
 
 # Data and shared objects {#sec-preparation}
 
@@ -111,10 +112,12 @@ census.file = "census1.txt"
 soil.file = "bci-soils-wolf-2015.csv"
 plot.extent = c(0, 1000, 0, 500)  # xmin, xmax, ymin, ymax in metres.
 quadrat.size = 20
+habitat.k = 5L
 
 # Install the packages for the recipes you want to run.
-# install.packages(c("terra", "interp", "FNN", "cluster", "partykit",
-#                    "indicspecies", "withr", "jsonlite"))
+# install.packages(c("terra", "interp", "FNN", "whitebox", "cluster",
+#                    "fgeo.analyze", "partykit", "indicspecies"))
+# whitebox::install_whitebox()  # Install the separate executable once.
 
 input.dir <- file.path(path.to.fgeo2, "data_examples")
 source(file.path(path.to.fgeo2, "03_spatial/R/new/quadrats.R"))
@@ -197,12 +200,12 @@ dim(composition)
 ## Match the environmental table
 
 First, we leverage all the topographical variables available through
-`derive_topography()`. See the [topography
+`derive_topography()`. Average northness and eastness to represent
+aspect in each quadrat. The direction in degrees is circular. See the [topography
 tutorial](derive-topographical-variables.qmd).
 
 ```{r}
 #| label: habitat-environment
-whitebox::install_whitebox()
 
 terrain.resolution = 5
 fill.missing = TRUE
@@ -219,7 +222,8 @@ terrain <- derive_topography(
 
 # Aggregate the fine grid to the same 20 m cells as the quadrat table.
 stopifnot(quadrat.size %% terrain.resolution == 0)
-terrain.quadrats <- terra::aggregate(terrain,
+terrain.columns <- setdiff(names(terrain), "aspect_deg")
+terrain.quadrats <- terra::aggregate(terrain[[terrain.columns]],
 	fact = quadrat.size / terrain.resolution, fun = "mean", na.rm = TRUE)
 
 quadrat.xy <- cbind(
@@ -293,11 +297,8 @@ quality](https://esapubs.org/archive/ecol/E096/204/metadata.php).
 # Parameter to give weights to PCs
 pc.weight.power = 0.25
 
-# # Use all variables, or select columns here.
-# Exclude aspect_deg from the averaging and PCA because the arithmetic mean of 359° and 1° is 180°, even though both face north.
-environment.columns <- names(environment)
-if("aspect_deg" %in% environment.columns)
-  environment.columns <- environment.columns[environment.columns != "aspect_deg"]
+# Use all variables, or select columns here.
+environment.columns = names(environment)
 
 environment.selected <- environment[, environment.columns, drop = FALSE]
 
@@ -314,6 +315,35 @@ for(j in seq_along(pc.weights))
 environment.distance <- dist(environment.pc.weighted)
 ```
 
+## Map habitat labels
+
+Each label vector is named by quadrat ID. Link the labels to the
+common raster grid using the quadrat centres.
+
+```{r}
+#| label: habitat-grid
+
+habitat.grid <- terra::rast(terra::ext(plot.extent),
+	resolution = quadrat.size, crs = "local")
+quadrat.cells <- terra::cellFromXY(habitat.grid, quadrat.xy)
+
+stopifnot(length(quadrat.cells) == terra::ncell(habitat.grid),
+	!anyNA(quadrat.cells), !anyDuplicated(quadrat.cells),
+	isTRUE(all.equal(quadrat.xy, terra::xyFromCell(habitat.grid, quadrat.cells))))
+
+habitat_to_raster <- function(habitats)
+{
+	stopifnot(identical(names(habitats), quadrats$quadrat_id))
+	labels <- factor(habitats)
+	map <- habitat.grid
+	codes <- rep(NA_integer_, terra::ncell(map))
+	codes[quadrat.cells] <- as.integer(labels)
+	terra::values(map) <- codes
+	levels(map) <- data.frame(code = seq_along(levels(labels)), habitat = levels(labels))
+	map
+}
+```
+
 # Environment-only classifications
 
 ## CTFS/fgeo classification of topography {#sec-legacy}
@@ -324,71 +354,42 @@ number of classes. This is the historical/legacy approach used by many
 ForestGEO sites and remains the most direct way of splitting plots into
 habitats based on {x, y, z} data only.
 
-The first chunk loads the archived CTFS terrain calculation and the
-archived fgeo clustering step. The second shows the equivalent base R
-clustering, using the same variables and number of classes.
-
-```{r}
-#| label: legacy-topography-inputs
-#| code-fold: true
-#| code-summary: "Load the archived CTFS and fgeo code"
-
-ctfs.commit = "0a2c01dd560daacba0fdc2eb8c9280e2b9d2ea9d"
-fgeo.commit = "d69bfe711263305fcbaf322d402eba2f1edfb084"
-
-source(file.path(path.to.fgeo2, "evaluation/0-code-to-source.r"))
-legacy <- new.env()
-
-load_github_snapshot(commit = ctfs.commit, envir = legacy,
-	scripts = c("evaluation/Condit/spatial/quadfunc.r",
-		"evaluation/Condit/topography/slope.r"))
-
-load_github_snapshot(repo = "forestgeo/fgeo.analyze", commit = fgeo.commit,
-	scripts = "R/add_cluster.R", envir = legacy)
-
-legacy.xyz <- xyz[order(xyz$x, xyz$y), ]
-names(legacy.xyz)[names(legacy.xyz) == "z"] <- "elev"
-plot.dimensions <- c(diff(plot.extent[1:2]), diff(plot.extent[3:4]))
-
-legacy.metrics <- legacy$allquadratslopes(list(col = legacy.xyz),
-	gridsize = quadrat.size, plotdim = plot.dimensions, edgecorrect = TRUE)
-
-legacy.metrics <- legacy.metrics[, c("meanelev", "convex", "slope")]
-
-# Confirm that each row describes the same quadrat as in the new grid.
-xyz.keys <- paste(xyz$x, xyz$y)
-corners <- cbind(
-	xyz$z[match(paste(quadrats$xmin, quadrats$ymin), xyz.keys)],
-	xyz$z[match(paste(quadrats$xmin, quadrats$ymax), xyz.keys)],
-	xyz$z[match(paste(quadrats$xmax, quadrats$ymin), xyz.keys)],
-	xyz$z[match(paste(quadrats$xmax, quadrats$ymax), xyz.keys)]
-)
-
-stopifnot(nrow(legacy.metrics) == nrow(quadrats),
-	all(abs(legacy.metrics$meanelev - rowMeans(corners)) < 1e-7))
-rownames(legacy.metrics) <- quadrats$quadrat_id
-```
+Use `fgeo_topography()` to inspect the CTFS terrain variables, then
+`fgeo_habitat()` to run the full legacy classification. With
+`edgecorrect = TRUE`, the elevation survey must include the edge
+midpoints used for convexity. The BCI elevation file includes them.
 
 ```{r}
 #| label: legacy-habitat-clustering
+#| fig-height: 3
 
-habitat.k = 4L
+# The legacy survey coordinates start at the lower-left plot corner.
+legacy.xyz <- xyz[order(xyz$x, xyz$y), ]
+names(legacy.xyz)[names(legacy.xyz) == "z"] <- "elev"
+legacy.xyz$x <- legacy.xyz$x - plot.extent[1]
+legacy.xyz$y <- legacy.xyz$y - plot.extent[3]
+legacy.elevation <- list(
+	col = legacy.xyz, xdim = diff(plot.extent[1:2]), ydim = diff(plot.extent[3:4])
+)
 
-raw.tree <- hclust(dist(legacy.metrics), method = "complete")
-habitat.raw <- cutree(raw.tree, k = habitat.k)
+# fgeo_habitat() calculates the topography internally and returns labels.
+topography.legacy <- fgeo.analyze::fgeo_topography(legacy.elevation,
+	gridsize = quadrat.size, edgecorrect = TRUE)
+legacy.result <- fgeo.analyze::fgeo_habitat(legacy.elevation,
+	gridsize = quadrat.size, n = habitat.k, edgecorrect = TRUE)
 
-# Check the result against the archived fgeo clustering step.
-legacy.input <- structure(legacy.metrics, class = c("fgeo_topography", "data.frame"))
-legacy.result <- legacy$add_cluster(legacy.input, n = habitat.k)
-stopifnot(identical(unname(habitat.raw), legacy.result$cluster))
+# Match by lower-left coordinates, then keep the tutorial's quadrat IDs.
+legacy.keys <- paste(legacy.result$gx + plot.extent[1],
+	legacy.result$gy + plot.extent[3])
+legacy.rows <- match(paste(quadrats$xmin, quadrats$ymin), legacy.keys)
+stopifnot(nrow(legacy.result) == nrow(quadrats),
+	!anyNA(legacy.rows), !anyDuplicated(legacy.rows))
+habitat.legacy <- setNames(legacy.result$habitats[legacy.rows], quadrats$quadrat_id)
 
-table(habitat.raw)
+head(topography.legacy)
+table(habitat.legacy)
+terra::plot(habitat_to_raster(habitat.legacy), main = "CTFS/fgeo")
 ```
-
-If you have the legacy package installed, you can also call
-`fgeo.analyze::fgeo_habitat()` with
-`list(col = legacy.xyz, xdim = 1000, ydim = 500)`, `gridsize = 20`,
-`n = habitat.k` and `edgecorrect = TRUE`.
 
 ## Standardized environmental classification
 
@@ -397,51 +398,20 @@ to use more (even all) environmental variables. This section shows how
 to cluster the quadrats using the [weighted PCA
 distances](#sec-environment-distances) from terrain and soil.
 
-The following example tries several values of `k` (= the number of
-habitats) before choosing the level of detail. Silhouette width compares
-how close a quadrat is to its own group and to the nearest alternative
-group. Higher values indicate clearer separation in the chosen
-environmental variables. Inspect the smallest habitat and its location
-before choosing a value of `k` --- often, marginal habitats pop up in
-this type of automated analyses (for example, due to large gaps) and it
-would be appropriate to merge with surrounding areas.
+Ward linkage groups quadrats in the weighted PCA space. Cut the tree at
+the shared `habitat.k` from setup.
 
 ```{r}
 #| label: standardized-environmental-classification
+#| fig-height: 3
 
-candidate.k = 2:6
-habitat.k = NULL  # Supply a k from the table to choose it yourself.
-minimum.class.quadrats = 10L
 linkage = "ward.D2"
 
 cluster.tree <- hclust(environment.distance, method = linkage)
+habitat.full.environment <- cutree(cluster.tree, k = habitat.k)
 
-cluster.diagnostics <- data.frame(k = candidate.k, silhouette = NA_real_,
-	smallest.class = NA_integer_)
-
-for(j in seq_along(candidate.k))
-{
-	groups <- cutree(cluster.tree, k = candidate.k[j])
-	widths <- cluster::silhouette(groups, environment.distance)
-
-	cluster.diagnostics$silhouette[j] <- mean(widths[, "sil_width"])
-	cluster.diagnostics$smallest.class[j] <- min(table(groups))
-}
-
-# Choose the best silhouette among partitions with large enough classes.
-eligible <- subset(cluster.diagnostics, smallest.class >= minimum.class.quadrats)
-
-if(nrow(eligible) == 0)
-	stop("No candidate k meets minimum.class.quadrats.")
-
-if(is.null(habitat.k))
-	habitat.k <- eligible$k[which.max(eligible$silhouette)]
-
-stopifnot(habitat.k %in% eligible$k)
-
-habitat.hclust <- cutree(cluster.tree, k = habitat.k)
-cluster.diagnostics
-table(habitat.hclust)
+table(habitat.full.environment)
+terra::plot(habitat_to_raster(habitat.full.environment), main = "Terrain and soil")
 ```
 
 ## Fuzzy environmental classes with FANNY {#sec-fanny}
@@ -453,8 +423,8 @@ gives its hard label. Keep the full matrix to see gradual boundaries.
 
 ```{r}
 #| label: fuzzy-environmental-habitats
+#| fig-height: 3
 
-habitat.k = 2L
 membership.exponent = 1.5  # Higher values make memberships more similar.
 
 fuzzy.fit <- cluster::fanny(environment.distance, k = habitat.k, diss = TRUE,
@@ -467,6 +437,7 @@ rownames(membership.fanny) <- rownames(environment)
 fuzzy.fit$convergence
 table(habitat.fanny)
 summary(apply(membership.fanny, 1, max))
+terra::plot(habitat_to_raster(habitat.fanny), main = "FANNY")
 ```
 
 Check convergence and the number of hard habitats. If memberships are
@@ -482,11 +453,12 @@ data that match your ecological question.
 ## Conditional inference tree {#sec-ctree}
 
 A tree splits the quadrats into groups by environmental rules, such as
-an elevation threshold. Multivariate regression trees use this idea
-(De'ath, 2002). Here `ctree()` uses conditional tests to choose
-variables and splits (Hothorn et al., 2006). Use the original soil and
-terrain columns to keep the thresholds in their measured units. The
-number of habitats follows from the stopping rule and tree size limits.
+an elevation threshold. Su et al. (2010) used a multivariate regression
+tree (De'ath, 2002) to define seven habitats from tree composition and
+microtopography at Fushan, Taiwan. Here `ctree()` uses conditional tests
+to choose variables and splits (Hothorn et al., 2006). The original soil
+and terrain columns keep the thresholds in their measured units. The
+stopping rules below yield five terminal groups for these BCI data.
 
 ```{r}
 #| label: floristically-informed-tree
@@ -496,7 +468,7 @@ number of habitats follows from the stopping rule and tree size limits.
 tree.columns = names(environment)
 minimum.occupied.quadrats = 10L
 minimum.node.size = 50L
-maximum.depth = 3L
+maximum.depth = 4L
 split.criterion = 0.99
 test.statistic = "quadratic"
 split.statistic = "maximum"
@@ -538,6 +510,7 @@ names(habitat.ctree) <- rownames(environment)
 
 table(habitat.ctree)
 plot(floristic.tree, type = "simple")
+terra::plot(habitat_to_raster(habitat.ctree), main = "Floristic tree")
 ```
 
 The Hellinger transformation takes the square root of the proportion of
@@ -551,77 +524,99 @@ new locations (Roberts et al., 2017).
 ## Optional probabilistic regions {#sec-rcp}
 
 Regions of Common Profile use a mixture model to relate composition to
-environment (Foster et al., 2013). For each quadrat, `postProbs` uses
-both the observed flora and environment. `predict()` gives probabilities
-based on the environment alone, using a model fitted with the flora. The
-model uses predictors directly. Here we use a small set of scaled
-terrain and soil variables.
+environment (Foster et al., 2013). The membership probabilities below
+use the observed flora and a small set of scaled terrain and soil
+variables. The map assigns each fitted quadrat to its most likely region.
 
-This optional chunk uses the GitHub package `ecomix`. It was checked on
-simulated data. Fitting the full BCI data can take time. [Package
-example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
+**Start small.** Fits can be slow with many quadrats or species. This
+example uses a rectangle in the lower-left corner of the BCI plot and
+the most abundant species in that rectangle. Increase the two fractions
+in steps and check elapsed time and agreement among converged starts
+before fitting the full dataset.
+
+This chunk runs when the optional package is installed. See the
+[package example](https://skiptoniam.github.io/ecomix/articles/RCP-example.html).
 
 ```{r}
 #| label: optional-rcp-habitats
-#| eval: false
+#| eval: !expr requireNamespace("ecomix", quietly = TRUE)
 #| code-fold: true
+#| fig-height: 3
 
+p.quadrats.to.use = 0.1  # Proportion of quadrats to use, from the {0, 0} corner.
+p.species.to.use = 0.05  # Proportion of species present in that rectangle.
 rcp.columns = c("elevation_m", "slope_deg", "tpi_m", "soil_M3P", "soil_M3Ca")
-minimum.occupied.quadrats = 10L
-candidate.k = 2:4
 number.starts = 10L
 seed = 20261120
 
 # remotes::install_github("skiptoniam/ecomix@17418626")
-library(ecomix)
-set.seed(seed)
+stopifnot(p.quadrats.to.use > 0, p.quadrats.to.use <= 1,
+	p.species.to.use > 0, p.species.to.use <= 1)
 
-rcp.environment <- as.data.frame(scale(environment[, rcp.columns, drop = FALSE]))
+# Scale both sides by the square root of the area fraction, then round to quadrats.
+side.fraction <- sqrt(p.quadrats.to.use)
+columns.to.use <- max(1L, round(side.fraction * length(unique(quadrats$xmin))))
+rows.to.use <- max(1L, round(side.fraction * length(unique(quadrats$ymin))))
+rcp.rows <- quadrats$xmin < plot.extent[1] + columns.to.use * quadrat.size &
+	quadrats$ymin < plot.extent[3] + rows.to.use * quadrat.size
+stopifnot(sum(rcp.rows) >= habitat.k)
 
-species.keep <- colSums(composition > 0) >= minimum.occupied.quadrats
-rcp.data <- make_mixture_data(
-	species_data = composition[, species.keep, drop = FALSE],
+# Rank species by their individual counts in the selected rectangle.
+abundance <- sort(colSums(composition[rcp.rows, , drop = FALSE]), decreasing = TRUE)
+abundance <- abundance[abundance > 0]
+species.to.use <- max(1L, round(p.species.to.use * length(abundance)))
+rcp.species <- names(head(abundance, species.to.use))
+rcp.counts <- composition[rcp.rows, rcp.species, drop = FALSE]
+rcp.environment <- as.data.frame(scale(environment[rcp.rows, rcp.columns, drop = FALSE]))
+stopifnot(ncol(rcp.counts) > 0, all(is.finite(as.matrix(rcp.environment))))
+
+rcp.data <- ecomix::make_mixture_data(
+	species_data = rcp.counts,
 	covariate_data = rcp.environment
 )
 
 # The constructor puts species columns first and environmental columns last.
-response.names <- names(rcp.data)[seq_len(sum(species.keep))]
+response.names <- names(rcp.data)[seq_len(ncol(rcp.counts))]
 predictor.names <- tail(names(rcp.data), ncol(rcp.environment))
-names(rcp.environment) <- predictor.names
 rcp.formula <- reformulate(predictor.names,
 	response = paste0("cbind(", paste(response.names, collapse = ", "), ")"))
 
-rcp.fits <- vector("list", length(candidate.k))
-
-for(j in seq_along(candidate.k))
-{
-	starts <- regional_mix.multifit(
+set.seed(seed)
+rcp.elapsed <- system.time(
+	rcp.starts <- ecomix::regional_mix.multifit(
 		rcp_formula = rcp.formula, species_formula = ~1,
-		data = rcp.data, nRCP = candidate.k[j], family = "negative.binomial",
-		nstart = number.starts, mc.cores = 1, titbits = TRUE
+		data = rcp.data, nRCP = habitat.k, family = "negative.binomial",
+		nstart = number.starts, mc.cores = 1, titbits = FALSE,
+		control = list(quiet = TRUE)
 	)
+)
 
-	log.likelihood <- sapply(starts$multiple_fits, function(x)
-		if(x$conv == 0) x$logl else -Inf)
-	if(!any(is.finite(log.likelihood)))
-		stop("No converged RCP start at k = ", candidate.k[j])
+log.likelihood <- sapply(rcp.starts$multiple_fits, function(fit)
+	if(is.list(fit) && isTRUE(fit$conv == 0) && is.finite(fit$logl)) fit$logl else -Inf)
+if(!any(is.finite(log.likelihood)))
+	stop("No converged ecomix start. Inspect the input and fitting settings.")
 
-	rcp.fits[[j]] <- starts$multiple_fits[[which.max(log.likelihood)]]
-}
-
-rcp.diagnostics <- data.frame(k = candidate.k, BIC = sapply(rcp.fits, BIC))
-regional.fit <- rcp.fits[[which.min(rcp.diagnostics$BIC)]]
-rcp.diagnostics
-
+regional.fit <- rcp.starts$multiple_fits[[which.max(log.likelihood)]]
 posterior.rcp <- regional.fit$postProbs
-prediction.rcp <- predict(regional.fit, newdata = rcp.environment)
-rownames(posterior.rcp) <- rownames(prediction.rcp) <- rownames(environment)
-habitat.rcp <- setNames(max.col(posterior.rcp, ties.method = "first"), rownames(environment))
+stopifnot(nrow(posterior.rcp) == nrow(rcp.counts), ncol(posterior.rcp) == habitat.k,
+	all(is.finite(posterior.rcp)))
+rownames(posterior.rcp) <- rownames(rcp.counts)
+
+# Leave quadrats outside the fitted rectangle unclassified.
+habitat.ecomix <- setNames(rep(NA_integer_, nrow(quadrats)), quadrats$quadrat_id)
+habitat.ecomix[rcp.rows] <- max.col(posterior.rcp, ties.method = "first")
+
+c(quadrats = nrow(rcp.counts), species = ncol(rcp.counts),
+	elapsed.seconds = unname(rcp.elapsed["elapsed"]))
+round(log.likelihood, 1)
+table(habitat.ecomix)
+terra::plot(habitat_to_raster(habitat.ecomix), main = "ecomix, fitted rectangle")
 ```
 
-Check that several starts give similar fits before using BIC to choose
-the number of regions. Use the probabilities to describe gradual changes
-in membership or use `habitat.rcp` for one label per quadrat.
+The printed log likelihoods show how the converged fits agree.
+`-Inf` marks a failed start. Some converged fits can leave regions empty,
+so also check the habitat counts. Timing progressively larger subsets
+gives a rough guide to cost as the data grow.
 
 # Spatial smoothing {#sec-smoothing}
 
@@ -643,11 +638,11 @@ test associations with it.
 ```{r}
 #| label: choose-habitat-map
 
-habitats <- habitat.hclust
-# habitats <- habitat.raw
+habitats <- habitat.full.environment
+# habitats <- habitat.legacy
 # habitats <- habitat.fanny
 # habitats <- habitat.ctree
-# habitats <- habitat.rcp  # If you ran the optional recipe.
+# habitats <- habitat.ecomix  # Fit the full plot before selecting this map.
 use.smoothed.map = FALSE  # Set TRUE to use the filtered map below.
 
 stopifnot(identical(names(habitats), quadrats$quadrat_id),
@@ -666,26 +661,13 @@ All windows use the original map.
 #| label: smooth-habitat-map
 #| fig-height: 5.5
 
-# Put the habitat labels on the 20 m grid, using quadrat centres for alignment.
-habitat.grid <- terra::rast(terra::ext(plot.extent),
-	resolution = quadrat.size, crs = "")
-quadrat.xy <- cbind(x = (quadrats$xmin + quadrats$xmax) / 2,
-	y = (quadrats$ymin + quadrats$ymax) / 2)
-quadrat.cells <- terra::cellFromXY(habitat.grid, quadrat.xy)
-
-stopifnot(length(quadrat.cells) == terra::ncell(habitat.grid),
-	!anyNA(quadrat.cells), !anyDuplicated(quadrat.cells),
-	isTRUE(all.equal(quadrat.xy, terra::xyFromCell(habitat.grid, quadrat.cells))))
-
-habitat.labels <- levels(factor(habitats.original))
-habitat.key <- data.frame(code = seq_along(habitat.labels),
-	habitat = habitat.labels)
-original.codes <- integer(terra::ncell(habitat.grid))
-original.codes[quadrat.cells] <- match(habitats.original, habitat.labels)
-terra::values(habitat.grid) <- original.codes
+original.map <- habitat_to_raster(habitats.original)
+habitat.key <- terra::levels(original.map)[[1]]
+habitat.labels <- habitat.key$habitat
+original.codes <- terra::values(original.map, mat = FALSE)
 
 # Each row gives the labels in one window. tabulate() skips NA at the edges.
-windows <- terra::focalValues(habitat.grid, w = 3)
+windows <- terra::focalValues(original.map, w = 3)
 smoothed.codes <- original.codes
 
 for(i in seq_len(nrow(windows)))
@@ -703,10 +685,8 @@ names(habitats.smoothed) <- quadrats$quadrat_id
 c(changed.quadrats = sum(habitats.smoothed != habitats.original),
 	total.quadrats = length(habitats.original))
 
-original.map <- habitat.grid
-smoothed.map <- habitat.grid
+smoothed.map <- original.map
 terra::values(smoothed.map) <- smoothed.codes
-levels(original.map) <- habitat.key
 levels(smoothed.map) <- habitat.key
 
 old.par <- par(mfrow = c(2, 1))
@@ -1053,13 +1033,101 @@ for(i in seq_len(nrow(examples)))
 par(old.par)
 ```
 
+# Compare habitat maps {#sec-compare-maps}
+
+Look for boundaries and patches that appear in several maps. Habitat
+numbers and colours are assigned separately for each method. The blank
+area on the ecomix map lies outside its fitted rectangle.
+
+```{r}
+#| label: compare-habitat-maps
+#| fig-height: 7.5
+
+habitat.maps <- list(
+	"CTFS/fgeo" = habitat.legacy,
+	"Terrain and soil" = habitat.full.environment,
+	"FANNY" = habitat.fanny,
+	"Floristic tree" = habitat.ctree
+)
+
+if(exists("habitat.ecomix"))
+	habitat.maps$ecomix <- habitat.ecomix
+
+old.par <- par(mfrow = c(3, 2), mar = c(2, 2, 2, 1))
+for(method in names(habitat.maps))
+	terra::plot(habitat_to_raster(habitat.maps[[method]]), main = method, legend = FALSE)
+par(old.par)
+```
+
+Compare each pair of maps where both have labels. Among pairs of
+quadrats placed in the same habitat by either map, agreement is the
+fraction placed together by both. A value of 1 means identical
+groupings, regardless of the habitat numbers.
+
+```{r}
+#| label: habitat-agreement
+
+map.pairs <- combn(names(habitat.maps), 2)
+agreement <- data.frame(map.1 = map.pairs[1, ], map.2 = map.pairs[2, ],
+	quadrats = NA_integer_, agreement = NA_real_)
+
+for(i in seq_len(ncol(map.pairs)))
+{
+	labels.1 <- habitat.maps[[map.pairs[1, i]]]
+	labels.2 <- habitat.maps[[map.pairs[2, i]]]
+	overlap <- table(labels.1, labels.2)
+
+	# A group of n quadrats contains choose(n, 2) pairs.
+	together.both <- sum(choose(overlap, 2))
+	together.either <- sum(choose(rowSums(overlap), 2)) +
+		sum(choose(colSums(overlap), 2)) - together.both
+
+	agreement$quadrats[i] <- sum(overlap)
+	if(together.either > 0)
+		agreement$agreement[i] <- together.both / together.either
+}
+
+knitr::kable(agreement, digits = 2, row.names = FALSE)
+```
+
+## How to choose k = the number of habitats {#sec-choose-k}
+
+Cut the same Ward tree at different levels of detail. Mean silhouette
+summarizes how well quadrats are separated in the environmental
+distances used for clustering. Inspect the size and location of the
+smallest classes alongside that number.
+
+```{r}
+#| label: compare-ward-cuts
+#| fig-height: 8
+
+k.values = c(3L, 5L, 7L)
+
+old.par <- par(mfrow = c(3, 1), mar = c(2, 2, 2, 1))
+for(k in k.values)
+{
+	groups <- cutree(cluster.tree, k = k)
+	widths <- cluster::silhouette(groups, environment.distance)[, "sil_width"]
+	caption <- sprintf("k = %d   silhouette %.2f   smallest habitat %d quadrats",
+		k, mean(widths), min(table(groups)))
+	terra::plot(habitat_to_raster(groups), main = caption)
+}
+par(old.par)
+```
+
+At BCI, the five-class cut isolates a scattered group of just ten
+quadrats. The seven-class cut also picks out a narrow strip in the
+southwest and has lower mean silhouette. Check whether such features
+matter for your question. Indicator scores and species associations can
+help describe candidate maps. Use independent species data to test
+associations after choosing a map with those summaries.
+
 # Store results {#sec-storage}
 
 Save the selected map as a categorical `terra` raster. The GeoTIFF
 stores integer codes and the key records the corresponding habitat
-labels. Keep any GeoTIFF sidecars with the raster. Save the quadrat
-labels and analysis inputs in an R file so you can reuse them without
-refitting the map.
+labels. Keep any GeoTIFF sidecars with the raster. The R file stores all
+methods' quadrat labels and the inputs for the selected map.
 
 ```{r}
 #| label: store-habitat-map
@@ -1074,7 +1142,8 @@ terra::writeRaster(habitat.raster, file.path(output.dir, "habitat-map.tif"),
 	datatype = "INT4S", overwrite = overwrite)
 write.csv(habitat.key, file.path(output.dir, "habitat-key.csv"), row.names = FALSE)
 
-map <- list(habitats = habitats, quadrats = quadrats, environment = environment,
+map <- list(habitats = habitats, habitat.maps = habitat.maps,
+	quadrats = quadrats, environment = environment,
 	composition = composition, individuals = individuals, plot.extent = plot.extent)
 
 saveRDS(map, file.path(output.dir, "habitat-map.rds"))
@@ -1147,6 +1216,11 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     with temporal, spatial, hierarchical, or phylogenetic structure.
     *Ecography*, 40, 913--929.
     [doi:10.1111/ecog.02881](https://doi.org/10.1111/ecog.02881).
+-   Su, S.-H., Hsieh, C.-F., Chang-Yang, C.-H., Lu, C.-L. & Guan, B. T.
+    (2010). Micro-topographic differentiation of the tree species
+    composition in a subtropical submontane rainforest in northeastern
+    Taiwan. *Taiwan Journal of Forest Science*, 25, 63--80.
+    [Full text](https://ws.tfri.gov.tw/001/Upload/OldFile/files/25-1_07.pdf).
 -   Wolf, J. A., Hubbell, S. P., Fricker, G. A. & Turner, B. L. (2015).
     Geospatial observations on tropical forest surface soil chemistry.
     *Ecology*, 96, 2313.
