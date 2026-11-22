@@ -3101,7 +3101,7 @@ vertical-align: -.125em;
 <p>The classes depend on what we measure and how we group the measurements. Here, we use different techniques to assign habitat labels or a set of memberships to each 20 x 20 m quadrat in a ForestGEO plot:</p>
 <ul>
 <li><strong>CTFS/fgeo classification.</strong> This is the historical approach that has been used by many ForestGEO plots. It uses <code>fgeo.analyze::fgeo_habitat()</code> to classify quadrats by elevation, slope and convexity in their original units.</li>
-<li><strong>Standardized environmental classification.</strong> It uses <code>prcomp()</code>, <code>hclust()</code> and <code>cutree()</code> to group quadrats using distances on principal component scores.</li>
+<li><strong>Standardized environmental classification.</strong> It uses <code>prcomp()</code>, <code>hclust()</code> and <code>cutree()</code> to group quadrats by Euclidean distance in the retained principal component scores.</li>
 <li><strong>Fuzzy clustering.</strong> It uses <code>cluster::fanny()</code> when quadrats may share features with several habitats. The membership scores show those transitions (Kaufman and Rousseeuw, 1990).</li>
 <li><strong>Floristic tree.</strong> It uses <code>partykit::ctree()</code> to find environmental boundaries that help describe changes in tree composition (Hothorn et al., 2006).</li>
 <li><strong>Probabilistic regions.</strong> The optional <code>ecomix::regional_mix.multifit()</code> technique uses tree composition and environment to estimate the probability that each quadrat belongs to each region (Foster et al., 2013).</li>
@@ -3273,28 +3273,26 @@ We use five habitats in the worked examples, as in the old-growth BCI associatio
 </section>
 <section id="sec-environment-distances" class="level2" data-number="2.5">
 <h2 data-number="2.5" class="anchored" data-anchor-id="sec-environment-distances"><span class="header-section-number">2.5</span> Prepare environmental distances</h2>
-<p>Scale the variables to unit variance and use principal component analysis (PCA) to form uncorrelated axes. Then, calculate distances in this orthogonal space, before clustering into habitats. Note that most important PCs should contribute more to these environmental distances than the least important PCs. Non-important PCs could be dropped entirely according to some useful rules (Peres-Neto et al. 2003).</p>
+<p>Scale the environmental variables to unit variance and run principal component analysis (PCA). Keep the first principal components (PCs) that together explain at least the chosen share of variance. Calculate Euclidean distances directly from their scores. PCs with larger score variance contribute more to these distances on average. For other ways to choose how many PCs to keep, see Peres-Neto et al. (2005).</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Use all variables, or select columns here.</span></span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>environment.columns <span class="ot">=</span> <span class="fu">names</span>(environment)</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>environment.selected <span class="ot">&lt;-</span> environment[, environment.columns, drop <span class="ot">=</span> <span class="cn">FALSE</span>]</span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Obtain a PCA-based space:</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Center and scale the variables before computing principal components.</span></span>
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>environment.pca <span class="ot">&lt;-</span> <span class="fu">prcomp</span>(environment.selected, <span class="at">center =</span> <span class="cn">TRUE</span>, <span class="at">scale. =</span> <span class="cn">TRUE</span>)</span>
 <span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co"># (note that dimensions are longer for the most important PCs,</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># so distances could be calculated directly in this space and</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="co"># the smaller PCs will already have little contribution)</span></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="co">#barplot(apply(environment.pca$x, 2, var))</span></span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="co">#barplot(apply(environment.pca$x, 2, function(x) diff(quantile(x, c(0.05, 0.90)))))</span></span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Focus on main PCs and disregard minor PCs, according to some rules-</span></span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Simple rule here, but check Peres-Neto et al. (2003) and others.</span></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>p.var.to.keep <span class="ot">=</span> <span class="fl">0.5</span></span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>up.to <span class="ot">=</span> <span class="fu">which</span>(<span class="fu">summary</span>(environment.pca)<span class="sc">$</span>importance[<span class="dv">3</span>,] <span class="sc">&gt;=</span> p.var.to.keep)[<span class="dv">1</span>]</span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Environmental distances in the environmental space:</span></span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>environment.distance <span class="ot">&lt;-</span> <span class="fu">dist</span>(environment.pca<span class="sc">$</span>x[,<span class="dv">1</span><span class="sc">:</span>up.to])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Inspect how much the scores vary along each PC.</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># barplot(apply(environment.pca$x, 2, var))</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="co"># barplot(apply(environment.pca$x, 2, function(x) diff(quantile(x, c(0.05, 0.90)))))</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Keep enough PCs to reach this share of total variance.</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>p.var.to.keep <span class="ot">=</span> <span class="fl">0.5</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>cumulative.share <span class="ot">&lt;-</span> <span class="fu">summary</span>(environment.pca)<span class="sc">$</span>importance[<span class="st">&quot;Cumulative Proportion&quot;</span>, ]</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>up.to <span class="ot">&lt;-</span> <span class="fu">which</span>(cumulative.share <span class="sc">&gt;=</span> p.var.to.keep)[<span class="dv">1</span><span class="dt">L</span>]</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute distances directly from the retained scores.</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>environment.distance <span class="ot">&lt;-</span> <span class="fu">dist</span>(environment.pca<span class="sc">$</span>x[, <span class="fu">seq_len</span>(up.to), <span class="at">drop =</span> <span class="cn">FALSE</span>])</span></code></pre></div>
 </div>
 <p><br>
 </p>
@@ -3863,7 +3861,7 @@ We use five habitats in the worked examples, as in the old-growth BCI associatio
 <p>Choose the map before assessing associations. If the same trees helped fit or choose the map, use the labels as descriptions of those trees. For an independent test, use data that played no part in choosing or fitting the map.</p>
 <p>To use a saved map in a separate script, load the objects saved under <a href="#sec-storage">Store results</a>.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>path.to.fgeo2 <span class="ot">=</span> <span class="st">&quot;/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2&quot;</span> </span>
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>path.to.fgeo2 <span class="ot">=</span> <span class="st">&quot;/full/path/to/fgeo2&quot;</span></span>
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>map.file <span class="ot">=</span> <span class="st">&quot;/full/path/to/habitat-map.rds&quot;</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>map <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(map.file)</span>
@@ -3871,7 +3869,7 @@ We use five habitats in the worked examples, as in the old-growth BCI associatio
 <span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>composition <span class="ot">&lt;-</span> map<span class="sc">$</span>composition</span>
 <span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>quadrats <span class="ot">&lt;-</span> map<span class="sc">$</span>quadrats</span>
 <span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>individuals <span class="ot">&lt;-</span> map<span class="sc">$</span>individuals</span>
-<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>plot.extent <span class="ot">&lt;-</span> map<span class="sc">$</span>plot.extent</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>plot.extent <span class="ot">&lt;-</span> map<span class="sc">$</span>plot.extent</span></code></pre></div>
 </div>
 </section>
 <section id="check-a-small-rectangle-by-hand" class="level2" data-number="7.2">
@@ -3883,15 +3881,13 @@ We use five habitats in the worked examples, as in the old-growth BCI associatio
 <p>Harms et al. (2001) and the legacy <code>tt_test()</code> use relative stem density. For each species and habitat, divide the species count by the total count of all species in that habitat. Here we count individuals using one record per tree. The abundance cutoff selects the species to report. All eligible trees contribute to the habitat totals.</p>
 <p><code>OBS</code> is the observed share and <code>EXP</code> holds the shares from 999 shifts, each calculated using its own habitat total. The score <code>mean(EXP &gt; OBS)</code> is the fraction of shifted shares above the observed share. A habitat needs at least one tree for the share to be defined.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>path.to.fgeo2 <span class="ot">=</span> <span class="st">&quot;/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2&quot;</span> <span class="co"># update to your path</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>nsim <span class="ot">=</span> 999L</span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>torus.seed <span class="ot">=</span> 123L</span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>minimum.abundance <span class="ot">=</span> 50L  <span class="co"># Minimum number of individuals of a species in the plot.</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>tail.cutoff <span class="ot">=</span> <span class="fl">0.025</span>      <span class="co"># Proportion in each tail used to assign a label.</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="fu">stopifnot</span>(nsim <span class="sc">&gt;=</span> 1L, nsim <span class="sc">==</span> <span class="fu">floor</span>(nsim), tail.cutoff <span class="sc">&gt;</span> <span class="dv">0</span>, tail.cutoff <span class="sc">&lt;</span> <span class="fl">0.5</span>)</span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">file.path</span>(path.to.fgeo2, <span class="st">&quot;03_spatial/R/new/spatial-null-models.R&quot;</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>nsim <span class="ot">=</span> <span class="dv">999</span><span class="dt">L</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>torus.seed <span class="ot">=</span> <span class="dv">123</span><span class="dt">L</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>minimum.abundance <span class="ot">=</span> <span class="dv">50</span><span class="dt">L</span>  <span class="co"># Minimum number of individuals of a species in the plot.</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>tail.cutoff <span class="ot">=</span> <span class="fl">0.025</span>      <span class="co"># Proportion in each tail used to assign a label.</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="fu">stopifnot</span>(nsim <span class="sc">&gt;=</span> <span class="dv">1</span><span class="dt">L</span>, nsim <span class="sc">==</span> <span class="fu">floor</span>(nsim), tail.cutoff <span class="sc">&gt;</span> <span class="dv">0</span>, tail.cutoff <span class="sc">&lt;</span> <span class="fl">0.5</span>)</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">file.path</span>(path.to.fgeo2, <span class="st">&quot;03_spatial/R/new/spatial-null-models.R&quot;</span>))</span></code></pre></div>
 </div>
 </section>
 <section id="align-the-map-counts-and-points" class="level2" data-number="7.4">
@@ -4237,7 +4233,7 @@ We use five habitats in the worked examples, as in the old-growth BCI associatio
 <li>Hothorn, T., Hornik, K. &amp; Zeileis, A. (2006). Unbiased recursive partitioning: a conditional inference framework. <em>Journal of Computational and Graphical Statistics</em>, 15, 651–674. <a href="https://doi.org/10.1198/106186006X133933">doi:10.1198/106186006X133933</a>.</li>
 <li>Kaufman, L. &amp; Rousseeuw, P. J. (1990). <em>Finding Groups in Data: An Introduction to Cluster Analysis</em>. Wiley. Algorithm reference supplied by <code>cluster</code>.</li>
 <li>Legendre, P. &amp; Gallagher, E. D. (2001). Ecologically meaningful transformations for ordination of species data. <em>Oecologia</em>, 129, 271–280. <a href="https://doi.org/10.1007/s004420100716">doi:10.1007/s004420100716</a>.</li>
-<li>Peres-Neto, P. R., Jackson, D. A., &amp; Somers, K. M. (2003). Giving meaningful interpretation to ordination axes: assessing loading significance in principal component analysis. <em>Ecology</em>, <em>84</em>(9), 2347-2363.</li>
+<li>Peres-Neto, P. R., Jackson, D. A. &amp; Somers, K. M. (2005). How many principal components? Stopping rules for determining the number of non-trivial axes revisited. <em>Computational Statistics &amp; Data Analysis</em>, 49, 974–997. <a href="https://doi.org/10.1016/j.csda.2004.06.015">doi:10.1016/j.csda.2004.06.015</a>.</li>
 <li>Roberts, D. R., et al. (2017). Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure. <em>Ecography</em>, 40, 913–929. <a href="https://doi.org/10.1111/ecog.02881">doi:10.1111/ecog.02881</a>.</li>
 <li>Su, S.-H., Hsieh, C.-F., Chang-Yang, C.-H., Lu, C.-L. &amp; Guan, B. T. (2010). Micro-topographic differentiation of the tree species composition in a subtropical submontane rainforest in northeastern Taiwan. <em>Taiwan Journal of Forest Science</em>, 25, 63–80. <a href="https://ws.tfri.gov.tw/001/Upload/OldFile/files/25-1_07.pdf">Full text</a>.</li>
 <li>Wolf, J. A., Hubbell, S. P., Fricker, G. A. &amp; Turner, B. L. (2015). Geospatial observations on tropical forest surface soil chemistry. <em>Ecology</em>, 96, 2313. <a href="https://doi.org/10.1890/15-0558.1">doi:10.1890/15-0558.1</a>.</li>

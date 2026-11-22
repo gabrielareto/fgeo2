@@ -52,8 +52,8 @@ memberships to each 20 x 20 m quadrat in a ForestGEO plot:
     `fgeo.analyze::fgeo_habitat()` to classify quadrats by elevation,
     slope and convexity in their original units.
 -   **Standardized environmental classification.** It uses `prcomp()`,
-    `hclust()` and `cutree()` to group quadrats using distances on
-    principal component scores.
+    `hclust()` and `cutree()` to group quadrats by Euclidean distance in
+    the retained principal component scores.
 -   **Fuzzy clustering.** It uses `cluster::fanny()` when quadrats may
     share features with several habitats. The membership scores show
     those transitions (Kaufman and Rousseeuw, 1990).
@@ -282,12 +282,12 @@ fixed map.
 
 ## Prepare environmental distances {#sec-environment-distances}
 
-Scale the variables to unit variance and use principal component
-analysis (PCA) to form uncorrelated axes. Then, calculate distances in
-this orthogonal space, before clustering into habitats. Note that most
-important PCs should contribute more to these environmental distances
-than the least important PCs. Non-important PCs could be dropped
-entirely according to some useful rules (Peres-Neto et al. 2003).
+Scale the environmental variables to unit variance and run principal
+component analysis (PCA). Keep the first principal components (PCs)
+that together explain at least the chosen share of variance. Calculate
+Euclidean distances directly from their scores. PCs with larger score
+variance contribute more to these distances on average. For other ways
+to choose how many PCs to keep, see Peres-Neto et al. (2005).
 
 ```{r}
 #| label: environment-pca
@@ -296,22 +296,20 @@ entirely according to some useful rules (Peres-Neto et al. 2003).
 environment.columns = names(environment)
 environment.selected <- environment[, environment.columns, drop = FALSE]
 
-# Obtain a PCA-based space:
+# Center and scale the variables before computing principal components.
 environment.pca <- prcomp(environment.selected, center = TRUE, scale. = TRUE)
 
-# (note that dimensions are longer for the most important PCs,
-# so distances could be calculated directly in this space and
-# the smaller PCs will already have little contribution)
-#barplot(apply(environment.pca$x, 2, var))
-#barplot(apply(environment.pca$x, 2, function(x) diff(quantile(x, c(0.05, 0.90)))))
+# Inspect how much the scores vary along each PC.
+# barplot(apply(environment.pca$x, 2, var))
+# barplot(apply(environment.pca$x, 2, function(x) diff(quantile(x, c(0.05, 0.90)))))
 
-# Focus on main PCs and disregard minor PCs, according to some rules-
-# Simple rule here, but check Peres-Neto et al. (2003) and others.
+# Keep enough PCs to reach this share of total variance.
 p.var.to.keep = 0.5
-up.to = which(summary(environment.pca)$importance[3,] >= p.var.to.keep)[1]
+cumulative.share <- summary(environment.pca)$importance["Cumulative Proportion", ]
+up.to <- which(cumulative.share >= p.var.to.keep)[1L]
 
-# Environmental distances in the environmental space:
-environment.distance <- dist(environment.pca$x[,1:up.to])
+# Compute distances directly from the retained scores.
+environment.distance <- dist(environment.pca$x[, seq_len(up.to), drop = FALSE])
 ```
 
 \
@@ -802,7 +800,7 @@ To use a saved map in a separate script, load the objects saved under
 #| label: restart-fixed-map-analysis
 #| eval: false
 
-path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" 
+path.to.fgeo2 = "/full/path/to/fgeo2"
 map.file = "/full/path/to/habitat-map.rds"
 
 map <- readRDS(map.file)
@@ -837,8 +835,6 @@ needs at least one tree for the share to be defined.
 
 ```{r}
 #| label: torus-options
-
-path.to.fgeo2 = "/Users/salva/Dropbox/PERSONAL/LLC/Oikobit LLC/projects/code-and-statistics-forestgeo/fgeo2" # update to your path
 
 nsim = 999L
 torus.seed = 123L
@@ -1193,10 +1189,11 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     transformations for ordination of species data. *Oecologia*, 129,
     271--280.
     [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
--   Peres-Neto, P. R., Jackson, D. A., & Somers, K. M. (2003). Giving
-    meaningful interpretation to ordination axes: assessing loading
-    significance in principal component analysis. *Ecology*, *84*(9),
-    2347-2363.
+-   Peres-Neto, P. R., Jackson, D. A. & Somers, K. M. (2005). How many
+    principal components? Stopping rules for determining the number
+    of non-trivial axes revisited. *Computational Statistics & Data Analysis*,
+    49, 974--997.
+    [doi:10.1016/j.csda.2004.06.015](https://doi.org/10.1016/j.csda.2004.06.015).
 -   Roberts, D. R., et al. (2017). Cross-validation strategies for data
     with temporal, spatial, hierarchical, or phylogenetic structure.
     *Ecography*, 40, 913--929.
