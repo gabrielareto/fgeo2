@@ -53,7 +53,7 @@ memberships to each 20 x 20 m quadrat in a ForestGEO plot:
     slope and convexity in their original units.
 -   **Standardized environmental classification.** It uses `prcomp()`,
     `hclust()` and `cutree()` to group quadrats using distances on
-    weighted principal component scores.
+    principal component scores.
 -   **Fuzzy clustering.** It uses `cluster::fanny()` when quadrats may
     share features with several habitats. The membership scores show
     those transitions (Kaufman and Rousseeuw, 1990).
@@ -283,36 +283,38 @@ fixed map.
 ## Prepare environmental distances {#sec-environment-distances}
 
 Scale the variables to unit variance and use principal component
-analysis (PCA) to form uncorrelated axes. The full set of unweighted PC
-scores preserves Euclidean distances in the scaled variables. Here we
-multiply each score by its share of explained variance raised to the
-power `0.25`, giving the main gradients extra weight. Set the power to
-`0` for the original scaled distances. Several related measurements can
-give one gradient more influence. ƒ
+analysis (PCA) to form uncorrelated axes. Then, calculate distances in
+this orthogonal space, before clustering into habitats. Note that most
+important PCs should contribute more to these environmental distances
+than the least important PCs. Non-important PCs could be dropped
+entirely according to some useful rules (Peres-Neto et al. 2003).
 
 ```{r}
 #| label: environment-pca
 
-# Parameter to give weights to PCs
-pc.weight.power = 0.25
-
 # Use all variables, or select columns here.
 environment.columns = names(environment)
-
 environment.selected <- environment[, environment.columns, drop = FALSE]
 
-# Obtain a weighted PCA-based space:
+# Obtain a PCA-based space:
 environment.pca <- prcomp(environment.selected, center = TRUE, scale. = TRUE)
-variance.share <- environment.pca$sdev^2 / sum(environment.pca$sdev^2)
-pc.weights <- variance.share^pc.weight.power
-environment.pc.weighted <- environment.pca$x # initialize
 
-for(j in seq_along(pc.weights))
-	environment.pc.weighted[, j] <- environment.pc.weighted[, j] * pc.weights[j]
+# (note that dimensions are longer for the most important PCs,
+# so distances could be calculated directly in this space and
+# the smaller PCs will already have little contribution)
+#barplot(apply(environment.pca$x, 2, var))
+#barplot(apply(environment.pca$x, 2, function(x) diff(quantile(x, c(0.05, 0.90)))))
 
-# Environmental distances in the rescaled environmental space:
-environment.distance <- dist(environment.pc.weighted)
+# Focus on main PCs and disregard minor PCs, according to some rules-
+# Simple rule here, but check Peres-Neto et al. (2003) and others.
+p.var.to.keep = 0.5
+up.to = which(summary(environment.pca)$importance[3,] >= p.var.to.keep)[1]
+
+# Environmental distances in the environmental space:
+environment.distance <- dist(environment.pca$x[,1:up.to])
 ```
+
+\
 
 ## Map habitat labels
 
@@ -395,11 +397,11 @@ terra::plot(habitat_to_raster(habitat.legacy), main = "CTFS/fgeo")
 
 If one has more than the elevation profile, it is reasonable/advisable
 to use more (even all) environmental variables. This section shows how
-to cluster the quadrats using the [weighted PCA
-distances](#sec-environment-distances) from terrain and soil.
+to cluster the quadrats using the PCA-based distances from terrain and
+soil.
 
-Ward linkage groups quadrats in the weighted PCA space. Cut the tree at
-the shared `habitat.k` from setup.
+Ward linkage groups quadrats in the PCA space. Cut the tree at the
+shared `habitat.k` from setup.
 
 ```{r}
 #| label: standardized-environmental-classification
@@ -416,10 +418,10 @@ terra::plot(habitat_to_raster(habitat.full.environment), main = "Terrain and soi
 
 ## Fuzzy environmental classes with FANNY {#sec-fanny}
 
-FANNY can use a distance matrix directly. Pass the same weighted PCA
-distances to compare fuzzy and hard classifications in the same space.
-Each quadrat has membership scores that sum to one. The largest score
-gives its hard label. Keep the full matrix to see gradual boundaries.
+FANNY can use a distance matrix directly. Pass the same PCA distances to
+compare fuzzy and hard classifications in the same space. Each quadrat
+has membership scores that sum to one. The largest score gives its hard
+label. Keep the full matrix to see gradual boundaries.
 
 ```{r}
 #| label: fuzzy-environmental-habitats
@@ -640,10 +642,10 @@ test associations with it.
 #| label: choose-habitat-map
 
 # Pick one habitat map
-# habitats <- habitat.full.environment
+habitats <- habitat.full.environment
 # habitats <- habitat.legacy
 # habitats <- habitat.fanny
-habitats <- habitat.ctree
+# habitats <- habitat.ctree
 # habitats <- habitat.ecomix  # Fit the full plot before selecting this map.
 
 use.smoothed.map = FALSE  # Set TRUE to use the filtered map below.
@@ -1099,8 +1101,7 @@ legacy CTFS/fgeo classification, which only looks at three environmental
 variables, and the floristically-informed map, which uses all
 environmental variables and the entire floristic composition. This means
 that those few topographical variables encode much of what is relevant
-for this tree community in particular, and explains why the CTFS/fgeo
-choice, apparently the simplest one, has remained useful for decades.
+for this tree community in particular.
 
 # Store results {#sec-storage}
 
@@ -1192,6 +1193,10 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     transformations for ordination of species data. *Oecologia*, 129,
     271--280.
     [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
+-   Peres-Neto, P. R., Jackson, D. A., & Somers, K. M. (2003). Giving
+    meaningful interpretation to ordination axes: assessing loading
+    significance in principal component analysis. *Ecology*, *84*(9),
+    2347-2363.
 -   Roberts, D. R., et al. (2017). Cross-validation strategies for data
     with temporal, spatial, hierarchical, or phylogenetic structure.
     *Ecography*, 40, 913--929.
