@@ -283,8 +283,8 @@ fixed map.
 ## Prepare environmental distances {#sec-environment-distances}
 
 Scale the environmental variables to unit variance and run principal
-component analysis (PCA). Keep the first principal components (PCs)
-that together explain at least the chosen share of variance. Calculate
+component analysis (PCA). Keep the first principal components (PCs) that
+together explain at least the chosen share of variance. Calculate
 Euclidean distances directly from their scores. PCs with larger score
 variance contribute more to these distances on average. For other ways
 to choose how many PCs to keep, see Peres-Neto et al. (2005).
@@ -1190,9 +1190,9 @@ saveRDS(list(relative.density = expected, nsim = nsim,
     271--280.
     [doi:10.1007/s004420100716](https://doi.org/10.1007/s004420100716).
 -   Peres-Neto, P. R., Jackson, D. A. & Somers, K. M. (2005). How many
-    principal components? Stopping rules for determining the number
-    of non-trivial axes revisited. *Computational Statistics & Data Analysis*,
-    49, 974--997.
+    principal components? Stopping rules for determining the number of
+    non-trivial axes revisited. *Computational Statistics & Data
+    Analysis*, 49, 974--997.
     [doi:10.1016/j.csda.2004.06.015](https://doi.org/10.1016/j.csda.2004.06.015).
 -   Roberts, D. R., et al. (2017). Cross-validation strategies for data
     with temporal, spatial, hierarchical, or phylogenetic structure.
